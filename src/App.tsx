@@ -820,6 +820,12 @@ export default function App() {
     investment: "Investissement",
     debt: "Dette",
   };
+  // Notion-style colored badge next to the institution name (see accountCard below): each
+  // `Account.kind` gets a fixed, distinct color instead of monogramColors' per-name hash,
+  // so the same nature always reads the same color across accounts. The four hues are
+  // existing MONOGRAM_PALETTE swatches (kind-badge-* in index.css), not new colors — that
+  // palette was already corrected in V2.7 (c8a7174) to stay inside the app's blue-violet
+  // family, so reusing it exactly keeps this badge in that family by construction.
   function accountCard(a: Account) {
     const b = latestBalance(a),
       unverified = a.balances.at(-1),
@@ -837,7 +843,12 @@ export default function App() {
             {monogramInitials(a.institution)}
           </span>
           <div>
-            <span className="institution">{a.institution}</span>
+            <span className="institution">
+              {a.institution}{" "}
+              <span className={`kind-badge kind-badge-${a.kind}`}>
+                {kinds[a.kind]}
+              </span>
+            </span>
             <h3>{a.name}</h3>
           </div>
           <button
@@ -856,8 +867,7 @@ export default function App() {
             ? `Solde au ${b.asOf}`
             : show
               ? "Non daté · à vérifier"
-              : "Solde à renseigner"}{" "}
-          · {kinds[a.kind]}
+              : "Solde à renseigner"}
         </p>
         <div className="hero-foot">
           <SourceLink source={show?.source || a.source} />

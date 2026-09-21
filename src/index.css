@@ -764,13 +764,54 @@ img.brand-mark {
   margin-bottom: 14px;
 }
 .institution {
-  display: flex;
-  align-items: center;
-  gap: 11px;
+  /* Block, not flex: this now wraps a trailing .kind-badge (see accountCard in App.tsx) as
+     ordinary inline content, so a long institution name pushes the badge onto its own line
+     instead of the row overflowing — the same safe pattern .row-title already uses for its
+     .tag (index.css above/below). */
+  display: block;
   min-width: 0;
   font-size: 14px;
   font-weight: 550;
   overflow-wrap: anywhere;
+}
+/* Colored account-nature badge, next to the institution name in accountCard — a compact
+   analogue of a Notion select-property badge. One fixed color per Account["kind"] (never
+   hashed like monogramColors) so the same nature always reads the same color; the four
+   hues below are existing MONOGRAM_PALETTE swatches from that same blue-violet family
+   (see the comment above `kinds` in App.tsx), not new colors. */
+.kind-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.6;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.kind-badge-bank {
+  background: rgba(138, 169, 255, 0.16);
+  color: #8aa9ff;
+}
+.kind-badge-investment {
+  background: rgba(170, 150, 255, 0.16);
+  color: #aa96ff;
+}
+.kind-badge-debt {
+  /* Not MONOGRAM_PALETTE[3] (#7c8cff): measured on the real rendered card (see review notes),
+     that text color only reaches ~4.5:1 on the flat card background and drops to ~4.3-4.5:1
+     (fails WCAG AA's 4.5:1) once the badge sits near the card's own top-right radial-gradient
+     highlight — a placement that happens for an ordinary (non-wrapping) institution name, not
+     just a contrived one. MONOGRAM_PALETTE[5] (#c0ceef) is used instead: still an existing,
+     already-corrected palette swatch (not a new color), and it keeps a comfortable margin
+     (~7.6-8.4:1) across the same real placements. */
+  background: rgba(160, 180, 200, 0.16);
+  color: #c0ceef;
+}
+.kind-badge-savings {
+  background: rgba(200, 150, 230, 0.16);
+  color: #c896e6;
 }
 .institution-icon {
   width: 42px;
