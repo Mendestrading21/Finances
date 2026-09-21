@@ -1,4 +1,5 @@
 import {
+  Fragment,
   useCallback,
   useEffect,
   useRef,
@@ -453,7 +454,13 @@ export default function App() {
     [more, setMore] = useState(false),
     [pendingImport, setPendingImport] = useState<FinanceData | null>(null),
     [busy, setBusy] = useState(false),
-    [receiptTxn, setReceiptTxn] = useState("");
+    [receiptTxn, setReceiptTxn] = useState(""),
+    // Which accounts' history/valorisation panel is open in the "Mes comptes" table (see
+    // accountRow below). Table rows, unlike accountCard's <details>, cannot each keep their
+    // own native open state (a <details> element cannot itself be a <tr>), so this tracks it
+    // explicitly — a Set rather than one id because more than one row can be open at once,
+    // matching how several accountCard <details> can already be open together today.
+    [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(new Set());
   const session = useRef(0);
   const fileInput = useRef<HTMLInputElement>(null);
   const mutating = useRef(false);
@@ -893,6 +900,155 @@ export default function App() {
           ))}
         </details>
       </article>
+    );
+  }
+  const toggleAccountHistory = (id: string) =>
+    setExpandedAccounts((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  // Real <table> row for "Mes comptes" (Notion-style table, chosen over the card grid per
+  // explicit decision — docs/STATUS.md). accountCard() above is left untouched and keeps being
+  // used for glance contexts (Accueil "Vos comptes" preview, Investissements): those are not the
+  // Notion-table equivalent, so there is no reason to also convert them.
+  //
+  // Columns: Compte / Type / Solde / Daté / Actions — the suggested five — reusing accountCard's
+  // own monogram, kind-badge and date-label logic verbatim rather than reinventing it. "Daté" is
+  // demoted below 700px (index.css): its text also renders as a second line inside the Compte
+  // cell, CSS-toggled the opposite way, so the information moves rather than disappears — the
+  // dedicated column stays for wider screens where there is comfortable room for it.
+  //
+  // accountCard's history is an always-independent <details>; a <details> cannot itself be a
+  // <tr>, so here it becomes a second, real <tr> under the row, toggled by a third icon-button
+  // in Actions (chevron, aria-expanded/aria-controls) next to Actualiser/Modifier — the same
+  // "up to three icon-buttons in one row-actions group" pattern transactionRow already uses,
+  // not a new one. Kept in the DOM with the `hidden` attribute rather than only-if-expanded so
+  // aria-controls always resolves to a real element.
+  function accountRow(a: Account) {
+    const b = latestBalance(a),
+      unverified = a.balances.at(-1),
+      show = b || unverified,
+      dateLabel = b?.asOf
+        ? `Solde au ${b.asOf}`
+        : show
+          ? "Non daté · à vérifier"
+          : "Solde à renseigner",
+      expanded = expandedAccounts.has(a.id),
+      historyId = `account-history-${a.id}`;
+    return (
+      <Fragment key={a.id}>
+        <tr className="account-row">
+          <td className="col-account">
+            <div className="account-cell">
+              <span
+                className="institution-icon"
+                style={{
+                  background: monogramColors(a.institution).bg,
+                  color: monogramColors(a.institution).fg,
+                }}
+              >
+                {monogramInitials(a.institution)}
+              </span>
+              <div className="account-cell-text">
+                <span className="account-cell-name">{a.name}</span>
+                <span className="meta account-cell-institution">
+                  {a.institution}
+                </span>
+                {/* Type and Daté both fold in here below 600px (index.css) — real
+                    measurement (not just estimate) showed the five-column layout crushing
+                    this name column to one character per line at phone width once both
+                    stayed as separate columns; folding keeps every field readable instead
+                    of technically present but unreadable. Same kind/dateLabel values as
+                    the dedicated columns, not a second lookup. */}
+                <span className="account-cell-badge-inline">
+                  <span className={`kind-badge kind-badge-${a.kind}`}>
+                    {kinds[a.kind]}
+                  </span>
+                </span>
+                <span className="meta account-cell-date-inline">
+                  {dateLabel}
+                </span>
+              </div>
+            </div>
+          </td>
+          <td className="col-type">
+            <span className={`kind-badge kind-badge-${a.kind}`}>
+              {kinds[a.kind]}
+            </span>
+          </td>
+          <td className="num col-balance">
+            {/* Keeps the same "balance" class accountCard's own amount used (index.css
+                restyles it compactly inside .accounts-table) — an existing e2e flow reads
+                the updated balance back through this exact class after "Actualiser". */}
+            <span className="balance">
+              {display(show?.amountMinor ?? null, a.currency)}
+            </span>
+          </td>
+          <td className="col-date meta">{dateLabel}</td>
+          <td className="col-actions">
+            <div className="row-actions">
+              {/* Icon-only at every width, like Modifier right below it — accountCard's own
+                  "Actualiser" is a visible icon+text button, but real measurement showed
+                  a table row (unlike a card) has no width to spare for it at ANY size:
+                  tablet width alone was measured crushing the Compte column to one
+                  character per line to make room for a full text button here (see the
+                  "why" comment on .accounts-table below). aria-label keeps the exact same
+                  accessible name ("Actualiser") an existing e2e flow already targets. */}
+              <button
+                className="icon-button"
+                onClick={() => edit({ type: "balance", id: a.id })}
+                aria-label="Actualiser"
+              >
+                <Icon name="refresh" size={17} />
+              </button>
+              <button
+                className="icon-button"
+                onClick={() => edit({ type: "account", id: a.id })}
+                aria-label={`Modifier ${a.name}`}
+              >
+                <Icon name="edit" size={17} />
+              </button>
+              <button
+                className="icon-button"
+                onClick={() => toggleAccountHistory(a.id)}
+                aria-expanded={expanded}
+                aria-controls={historyId}
+                aria-label={`${expanded ? "Masquer" : "Afficher"} l’historique de ${a.name}`}
+              >
+                <Icon
+                  name="chevron-down"
+                  size={17}
+                  className={expanded ? "chevron-open" : undefined}
+                />
+              </button>
+            </div>
+          </td>
+        </tr>
+        <tr className="account-history-row" hidden={!expanded}>
+          <td colSpan={5} id={historyId}>
+            <div className="account-history-panel">
+              <p className="footer-note">
+                {a.valuationMode === "total"
+                  ? "Solde total : les positions de ce compte ne sont pas ajoutées."
+                  : "Solde de liquidités : les positions datées sont ajoutées."}
+              </p>
+              {a.balances.length ? (
+                a.balances.map((v) => (
+                  <p className="meta" key={v.id}>
+                    {v.asOf || "Date inconnue"} ·{" "}
+                    {display(v.amountMinor, a.currency)}
+                  </p>
+                ))
+              ) : (
+                <p className="meta">Aucun solde daté enregistré.</p>
+              )}
+              <SourceLink source={show?.source || a.source} />
+            </div>
+          </td>
+        </tr>
+      </Fragment>
     );
   }
   /** "Prévu" never distinguished a due expense from a due income, and gave no explicit
@@ -1758,8 +1914,72 @@ export default function App() {
               Les soldes conservent leur date d’observation. Les opérations du
               mois ne les modifient pas automatiquement.
             </div>
-            <div className="account-grid">{sortedAccounts.map(accountCard)}</div>
-            {!data.accounts.length && (
+            {data.accounts.length ? (
+              <div className="accounts-table-wrap">
+                <table className="accounts-table">
+                  <caption className="sr-only">
+                    Vos comptes, du solde le plus élevé au plus faible en{" "}
+                    {currency}
+                  </caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Compte</th>
+                      <th scope="col" className="col-type">
+                        Type
+                      </th>
+                      <th scope="col" className="num">
+                        Solde
+                      </th>
+                      <th scope="col" className="col-date">
+                        Daté
+                      </th>
+                      <th scope="col" className="col-actions">
+                        <span className="sr-only">Actions</span>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>{sortedAccounts.map(accountRow)}</tbody>
+                  <tfoot>
+                    {/* One cell per column, no colSpan: measured, a colSpan on this row's
+                        first cell combined with the two display:none columns (col-type/
+                        col-date, ≤600px) shifted this engine's fixed-layout column
+                        bookkeeping for the rest of the row — its "Solde" cell silently
+                        landed in the Actions column's narrower width instead of Solde's,
+                        and the total visibly overflowed it. An empty col-type cell keeps
+                        this row's shape identical to every accountRow's, which measured
+                        correctly. */}
+                    <tr className="accounts-total-row">
+                      <th scope="row">
+                        <span className="total-label">
+                          Total
+                          {wealth.partial && (
+                            <span className="tag">Partiel</span>
+                          )}
+                        </span>
+                      </th>
+                      <td className="col-type" aria-hidden="true"></td>
+                      <td className="num">
+                        {/* Not .balance: reusing it here (as tempting as it was, for the exact
+                            same compact styling) made an existing e2e flow's unscoped
+                            page.locator(".balance") ambiguous the moment a single-account
+                            vault's row and this total ever show the same figure — a real
+                            strict-mode failure, not a hypothetical one (confirmed by
+                            running it). total-balance below is styled identically. */}
+                        <span className="total-balance">
+                          {display(wealth.totalMinor)}
+                        </span>
+                      </td>
+                      <td className="col-date meta">
+                        {wealth.partial
+                          ? `${wealth.excluded} compte(s) exclu(s)`
+                          : ""}
+                      </td>
+                      <td className="col-actions"></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            ) : (
               <div className="empty-state">
                 Ajoutez votre premier compte ou importez un fichier Finance.
               </div>
