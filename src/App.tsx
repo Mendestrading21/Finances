@@ -1429,7 +1429,7 @@ export default function App() {
                 </div>
               )}
             </div>
-            <div className="two-columns">
+            <div className="three-columns">
               <Card title="Répartition du patrimoine">
                 <Allocation
                   hidden={hidden}
@@ -1450,6 +1450,24 @@ export default function App() {
                   Actifs positifs uniquement. Dettes déduites du patrimoine
                   total.
                 </p>
+              </Card>
+              <Card title="Le mouvement du mois">
+                <FlowChart
+                  income={
+                    summary.incomePlanned === null ||
+                    summary.incomeSettled === null
+                      ? null
+                      : summary.incomePlanned + summary.incomeSettled
+                  }
+                  expense={
+                    summary.expensePlanned === null ||
+                    summary.expenseSettled === null
+                      ? null
+                      : summary.expensePlanned + summary.expenseSettled
+                  }
+                  currency={currency}
+                  hidden={hidden}
+                />
               </Card>
               <Card
                 title="Prochaines échéances"
