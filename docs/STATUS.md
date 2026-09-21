@@ -1,6 +1,6 @@
 # Finance — état de reprise
 
-Mise à jour : 18 septembre 2026 (lots V2.1 à V2.8 livrés et fusionnés dans `main` ; correctif du mécanisme de mise à jour PWA fusionné ; correctif du regroupement des actions de ligne sur mobile en cours de publication). Ce fichier décrit les faits vérifiés. Le plan V2 décrit le travail suivant ; il ne constitue pas une preuve que ces améliorations sont déjà dans l’application au-delà de ce qui est explicitement marqué développé/testé ci-dessous.
+Mise à jour : 21 septembre 2026 (lots V2.1 à V2.8, correctif du mécanisme de mise à jour PWA et correctif du regroupement des actions de ligne sur mobile tous fusionnés dans `main` ; carte « Le mouvement du mois » ajoutée à l'Accueil, en cours de publication). Ce fichier décrit les faits vérifiés. Le plan V2 décrit le travail suivant ; il ne constitue pas une preuve que ces améliorations sont déjà dans l’application au-delà de ce qui est explicitement marqué développé/testé ci-dessous.
 
 ## Lot V2.1 — Modèle récurrent (développé et testé le 18 septembre 2026)
 
@@ -165,6 +165,18 @@ Développé par l'agent `finance-designer` (voir `.claude/agents/finance-designe
 
 Preuves : `pnpm run typecheck` (0 erreur), `pnpm run test` (**135/135**, inchangé — changement CSS/JSX pur), `pnpm run build` (réussi), les 9 scénarios `test:e2e` rejoués individuellement par l'auteur, le relecteur et le coordinateur. Aucun débordement à 390/834/1440 (`scrollWidth === clientWidth` vérifié par JS, pas seulement visuellement). Cibles tactiles inchangées (44×44). Focus clavier réel (Tab, pas `.focus()`) confirmé non tronqué par les nouveaux conteneurs. Captures avant/après à 390/834/1440 dans `docs/captures/` (mêmes captures que V2.8, régénérées par le test e2e officiel) et captures ad hoc (non versionnées) montrant le rapprochement visuel réel sur l'Accueil et Abonnements.
 
+Fusionné dans `main` (commit `de04fb4`, PR #7). CI et GitHub Pages vérifiés verts sur ce commit, site public à jour.
+
+## Ajout — carte « Le mouvement du mois » sur l'Accueil (développé et testé le 21 septembre 2026)
+
+Demandé par l'utilisateur, qui a montré son tableau de bord Notion personnel « Patrimoine » (table de comptes avec donut de répartition, graphique en barres entrées/sorties, panneaux Revenus/Épargne/Factures/Abonnements) en demandant « quelque chose de similaire mais plus simple, mêmes visuels, mieux adapté ». L'Accueil (`page === "overview"`) avait déjà l'équivalent du patrimoine + sa courbe, du donut de répartition et des prochaines échéances, mais pas le pendant visuel en barres des entrées/sorties du mois — seul un tableau de chiffres (« Votre mois ») l'exprimait. Un composant `FlowChart` (barres de progression Entrées/Dépenses, `src/components/Charts.tsx`) existait déjà et était câblé sur la page « Mon mois », mais jamais sur l'Accueil.
+
+La section qui affichait « Répartition du patrimoine » et « Prochaines échéances » en deux colonnes (`.two-columns`) passe à trois colonnes (`.three-columns`, classe déjà existante et déjà responsive — repasse à une colonne sur tablette et mobile), avec une nouvelle carte « Le mouvement du mois » insérée entre les deux, réutilisant exactement le même calcul `income`/`expense` que celui déjà câblé sur « Mon mois » (`summary.incomePlanned + summary.incomeSettled`, `summary.expensePlanned + summary.expenseSettled`, propagation de `null` inchangée) — aucune nouvelle fonction de domaine, aucun nouveau champ, un seul branchement supplémentaire d'un composant et d'une donnée déjà testés et déjà affichés ailleurs sur la même page.
+
+Relu indépendamment par l'agent `finance-verification` (distinct de l'auteur), en conditions réelles : parité exacte des montants entre les cartes « Le mouvement du mois » de l'Accueil et de « Mon mois » confirmée par lecture du DOM des deux pages et recalcul indépendant depuis le `stat-grid` de Mon mois (aucune divergence) ; absence de débordement mesurée (`scrollWidth` vs `innerWidth`) à 390/834/1440 px, avec la grille confirmée à 3 colonnes sur ordinateur et 1 colonne sur tablette/mobile (`getComputedStyle`) ; mode « Montants masqués » testé par clic réel (aucun montant résiduel dans la nouvelle carte) ; captures régénérées inspectées visuellement, aucune régression sur les autres cartes de l'Accueil ni sur Mon mois. Verdict « conforme, aucun défaut trouvé ».
+
+Preuves : `pnpm run typecheck` (0 erreur), `pnpm run test` (**135/135**, inchangé — branchement UI pur, aucune fonction de domaine modifiée), `pnpm run build` (réussi). Les 9 scénarios `test:e2e` rejoués individuellement par l'auteur et le relecteur (un essai en exécution groupée a montré les plantages Chromium single-process déjà documentés dans ce fichier — dbus/SSL, « browser has been closed » — reconfirmés comme limite d'environnement, pas une régression : les mêmes scénarios passent tous rejoués un par un). Captures 390/834/1440 régénérées et conservées (changement visuel réel) ; les captures des pages non concernées (coffre, projets) ont été écartées du diff car elles ne reflétaient qu'un nouveau rendu du même contenu.
+
 ## État réel
 
 | Élément                           | État                                                                                                                                                                   | Résultat et limite                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
@@ -209,7 +221,8 @@ Le rapprochement des données personnelles reste nécessaire avant d’affirmer 
 | Correctif débordement `.review-item p` livré      | Même PR #5, mêmes contrôles, test e2e dédié avec double contrôle négatif (mot allongé puis `git stash`/rebuild) ; détail dans la section dédiée ci-dessus.                          |
 | V2.8 (livraison finale) livré et fusionné         | PR #5 fusionnée dans `main` (commit `12f1d1d`) ; CI et GitHub Pages verts sur ce commit, site public à jour ; détail dans la section « Lot V2.8 » ci-dessus.                        |
 | Correctif service worker PWA livré et fusionné    | PR #6 fusionnée dans `main` (commit `a466623`) ; CI et GitHub Pages verts sur ce commit ; relu indépendamment avec deux défauts réels trouvés et corrigés ; détail dans la section « Correctif — mise à jour du service worker PWA » ci-dessus. |
-| Correctif regroupement des actions de ligne en cours | Nouvelle branche/PR (les précédentes sont fusionnées) ; développé par `finance-designer`, relu indépendamment par `finance-verification` (un défaut réel trouvé et corrigé, puis revérifié par le coordinateur) ; détail dans la section dédiée ci-dessus. |
+| Correctif regroupement des actions de ligne livré et fusionné | PR #7 fusionnée dans `main` (commit `de04fb4`) ; CI et GitHub Pages vérifiés verts sur ce commit ; développé par `finance-designer`, relu indépendamment par `finance-verification` (un défaut réel trouvé et corrigé, puis revérifié par le coordinateur) ; détail dans la section dédiée ci-dessus. |
+| Carte « Le mouvement du mois » sur l'Accueil en cours | Nouvelle branche/PR (les précédentes sont fusionnées) ; relu indépendamment par `finance-verification`, aucun défaut trouvé ; détail dans la section dédiée ci-dessus. |
 
 Ces preuves n’attestent pas encore l’implémentation de la V2 au-delà de V2.1. Les totaux de tests, SHA et exécutions doivent être relus après chaque nouveau changement. La [revue indépendante](REVUE_INDEPENDANTE.md) décrit les contrôles de l’application initiale et leurs limites.
 
@@ -228,10 +241,10 @@ Toutes les captures utilisent la démonstration fictive. Elles ne prouvent ni Sa
 
 ## Prochaine action
 
-V2.1 à V2.8 et le correctif du service worker PWA sont livrés, fusionnés dans `main` (commits `12f1d1d` puis `a466623`) et déployés sur le site public. Reste à faire :
+V2.1 à V2.8, le correctif du service worker PWA et le correctif du regroupement des actions de ligne sont livrés, fusionnés dans `main` (commits `12f1d1d`, `a466623`, `de04fb4`) et déployés sur le site public. Reste à faire :
 
-1. **Publier le correctif du regroupement des actions de ligne sur mobile** (voir section dédiée ci-dessus) : commité localement sur `claude/row-actions-mobile-polish`, relu indépendamment, pas encore poussé/fusionné. À pousser, ouvrir une PR, vérifier la CI, fusionner puis recontrôler le site public déployé.
-2. Sujet non technique déjà répondu par le correctif ci-dessus, à reconfirmer avec l'utilisateur une fois le site à jour : le mot « factures » a été ajouté au sous-titre de la page Abonnements pour la découvrabilité, sans page distincte créée (la fonctionnalité existante — récurrence Nature « Charge » — couvrait déjà le besoin).
+1. **Publier la carte « Le mouvement du mois » sur l'Accueil** (voir section dédiée ci-dessus) : développée et relue indépendamment, pas encore poussée/fusionnée. À pousser, ouvrir une PR, vérifier la CI, fusionner puis recontrôler le site public déployé.
+2. L'utilisateur a par ailleurs montré son tableau de bord Notion personnel (« Patrimoine ») comme référence visuelle plus large (table + donut, barres entrées/sorties, panneaux Revenus/Épargne/Factures/Abonnements) en demandant quelque chose de similaire en plus simple. La carte ci-dessus répond à l'élément manquant le plus concret (le graphique en barres entrées/sorties, absent de l'Accueil) avec les composants déjà existants et testés. Le reste de la demande (table de comptes façon Notion, panneaux consolidés) reste ouvert : à affiner avec l'utilisateur une fois qu'il aura vu ce premier ajout sur le site publié, plutôt que de deviner une portée plus large sans retour.
 
 Chaque lot est terminé avec tests ciblés, parcours navigateur, captures fictives et relecture indépendante vérifiés ; la CI distante et le site publié sont recontrôlés après chaque fusion.
 
