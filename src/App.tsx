@@ -709,6 +709,38 @@ export default function App() {
   );
   const subsCohort = cohortSummary(data, month, currency);
   const subsFlow = recurringFlowSummary(data, month, currency);
+  // Coût mensuel par nature pour l'aperçu de l'Accueil : somme de l'équivalent mensuel de
+  // chaque récurrence active de cette nature, converti vers la devise d'affichage — même
+  // schéma que subsAmountRanking ci-dessous (monthlyEquivalentMinor + convertMinor à la même
+  // date), pas la cohorte du mois (qui vaudrait 0 les mois sans échéance pour une récurrence
+  // trimestrielle ou annuelle). Une seule devise manquante rend le total entier "partiel"
+  // plutôt que d'additionner des montants non comparables.
+  const monthlyEquivalentTotal = (type: Recurrence["recurrenceType"]) => {
+    const at = today();
+    let totalMinor = 0,
+      excluded = 0,
+      count = 0;
+    for (const r of data.recurrences) {
+      if (!r.active || r.recurrenceType !== type) continue;
+      count++;
+      const converted = convertMinor(
+        monthlyEquivalentMinor(r, at),
+        r.currency,
+        currency,
+        data.fxRates,
+        at,
+      );
+      if (converted === null) {
+        excluded++;
+        continue;
+      }
+      totalMinor += converted;
+    }
+    return { totalMinor: excluded > 0 ? null : totalMinor, count, excluded };
+  };
+  const subsMonthlyOverview = monthlyEquivalentTotal("subscription");
+  const billsMonthlyOverview = monthlyEquivalentTotal("bill");
+  const savingMonthlyOverview = monthlyEquivalentTotal("saving");
   const subsMatchesType = (r: Recurrence) =>
     filter === "all" || r.recurrenceType === filter;
   const subsMatchesStatus = (r: Recurrence) => {
@@ -1403,6 +1435,45 @@ export default function App() {
                   </p>
                 </div>
               </Card>
+            </div>
+            <div className="section-heading">
+              <h2>Aperçu du mois</h2>
+            </div>
+            <div className="stat-grid">
+              {[
+                {
+                  label: "Revenus (reçus et attendus)",
+                  value:
+                    summary.incomePlanned === null ||
+                    summary.incomeSettled === null
+                      ? null
+                      : summary.incomePlanned + summary.incomeSettled,
+                  meta: null as string | null,
+                },
+                {
+                  label: "Abonnements (mensuel)",
+                  value: subsMonthlyOverview.totalMinor,
+                  meta: `${subsMonthlyOverview.count} actif(s)`,
+                },
+                {
+                  label: "Factures et charges (mensuel)",
+                  value: billsMonthlyOverview.totalMinor,
+                  meta: `${billsMonthlyOverview.count} actif(s)`,
+                },
+                {
+                  label: "Épargne (mensuel)",
+                  value: savingMonthlyOverview.totalMinor,
+                  meta: `${savingMonthlyOverview.count} actif(s)`,
+                },
+              ].map((s) => (
+                <div className="stat-card" key={s.label}>
+                  <p className="metric-label">{s.label}</p>
+                  <div className="metric-value">
+                    {s.value !== null ? display(s.value) : "—"}
+                  </div>
+                  {s.meta && <p className="meta">{s.meta}</p>}
+                </div>
+              ))}
             </div>
             <div className="section-heading">
               <h2>Vos comptes</h2>
