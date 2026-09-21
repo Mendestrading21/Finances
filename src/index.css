@@ -879,6 +879,224 @@ img.brand-mark {
   color: var(--muted);
   font-size: 12px;
 }
+/* "Mes comptes" real table (App.tsx accountRow) — real Notion-style table (user decision, see
+   docs/STATUS.md), kept in the app's existing blue-violet/glass system rather than a separate
+   visual language. .account-grid/.account-card above stay untouched for the Accueil/
+   Investissements glance previews; everything below is scoped to .accounts-table so it cannot
+   leak into those. */
+.accounts-table-wrap {
+  /* Horizontal scroll belongs only here, in the table's own container — never on the page — so
+     an extreme edge case (see the long-institution-name test) can legitimately scroll sideways
+     without document.documentElement.scrollWidth ever exceeding the viewport. */
+  overflow-x: auto;
+  border: 1px solid #2a2e40;
+  border-radius: 20px;
+  background: #141722;
+}
+.accounts-table {
+  width: 100%;
+  min-width: 0;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+  /* Fixed, not auto, layout — auto measured giving the non-wrapping columns (Daté, Solde,
+     a 3-icon-button Actions) their full natural width first and only then letting Compte
+     have whatever was left, which at tablet width crushed account names to one character
+     per line (see review screenshot at 834px: "P/o/r/t/ef/e/ui/ll/e…"). Fixed layout with
+     explicit widths below is what actually held up under measurement, on phone and here. */
+  table-layout: fixed;
+}
+.accounts-table th.col-type {
+  /* "Compte bancaire", the longest kind label, measured needing ~103px unwrapped
+     (kind-badge is white-space:nowrap) plus this cell's own padding. */
+  width: 136px;
+}
+.accounts-table th.num {
+  /* "97 495.00 CHF" (the total, the longest realistic amount here) measured needing
+     ~103px unwrapped (.balance is white-space:nowrap — an amount never wraps) plus
+     padding. */
+  width: 116px;
+}
+.accounts-table th.col-date {
+  width: 100px;
+}
+.accounts-table th.col-actions {
+  /* One 44px button (row-actions is column-stacked, see below) plus padding. */
+  width: 80px;
+}
+.accounts-table th:first-child {
+  /* Compte: the one column meant to absorb whatever the other four don't need. Sized to
+     the narrowest width this base (>600px) rule actually has to cover — iPad portrait,
+     834px (~590px of table-wrap budget, measured: 590 − 136 − 116 − 100 − 80 = 158,
+     rounded down for a small margin) — rather than left "auto" (see the table-level
+     comment on why "auto" measured badly here). Wider screens (1440px+) just get
+     unclaimed slack past this, which is harmless. */
+  width: 150px;
+}
+.accounts-table th,
+.accounts-table td {
+  padding: 14px 16px;
+  text-align: left;
+  vertical-align: middle;
+}
+.accounts-table thead th {
+  padding-top: 15px;
+  padding-bottom: 13px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 550;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+.accounts-table tbody td {
+  border-bottom: 1px solid var(--line-soft);
+}
+.accounts-table tbody tr.account-row:hover td {
+  background: rgba(148, 163, 219, 0.045);
+}
+.accounts-table th.num,
+.accounts-table td.num {
+  text-align: right;
+}
+/* Compact restyle of the shared .balance (index.css above) for a table cell instead of a
+   hero/card amount — same class as accountCard's own so the two stay in one visual system
+   and an existing e2e flow can keep reading an account's updated balance through it.
+   overflow-wrap:anywhere is intentionally undone here: that base rule exists for the wide
+   hero card where wrapping is a rare last resort, but in this narrow column it wrapped
+   real amounts into meaningless fragments ("48 1" / "50.0" / "0 CH" / "F" — see review
+   screenshot at 360px). An amount must stay intact (identite-ui.md, "lisibilité stable des
+   chiffres"): it never wraps here, so the Compte column is what yields width instead. */
+.accounts-table .balance {
+  display: inline-block;
+  font-size: 15px;
+  font-weight: 550;
+  letter-spacing: -0.02em;
+  margin: 0;
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+.col-account {
+  min-width: 0;
+}
+.account-cell {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.account-cell-text {
+  /* Plain block stacking, not display:grid: a grid (or flex) ITEM's default min-width:auto
+     is its own min-content size, not 0 — with the badge/date lines as grid items that
+     floor bypassed this container's own min-width:0 and forced it wider than its table
+     cell at phone width (measured: a fixed-width column's content visibly overflowing its
+     cell). Plain blocks have no such content-based floor, so overflow-wrap can actually
+     shrink each line down to the column's real available width. */
+  min-width: 0;
+}
+.account-cell-name {
+  display: block;
+  font-size: 14px;
+  font-weight: 550;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.account-cell-institution {
+  display: block;
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+}
+/* Both shown only below 600px (see media query) — the same kind-badge/dateLabel already
+   rendered in .col-type/.col-date, moved here instead of duplicated logic. */
+.account-cell-badge-inline {
+  display: none;
+}
+.account-cell-badge-inline .kind-badge {
+  margin-top: 1px;
+  /* The base .kind-badge is white-space:nowrap (right for a short property-style tag next
+     to institution text at desktop) — but as a min-content floor inside this narrow phone
+     column it forced "Investissement"/"Compte bancaire" to stay one unbroken run, which
+     alone kept the whole table wider than the viewport (measured). white-space:normal alone
+     is not enough since "Investissement" is one single word with no space to break at —
+     overflow-wrap:anywhere is what actually lets it break (confirmed: without it the badge
+     alone measured 93px wide and visibly overflowed the 35px it had to fit in). */
+  display: block;
+  width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+.account-cell-date-inline {
+  display: none;
+}
+.col-date {
+  color: var(--muted);
+  font-size: 12px;
+  /* Wraps ("Solde au " / "2026-09-21") rather than forcing the column wide enough to hold
+     it on one line — secondary info, unlike Compte or Solde, can afford to give up the
+     width that bought back (see .accounts-table's own comment on why Compte needed it). */
+  overflow-wrap: anywhere;
+}
+.col-actions {
+  text-align: right;
+}
+.accounts-table .row-actions {
+  /* Stacked at every width the table itself uses (not just phone): three icon buttons
+     side by side measured needing ~124px, versus ~44px stacked — the single largest
+     reducible share of the row at any width, and a table row can be taller without harm
+     (Compte already wraps to several lines). */
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 4px;
+}
+.chevron-open {
+  transform: rotate(180deg);
+}
+.accounts-table .col-actions svg {
+  transition: transform 0.15s ease;
+}
+.total-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.accounts-total-row th,
+.accounts-total-row td {
+  border-bottom: 0;
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+  padding-bottom: 16px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+/* Same compact treatment as .accounts-table .balance above (nowrap, an amount never
+   wraps), under its own class — not .balance itself, see App.tsx's comment on why. */
+.total-balance {
+  display: inline-block;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+}
+.account-history-row td {
+  border-bottom: 1px solid var(--line-soft);
+  background: rgba(148, 163, 219, 0.03);
+  padding: 4px 16px 16px;
+}
+.account-history-panel {
+  padding-top: 10px;
+  border-top: 1px solid var(--line-soft);
+  display: grid;
+  gap: 4px;
+}
+.account-history-panel .footer-note {
+  margin: 0 0 4px;
+}
+.account-history-panel .source-link,
+.account-history-panel .meta {
+  font-size: 12px;
+}
 .rows {
   display: grid;
 }
@@ -1680,6 +1898,10 @@ input::file-selector-button {
   .donut-layout {
     gap: 15px;
   }
+  .accounts-table th,
+  .accounts-table td {
+    padding: 13px;
+  }
 }
 @media (max-width: 900px) {
   .auth-screen {
@@ -1758,6 +1980,15 @@ input::file-selector-button {
   }
   .toast {
     left: calc(50% + 98px);
+  }
+  .accounts-table th,
+  .accounts-table td {
+    padding: 12px;
+  }
+  .accounts-table .institution-icon {
+    width: 38px;
+    height: 38px;
+    font-size: 13px;
   }
 }
 @media (max-width: 600px) {
@@ -1901,6 +2132,67 @@ input::file-selector-button {
   }
   .balance {
     font-size: 30px;
+  }
+  /* Below 600px the five columns no longer fit at a comfortable, readable width (see
+     App.tsx accountRow comment): "Type" and "Daté" are dropped as their own columns —
+     their text still shows, moved into extra lines of the Compte cell
+     (.account-cell-badge-inline/-date-inline, same values, not a separate lookup) —
+     rather than shrinking Compte, Solde or the ≥44px action buttons. Every column still
+     gets an explicit pixel width, including Compte — leaving it "auto" measured as only
+     half of the truly remaining space (a display:none th for col-type/col-date was still
+     occupying a share of fixed layout's auto-column distribution despite generating no
+     box), and calc(100% - Npx) measured no better (100% did not resolve to the table's
+     actual rendered width for a fixed-layout column in this engine — confirmed by
+     measuring the header cell itself, not just the body). Plain pixel widths, sized to
+     the narrowest supported width (320px → 292px of table-wrap budget, measured), are
+     what actually held up under measurement; at the wider phone widths this breakpoint
+     also covers (360–600px) they leave unclaimed slack rather than any risk of overflow. */
+  .accounts-table th.col-type,
+  .accounts-table th.col-date {
+    width: 0;
+  }
+  .accounts-table th:first-child {
+    width: 152px;
+  }
+  .accounts-table th.num {
+    /* Measured unconstrained (not guessed): "97 495.00 CHF" needs ~103px at this
+       compact 15/16px table font — this column must never wrap a digit run (see the
+       .balance rule above), so it gets that content need plus its own padding, not a
+       tighter guess. */
+    width: 120px;
+  }
+  .accounts-table th.col-actions {
+    /* One 44px button (row-actions is column-stacked below 600px) plus this cell's own
+       padding — 58px measured too tight against the ≥44px tap-target floor. */
+    width: 60px;
+  }
+  .accounts-table th,
+  .accounts-table td {
+    padding: 10px 8px;
+  }
+  .accounts-table .institution-icon {
+    width: 34px;
+    height: 34px;
+    font-size: 11px;
+    border-radius: 10px;
+  }
+  .accounts-table .account-cell {
+    gap: 8px;
+  }
+  /* Real measurement (screenshot at 360px, not just an estimate) showed keeping "Type" as
+     its own column too still crushed the Compte column to one character per line — folding
+     it in alongside "Daté" is what actually keeps every field readable at phone width. */
+  .accounts-table .col-type,
+  .accounts-table .col-date {
+    display: none;
+  }
+  .account-cell-badge-inline {
+    display: block;
+    margin-top: 2px;
+  }
+  .account-cell-date-inline {
+    display: block;
+    font-size: 11px;
   }
   .row {
     gap: 10px;
