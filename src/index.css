@@ -137,6 +137,9 @@ strong {
   letter-spacing: -0.045em;
   text-decoration: none;
   margin: 0 10px 44px;
+  /* Real tap-target defect, measured: content-sized to its 39px brand-mark, below the
+     app's 44px floor on every page that shows the sidebar (desktop and tablet). */
+  min-height: 44px;
 }
 .brand-mark {
   width: 39px;
@@ -361,11 +364,6 @@ img.brand-mark {
   border-color: #303441;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
-.button.danger {
-  color: #ffb6c0;
-  border-color: #693744;
-  background: #2b1921;
-}
 .button.small {
   padding: 7px 12px;
   font-size: 12px;
@@ -410,11 +408,10 @@ img.brand-mark {
   font-weight: 550;
   font-variant-numeric: tabular-nums;
 }
-.year-control .icon-button {
-  width: 36px;
-  min-width: 36px;
-  height: 36px;
-}
+/* No size override here: .icon-button's own 44x44 already meets the app's tap-target
+   floor (identite-ui.md/AUDIT_UI_V2). A 36x36 override shipped here previously — real
+   defect, measured by finance-verification (below 44x44 on all 7 pages x 3 viewports,
+   and visibly shorter than the 44px .month-chip pills right beside it). */
 .month-picker-v2 > .button {
   flex-shrink: 0;
 }
@@ -602,14 +599,6 @@ img.brand-mark {
 .chart-details th {
   border-bottom: 1px solid var(--line-soft);
   padding: 9px 5px;
-}
-.metric-row {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  margin-top: 25px;
-  border-top: 1px solid rgba(170, 188, 229, 0.12);
-  padding-top: 20px;
-  gap: 16px;
 }
 .metric {
   min-width: 0;
@@ -1104,6 +1093,15 @@ img.brand-mark {
   flex: 1 1 140px;
   min-width: 140px;
 }
+/* transactionRow (settled rows only): .row-main itself becomes the "Modifier" target once
+ * the row's own icon-buttons are removed (see transactionRow in App.tsx). Cursor + radius
+ * only — the row's existing hover/focus-within background (.row:hover above) already gives
+ * feedback, this just marks the sub-area as clickable and gives :focus-visible's outline
+ * (index.css above) a rounded edge to sit against instead of a square corner. */
+.row-main-button {
+  cursor: pointer;
+  border-radius: 8px;
+}
 .row-title {
   display: block;
   font-size: 14px;
@@ -1235,24 +1233,6 @@ img.brand-mark {
 .donut > svg {
   width: 100%;
   height: 100%;
-}
-.donut-center {
-  position: absolute;
-  inset: 22%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  font-size: 12px;
-  color: var(--muted);
-}
-.donut-center strong {
-  color: var(--text);
-  font-size: 20px;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.035em;
-  margin-top: 6px;
 }
 .legend {
   display: grid;
@@ -1584,13 +1564,6 @@ input::file-selector-button {
   text-decoration: underline;
   text-underline-offset: 4px;
 }
-.file-input {
-  display: block;
-  max-width: 100%;
-  padding: 14px 0;
-  color: var(--muted);
-  font-size: 14px;
-}
 .tab-bar {
   display: flex;
   align-items: stretch;
@@ -1615,29 +1588,6 @@ input::file-selector-button {
   color: #e5eaff;
   background: #262d41;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045);
-}
-.doc-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 17px;
-}
-.doc-grid .card {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 11px;
-}
-.doc-grid .card > .button:last-child {
-  margin-top: auto;
-}
-.doc-grid h3 {
-  margin: 6px 0 0;
-  font-size: 15px;
-}
-.doc-grid p {
-  font-size: 14px;
-  line-height: 1.8;
-  color: var(--muted);
 }
 .muted {
   color: var(--muted);
@@ -1727,18 +1677,6 @@ input::file-selector-button {
 .stat-card .meta {
   margin-top: 6px;
 }
-.allocation-bar {
-  display: flex;
-  height: 7px;
-  gap: 3px;
-  border-radius: 99px;
-  overflow: hidden;
-  background: #252b3c;
-  margin: 19px 0;
-}
-.allocation-bar > * {
-  min-width: 0;
-}
 .action-stack {
   display: grid;
   gap: 10px;
@@ -1759,7 +1697,11 @@ input::file-selector-button {
 }
 .breadcrumb span {
   padding: 0 11px;
-  color: #50596f;
+  /* Real defect, measured on the actually rendered pixels (not the token alone): the old
+     #50596f gave 2.82:1 against --bg, below WCAG AA's 4.5:1, on all 7 pages (same shared
+     breadcrumb). --subtle is an existing app token, still visibly dimmer than the rest of
+     the breadcrumb, and clears AA with headroom (5.39:1). */
+  color: var(--subtle);
 }
 .text-button {
   min-height: 44px;
@@ -1849,17 +1791,13 @@ input::file-selector-button {
   .hero-value {
     font-size: 46px;
   }
-  .metric-row {
-    gap: 11px;
-  }
   .metric-value {
     font-size: 18px;
   }
   .card {
     padding: 21px;
   }
-  .account-grid,
-  .doc-grid {
+  .account-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .three-columns {
@@ -1915,8 +1853,7 @@ input::file-selector-button {
   .three-columns {
     grid-template-columns: 1fr;
   }
-  .account-grid,
-  .doc-grid {
+  .account-grid {
     grid-template-columns: 1fr;
   }
   .page-heading {
@@ -2038,17 +1975,6 @@ input::file-selector-button {
   }
   .chart {
     margin-top: 20px;
-  }
-  .metric-row {
-    margin-top: 21px;
-    padding-top: 19px;
-    gap: 11px;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .metric-row > :last-child:nth-child(3) {
-    grid-column: 1 / -1;
-    padding-top: 13px;
-    border-top: 1px solid var(--line-soft);
   }
   .metric-label {
     font-size: 12px;

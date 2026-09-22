@@ -5,6 +5,7 @@ import {
   useState,
   type ChangeEvent,
   type FormEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
 } from "react";
 import {
@@ -1057,18 +1058,51 @@ export default function App() {
             }
           />
         </span>
-        <div className="row-main">
-          <span className="row-title">{t.label}</span>
-          <span className="row-detail">
-            {t.date ||
-              (t.budgetMonth
-                ? monthLabel(t.budgetMonth) + " · jour à vérifier"
-                : "Date à vérifier")}{" "}
-            · {accountName(t.accountId)} · {statusWord(t)}
-            {data?.documents.some((d) => d.transactionId === t.id) &&
-              " · Justificatif joint"}
-          </span>
-        </div>
+        {(() => {
+          const persisted = data?.transactions.some((i) => i.id === t.id);
+          // Settled rows drop the plain edit (pencil) icon-button the user found cluttering
+          // once every row (they had asked to see unpaid rows first, which made rows of small
+          // persistent icons on every already-handled line more visible than before) — a paid
+          // row now reads as just its own text, amount and receipt icon. "Modifier" moves onto
+          // row-main itself instead of disappearing outright: the label/detail block becomes a
+          // real, keyboard-reachable button (role="button", not a bare onClick on a div) that
+          // opens the same editor the pencil icon used to. The document-attach icon stays on
+          // settled rows too — attaching a receipt right after marking something paid/received
+          // is the deliberate flow this app supports (see "daily entries" e2e test), not
+          // something to hide behind a page navigation.
+          const clickableEdit = t.status === "settled" && persisted;
+          return (
+            <div
+              className={`row-main${clickableEdit ? " row-main-button" : ""}`}
+              {...(clickableEdit
+                ? {
+                    role: "button" as const,
+                    tabIndex: 0,
+                    "aria-label": `Modifier ${t.label}`,
+                    onClick: () =>
+                      edit({ type: "transaction", id: t.id, kind: t.kind }),
+                    onKeyDown: (e: ReactKeyboardEvent) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        edit({ type: "transaction", id: t.id, kind: t.kind });
+                      }
+                    },
+                  }
+                : {})}
+            >
+              <span className="row-title">{t.label}</span>
+              <span className="row-detail">
+                {t.date ||
+                  (t.budgetMonth
+                    ? monthLabel(t.budgetMonth) + " · jour à vérifier"
+                    : "Date à vérifier")}{" "}
+                · {accountName(t.accountId)} · {statusWord(t)}
+                {data?.documents.some((d) => d.transactionId === t.id) &&
+                  " · Justificatif joint"}
+              </span>
+            </div>
+          );
+        })()}
         <div className="row-end">
           <span className={`row-value ${t.kind === "income" ? "positive" : ""}`}>
             {t.kind === "income" ? "+" : ""}
@@ -1085,57 +1119,53 @@ export default function App() {
                     : "Marquer payé"}
               </button>
             ) : null}
-            {data?.transactions.some((i) => i.id === t.id) && (
-              <>
-                {
-                  // Kept exclusive with the "marquer" action above so a planned row never
-                  // crowds two actions (the label wraps on an iPhone width). A receipt is
-                  // also most often at hand once the operation is settled; a planned
-                  // operation can still be reached from Documents et réglages. The
-                  // correction action below adds a third icon-button only for the narrower
-                  // recurrence-linked case — accepted for now, to revisit with the row
-                  // density rework of V2.5.
-                  t.status !== "planned" && (
-                    <label
-                      className="icon-button"
-                      aria-label={`Joindre un document à ${t.label}`}
-                    >
-                      <Icon name="document" size={17} />
-                      <input
-                        className="sr-only"
-                        type="file"
-                        accept="application/pdf,image/jpeg,image/png,image/webp"
-                        onChange={(e) => attach(e, t.id)}
-                      />
-                    </label>
-                  )
-                }
-                {t.status === "settled" && t.recurrenceId && t.occurrenceDate && (
-                  <button
+            {
+              // Kept exclusive with the "marquer" action above so a planned row never
+              // crowds two actions (the label wraps on an iPhone width). A receipt is
+              // also most often at hand once the operation is settled; a planned
+              // operation can still be reached from Documents et réglages.
+              t.status !== "planned" &&
+                data?.transactions.some((i) => i.id === t.id) && (
+                  <label
                     className="icon-button"
-                    title="Corriger : remettre à prévu"
-                    aria-label={`${
-                      t.kind === "income"
-                        ? "Remettre à recevoir"
-                        : t.kind === "transfer"
-                          ? "Remettre à régler"
-                          : "Remettre à payer"
-                    } ${t.label}`}
-                    onClick={() => revertToPlanned(t)}
+                    aria-label={`Joindre un document à ${t.label}`}
                   >
-                    <Icon name="refresh" size={17} />
-                  </button>
-                )}
-                <button
-                  className="icon-button"
-                  aria-label={`Modifier ${t.label}`}
-                  onClick={() =>
-                    edit({ type: "transaction", id: t.id, kind: t.kind })
-                  }
-                >
-                  <Icon name="edit" size={17} />
-                </button>
-              </>
+                    <Icon name="document" size={17} />
+                    <input
+                      className="sr-only"
+                      type="file"
+                      accept="application/pdf,image/jpeg,image/png,image/webp"
+                      onChange={(e) => attach(e, t.id)}
+                    />
+                  </label>
+                )
+            }
+            {t.status === "planned" && data?.transactions.some((i) => i.id === t.id) && (
+              <button
+                className="icon-button"
+                aria-label={`Modifier ${t.label}`}
+                onClick={() =>
+                  edit({ type: "transaction", id: t.id, kind: t.kind })
+                }
+              >
+                <Icon name="edit" size={17} />
+              </button>
+            )}
+            {t.status === "settled" && t.recurrenceId && t.occurrenceDate && (
+              <button
+                className="icon-button"
+                title="Corriger : remettre à prévu"
+                aria-label={`${
+                  t.kind === "income"
+                    ? "Remettre à recevoir"
+                    : t.kind === "transfer"
+                      ? "Remettre à régler"
+                      : "Remettre à payer"
+                } ${t.label}`}
+                onClick={() => revertToPlanned(t)}
+              >
+                <Icon name="refresh" size={17} />
+              </button>
             )}
           </div>
         </div>

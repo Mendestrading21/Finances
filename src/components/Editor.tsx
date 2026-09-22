@@ -106,8 +106,22 @@ export default function Editor({
               : undefined;
   const initial = (item || {}) as unknown as Record<string, unknown>;
   useEffect(() => {
+    // Real defect, measured with a keyboard-only run (Tab/Enter/Escape, no mouse): closing
+    // the editor left document.activeElement on <body> instead of the button that opened it,
+    // forcing a keyboard user back to the top of the page. Root cause: the parent unmounts
+    // this whole subtree (editor set to null) in the same commit that removes the dialog from
+    // the document, and removing a focused element's ancestor drops focus to <body>
+    // immediately — before this cleanup's dialog.close() ever runs, so native <dialog>
+    // focus-restore has nothing live left to act on. Capturing and restoring the trigger
+    // ourselves (WAI-ARIA dialog pattern: focus returns to the invoking control) fixes it
+    // regardless of that native mechanism's fate.
+    const trigger =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
     dialog.current?.showModal();
-    return () => dialog.current?.close();
+    return () => {
+      dialog.current?.close();
+      if (trigger && document.body.contains(trigger)) trigger.focus();
+    };
   }, []);
   const val = (name: string, fallback = "") =>
     initial[name] === null || initial[name] === undefined
