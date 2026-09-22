@@ -1,5 +1,4 @@
 import {
-  Fragment,
   useCallback,
   useEffect,
   useRef,
@@ -136,13 +135,20 @@ function SourceLink({ source }: { source: Source }) {
     </span>
   );
 }
+// `icon` gives the card header a small semantic chip (identite-ui.md: "Ajouter une icône
+// dans l'en-tête des cartes principales") — optional and reused from the app's existing
+// icon set, never a new one invented per card. Kept off by default (undefined) rather than
+// defaulting every Card to an icon, matching the same reference's warning not to add an
+// icon "à chaque ligne décorative": only call sites that pass one get a chip.
 function Card({
   title,
+  icon,
   action,
   children,
   className = "",
 }: {
   title: string;
+  icon?: IconName;
   action?: ReactNode;
   children: ReactNode;
   className?: string;
@@ -150,7 +156,14 @@ function Card({
   return (
     <section className={`card ${className}`}>
       <div className="card-header">
-        <h2 className="card-title">{title}</h2>
+        <div className="card-heading">
+          {icon && (
+            <span className="card-icon">
+              <Icon name={icon} size={15} />
+            </span>
+          )}
+          <h2 className="card-title">{title}</h2>
+        </div>
         {action}
       </div>
       {children}
@@ -454,13 +467,7 @@ export default function App() {
     [more, setMore] = useState(false),
     [pendingImport, setPendingImport] = useState<FinanceData | null>(null),
     [busy, setBusy] = useState(false),
-    [receiptTxn, setReceiptTxn] = useState(""),
-    // Which accounts' history/valorisation panel is open in the "Mes comptes" table (see
-    // accountRow below). Table rows, unlike accountCard's <details>, cannot each keep their
-    // own native open state (a <details> element cannot itself be a <tr>), so this tracks it
-    // explicitly — a Set rather than one id because more than one row can be open at once,
-    // matching how several accountCard <details> can already be open together today.
-    [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(new Set());
+    [receiptTxn, setReceiptTxn] = useState("");
   const session = useRef(0);
   const fileInput = useRef<HTMLInputElement>(null);
   const mutating = useRef(false);
@@ -672,6 +679,9 @@ export default function App() {
       ...accountRanking.ranked.map((r) => r.item),
       ...accountRanking.toValue,
     ],
+    // Reused by both the section heading and the card grid on Investissements (see below) —
+    // one filter, not two, of the already-ranked list.
+    investmentAccounts = sortedAccounts.filter((a) => a.kind === "investment"),
     summary = monthSummary(data, month, currency),
     transactions = transactionsForMonth(data, month),
     currentPage = pages.find((p) => p.id === page)!;
@@ -707,6 +717,22 @@ export default function App() {
     income: "arrow-down",
     saving: "vault",
     other: "alert",
+  };
+  // Colors an account's kind-badge already commits to one nature, reused for a
+  // recurrence's own .row-icon instead of the single flat grey every row used before —
+  // in a real multi-row list (not the demo fixture's lone entry) that grey read as one
+  // undifferentiated column of near-identical squares, the icon glyph the only thing to
+  // scan. Not new colors: exactly kind-badge-investment/bank/savings' hues, plus the same
+  // "income" ⇒ .positive green a transaction row already uses — one meaning per color
+  // across the whole app, not a second palette invented for this list. "other" (à
+  // vérifier) is deliberately left uncolored: it is the one nature that is not really a
+  // settled category, and it already reads distinctly via its "alert" glyph.
+  const recurrenceTypeRowClass: Record<Recurrence["recurrenceType"], string> = {
+    subscription: "row-icon-subscription",
+    bill: "row-icon-bill",
+    income: "positive",
+    saving: "row-icon-saving",
+    other: "",
   };
   // The cohort is keyed by recurrenceId: `occurrenceCohort` only ever produces at most one
   // entry per active recurrence for a given month (see finance.ts), so this lookup is safe.
@@ -827,12 +853,29 @@ export default function App() {
     investment: "Investissement",
     debt: "Dette",
   };
-  // Notion-style colored badge next to the institution name (see accountCard below): each
-  // `Account.kind` gets a fixed, distinct color instead of monogramColors' per-name hash,
-  // so the same nature always reads the same color across accounts. The four hues are
-  // existing MONOGRAM_PALETTE swatches (kind-badge-* in index.css), not new colors — that
-  // palette was already corrected in V2.7 (c8a7174) to stay inside the app's blue-violet
-  // family, so reusing it exactly keeps this badge in that family by construction.
+  // The account's own icon (institution-icon slot) now shows what the account IS, not who
+  // holds it: real icons from the existing set, never an emoji or an institution-derived
+  // monogram. "bank"/"vault"/"chart" already carry these exact meanings elsewhere in the app
+  // (recurring charge/saving/wealth trend); "debt" is the one new glyph this lot adds.
+  const kindIcons: Record<Account["kind"], IconName> = {
+    bank: "bank",
+    savings: "vault",
+    investment: "chart",
+    debt: "debt",
+  };
+  // One card, reused everywhere an account appears (Accueil preview, full "Mes comptes"
+  // grid, Investissements) — "Mes comptes" briefly shipped as a real <table> (merged, then
+  // this session's own explicit user feedback called it too dense and asked for cards
+  // again instead); this is not that pre-table card restored unchanged either, see the
+  // redesign notes below.
+  //
+  // The account's own name (a.name, e.g. "Portefeuille long terme") is the card's primary
+  // identity per identite-ui.md ("Le nom du compte est primaire. L'établissement devient une
+  // information secondaire") — the previous version of this card had that inverted (the
+  // institution rendered larger, the account name demoted into a small muted line), a real
+  // hierarchy bug this redesign also fixes, not just a restyle. The institution keeps its
+  // monogram and now sits directly below the name with its kind-badge (identite-ui.md: "une
+  // identité locale"), unchanged pill colors/logic from the earlier badge lot.
   function accountCard(a: Account) {
     const b = latestBalance(a),
       unverified = a.balances.at(-1),
@@ -840,23 +883,17 @@ export default function App() {
     return (
       <article className="account-card" key={a.id}>
         <div className="account-head">
-          <span
-            className="institution-icon"
-            style={{
-              background: monogramColors(a.institution).bg,
-              color: monogramColors(a.institution).fg,
-            }}
-          >
-            {monogramInitials(a.institution)}
+          <span className={`institution-icon institution-icon-${a.kind}`}>
+            <Icon name={kindIcons[a.kind]} size={20} />
           </span>
-          <div>
-            <span className="institution">
-              {a.institution}{" "}
+          <div className="account-id">
+            <h3>{a.name}</h3>
+            <p className="account-sub">
+              <span className="institution">{a.institution}</span>
               <span className={`kind-badge kind-badge-${a.kind}`}>
                 {kinds[a.kind]}
               </span>
-            </span>
-            <h3>{a.name}</h3>
+            </p>
           </div>
           <button
             className="icon-button"
@@ -876,8 +913,15 @@ export default function App() {
               ? "Non daté · à vérifier"
               : "Solde à renseigner"}
         </p>
-        <div className="hero-foot">
-          <SourceLink source={show?.source || a.source} />
+        {/* Actualiser is the one action worth keeping always visible on this card
+            (identite-ui.md: "Ajouter un compte, actualiser un solde" is a priority action
+            for Mes comptes) — the account's provenance (SourceLink, below) is exactly the
+            kind of thing that reference asks to move into the details volet instead:
+            "Déplacer source, historique, méthode de valorisation et aide longue dans un
+            volet de détails." It used to sit here too, next to Actualiser, reading as an
+            orphaned line of text with nothing else around it (confirmed on a real
+            rendered card, not just in code). */}
+        <div className="hero-foot account-card-foot">
           <button
             className="button small secondary"
             onClick={() => edit({ type: "balance", id: a.id })}
@@ -898,157 +942,11 @@ export default function App() {
               {v.asOf || "Date inconnue"} · {display(v.amountMinor, a.currency)}
             </p>
           ))}
+          <p className="account-history-source">
+            <SourceLink source={show?.source || a.source} />
+          </p>
         </details>
       </article>
-    );
-  }
-  const toggleAccountHistory = (id: string) =>
-    setExpandedAccounts((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  // Real <table> row for "Mes comptes" (Notion-style table, chosen over the card grid per
-  // explicit decision — docs/STATUS.md). accountCard() above is left untouched and keeps being
-  // used for glance contexts (Accueil "Vos comptes" preview, Investissements): those are not the
-  // Notion-table equivalent, so there is no reason to also convert them.
-  //
-  // Columns: Compte / Type / Solde / Daté / Actions — the suggested five — reusing accountCard's
-  // own monogram, kind-badge and date-label logic verbatim rather than reinventing it. "Daté" is
-  // demoted below 700px (index.css): its text also renders as a second line inside the Compte
-  // cell, CSS-toggled the opposite way, so the information moves rather than disappears — the
-  // dedicated column stays for wider screens where there is comfortable room for it.
-  //
-  // accountCard's history is an always-independent <details>; a <details> cannot itself be a
-  // <tr>, so here it becomes a second, real <tr> under the row, toggled by a third icon-button
-  // in Actions (chevron, aria-expanded/aria-controls) next to Actualiser/Modifier — the same
-  // "up to three icon-buttons in one row-actions group" pattern transactionRow already uses,
-  // not a new one. Kept in the DOM with the `hidden` attribute rather than only-if-expanded so
-  // aria-controls always resolves to a real element.
-  function accountRow(a: Account) {
-    const b = latestBalance(a),
-      unverified = a.balances.at(-1),
-      show = b || unverified,
-      dateLabel = b?.asOf
-        ? `Solde au ${b.asOf}`
-        : show
-          ? "Non daté · à vérifier"
-          : "Solde à renseigner",
-      expanded = expandedAccounts.has(a.id),
-      historyId = `account-history-${a.id}`;
-    return (
-      <Fragment key={a.id}>
-        <tr className="account-row">
-          <td className="col-account">
-            <div className="account-cell">
-              <span
-                className="institution-icon"
-                style={{
-                  background: monogramColors(a.institution).bg,
-                  color: monogramColors(a.institution).fg,
-                }}
-              >
-                {monogramInitials(a.institution)}
-              </span>
-              <div className="account-cell-text">
-                <span className="account-cell-name">{a.name}</span>
-                <span className="meta account-cell-institution">
-                  {a.institution}
-                </span>
-                {/* Type and Daté both fold in here below 600px (index.css) — real
-                    measurement (not just estimate) showed the five-column layout crushing
-                    this name column to one character per line at phone width once both
-                    stayed as separate columns; folding keeps every field readable instead
-                    of technically present but unreadable. Same kind/dateLabel values as
-                    the dedicated columns, not a second lookup. */}
-                <span className="account-cell-badge-inline">
-                  <span className={`kind-badge kind-badge-${a.kind}`}>
-                    {kinds[a.kind]}
-                  </span>
-                </span>
-                <span className="meta account-cell-date-inline">
-                  {dateLabel}
-                </span>
-              </div>
-            </div>
-          </td>
-          <td className="col-type">
-            <span className={`kind-badge kind-badge-${a.kind}`}>
-              {kinds[a.kind]}
-            </span>
-          </td>
-          <td className="num col-balance">
-            {/* Keeps the same "balance" class accountCard's own amount used (index.css
-                restyles it compactly inside .accounts-table) — an existing e2e flow reads
-                the updated balance back through this exact class after "Actualiser". */}
-            <span className="balance">
-              {display(show?.amountMinor ?? null, a.currency)}
-            </span>
-          </td>
-          <td className="col-date meta">{dateLabel}</td>
-          <td className="col-actions">
-            <div className="row-actions">
-              {/* Icon-only at every width, like Modifier right below it — accountCard's own
-                  "Actualiser" is a visible icon+text button, but real measurement showed
-                  a table row (unlike a card) has no width to spare for it at ANY size:
-                  tablet width alone was measured crushing the Compte column to one
-                  character per line to make room for a full text button here (see the
-                  "why" comment on .accounts-table below). aria-label keeps the exact same
-                  accessible name ("Actualiser") an existing e2e flow already targets. */}
-              <button
-                className="icon-button"
-                onClick={() => edit({ type: "balance", id: a.id })}
-                aria-label="Actualiser"
-              >
-                <Icon name="refresh" size={17} />
-              </button>
-              <button
-                className="icon-button"
-                onClick={() => edit({ type: "account", id: a.id })}
-                aria-label={`Modifier ${a.name}`}
-              >
-                <Icon name="edit" size={17} />
-              </button>
-              <button
-                className="icon-button"
-                onClick={() => toggleAccountHistory(a.id)}
-                aria-expanded={expanded}
-                aria-controls={historyId}
-                aria-label={`${expanded ? "Masquer" : "Afficher"} l’historique de ${a.name}`}
-              >
-                <Icon
-                  name="chevron-down"
-                  size={17}
-                  className={expanded ? "chevron-open" : undefined}
-                />
-              </button>
-            </div>
-          </td>
-        </tr>
-        <tr className="account-history-row" hidden={!expanded}>
-          <td colSpan={5} id={historyId}>
-            <div className="account-history-panel">
-              <p className="footer-note">
-                {a.valuationMode === "total"
-                  ? "Solde total : les positions de ce compte ne sont pas ajoutées."
-                  : "Solde de liquidités : les positions datées sont ajoutées."}
-              </p>
-              {a.balances.length ? (
-                a.balances.map((v) => (
-                  <p className="meta" key={v.id}>
-                    {v.asOf || "Date inconnue"} ·{" "}
-                    {display(v.amountMinor, a.currency)}
-                  </p>
-                ))
-              ) : (
-                <p className="meta">Aucun solde daté enregistré.</p>
-              )}
-              <SourceLink source={show?.source || a.source} />
-            </div>
-          </td>
-        </tr>
-      </Fragment>
     );
   }
   /** "Prévu" never distinguished a due expense from a due income, and gave no explicit
@@ -1121,7 +1019,7 @@ export default function App() {
     return (
       <div className="row" key={t.id}>
         <span
-          className={`row-icon ${t.kind === "income" ? "positive" : t.kind === "transfer" ? "neutral" : ""}`}
+          className={`row-icon ${t.kind === "income" ? "positive" : t.kind === "transfer" ? "neutral" : "negative"}`}
         >
           <Icon
             name={
@@ -1232,7 +1130,9 @@ export default function App() {
     const monthlyEquiv = r.intervalMonths > 1 ? monthlyEquivalentMinor(r) : null;
     return (
       <div className="row" key={r.id}>
-        <span className="row-icon">
+        <span
+          className={`row-icon ${recurrenceTypeRowClass[r.recurrenceType]}`}
+        >
           <Icon name={recurrenceTypeIcons[r.recurrenceType]} />
         </span>
         <div className="row-main">
@@ -1242,7 +1142,12 @@ export default function App() {
             {r.intervalMonths === 1 ? "tous les mois" : `tous les ${r.intervalMonths} mois`}{" "}
             · {accountName(r.accountId)}
           </span>
-          <span className="row-detail">
+          {/* Same signal a transaction row already gives (green once settled) — the text
+              itself ("Payé"/"Pas encore payé") stays the actual source of truth, this only
+              reinforces it (design.md: "Ne pas utiliser la couleur seule"). */}
+          <span
+            className={`row-detail${cohortItem?.settled ? " positive" : ""}`}
+          >
             {!r.active
               ? r.endDate
                 ? `Terminé le ${r.endDate}`
@@ -1540,7 +1445,9 @@ export default function App() {
                     Patrimoine observé{" "}
                     {wealth.partial && <span className="tag">Partiel</span>}
                   </p>
-                  <Icon name="chart" />
+                  <span className="card-icon">
+                    <Icon name="chart" size={15} />
+                  </span>
                 </div>
                 <div className="hero-value">{display(wealth.totalMinor)}</div>
                 <p className="meta">
@@ -1556,6 +1463,7 @@ export default function App() {
               </section>
               <Card
                 title="Votre mois"
+                icon="calendar"
                 action={
                   <button
                     className="card-action"
@@ -1667,7 +1575,7 @@ export default function App() {
               )}
             </div>
             <div className="three-columns">
-              <Card title="Répartition du patrimoine">
+              <Card title="Répartition du patrimoine" icon="chart">
                 <Allocation
                   hidden={hidden}
                   currency={currency}
@@ -1688,7 +1596,7 @@ export default function App() {
                   total.
                 </p>
               </Card>
-              <Card title="Le mouvement du mois">
+              <Card title="Le mouvement du mois" icon="transfer">
                 <FlowChart
                   income={
                     summary.incomePlanned === null ||
@@ -1708,6 +1616,7 @@ export default function App() {
               </Card>
               <Card
                 title="Prochaines échéances"
+                icon="clock"
                 action={
                   <button
                     className="card-action"
@@ -1730,6 +1639,7 @@ export default function App() {
             </div>
             <Card
               title="À votre attention"
+              icon="alert"
               action={<span className="tag">{attention}</span>}
             >
               {unknownAccounts > 0 && (
@@ -1790,7 +1700,7 @@ export default function App() {
               ))}
             </div>
             <div className="two-columns">
-              <Card title="Le mouvement du mois">
+              <Card title="Le mouvement du mois" icon="transfer">
                 <FlowChart
                   income={
                     summary.incomePlanned === null ||
@@ -1808,7 +1718,7 @@ export default function App() {
                   hidden={hidden}
                 />
               </Card>
-              <Card title="Projection nette">
+              <Card title="Projection nette" icon="chart">
                 <div className="hero-value compact">
                   {display(summary.remaining)}
                 </div>
@@ -1826,6 +1736,7 @@ export default function App() {
             </div>
             <Card
               title="Les opérations"
+              icon="wallet"
               action={
                 <button
                   className="card-action"
@@ -1860,7 +1771,7 @@ export default function App() {
                 </div>
               )}
             </Card>
-            <Card title="Opérations à dater">
+            <Card title="Opérations à dater" icon="alert">
               {data.transactions
                 .filter((t) => !t.date && !t.budgetMonth)
                 .map(transactionRow)}
@@ -1872,6 +1783,7 @@ export default function App() {
             </Card>
             <Card
               title="Abonnements et charges récurrentes"
+              icon="refresh"
               action={
                 <button
                   className="card-action"
@@ -1886,7 +1798,9 @@ export default function App() {
                 .slice(0, 4)
                 .map((r) => (
                   <div className="row" key={r.id}>
-                    <span className="row-icon">
+                    <span
+                      className={`row-icon ${recurrenceTypeRowClass[r.recurrenceType]}`}
+                    >
                       <Icon name={recurrenceTypeIcons[r.recurrenceType]} />
                     </span>
                     <div className="row-main">
@@ -1915,70 +1829,34 @@ export default function App() {
               mois ne les modifient pas automatiquement.
             </div>
             {data.accounts.length ? (
-              <div className="accounts-table-wrap">
-                <table className="accounts-table">
-                  <caption className="sr-only">
-                    Vos comptes, du solde le plus élevé au plus faible en{" "}
-                    {currency}
-                  </caption>
-                  <thead>
-                    <tr>
-                      <th scope="col">Compte</th>
-                      <th scope="col" className="col-type">
-                        Type
-                      </th>
-                      <th scope="col" className="num">
-                        Solde
-                      </th>
-                      <th scope="col" className="col-date">
-                        Daté
-                      </th>
-                      <th scope="col" className="col-actions">
-                        <span className="sr-only">Actions</span>
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>{sortedAccounts.map(accountRow)}</tbody>
-                  <tfoot>
-                    {/* One cell per column, no colSpan: measured, a colSpan on this row's
-                        first cell combined with the two display:none columns (col-type/
-                        col-date, ≤600px) shifted this engine's fixed-layout column
-                        bookkeeping for the rest of the row — its "Solde" cell silently
-                        landed in the Actions column's narrower width instead of Solde's,
-                        and the total visibly overflowed it. An empty col-type cell keeps
-                        this row's shape identical to every accountRow's, which measured
-                        correctly. */}
-                    <tr className="accounts-total-row">
-                      <th scope="row">
-                        <span className="total-label">
-                          Total
-                          {wealth.partial && (
-                            <span className="tag">Partiel</span>
-                          )}
-                        </span>
-                      </th>
-                      <td className="col-type" aria-hidden="true"></td>
-                      <td className="num">
-                        {/* Not .balance: reusing it here (as tempting as it was, for the exact
-                            same compact styling) made an existing e2e flow's unscoped
-                            page.locator(".balance") ambiguous the moment a single-account
-                            vault's row and this total ever show the same figure — a real
-                            strict-mode failure, not a hypothetical one (confirmed by
-                            running it). total-balance below is styled identically. */}
-                        <span className="total-balance">
-                          {display(wealth.totalMinor)}
-                        </span>
-                      </td>
-                      <td className="col-date meta">
-                        {wealth.partial
-                          ? `${wealth.excluded} compte(s) exclu(s)`
-                          : ""}
-                      </td>
-                      <td className="col-actions"></td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
+              <>
+                {/* Kept from the briefly-shipped table (see accountCard's comment above) — the
+                    total itself was a genuinely useful at-a-glance figure, just not worth a
+                    whole dense table for. Same wealthSummary() total the hero card already
+                    shows on Accueil, not a second calculation; same "Partiel"/excluded wording
+                    too. */}
+                <div className="stat-card accounts-total-card">
+                  <span className="accounts-total-label">
+                    <span className="card-icon">
+                      <Icon name="wallet" size={15} />
+                    </span>
+                    Total
+                    {wealth.partial && <span className="tag">Partiel</span>}
+                  </span>
+                  <span className="accounts-total-value">
+                    {display(wealth.totalMinor)}
+                  </span>
+                  {wealth.partial && (
+                    <p className="footer-note accounts-total-note">
+                      {wealth.excluded} compte(s) exclu(s) : date, valeur ou
+                      taux manquant.
+                    </p>
+                  )}
+                </div>
+                <div className="account-grid">
+                  {sortedAccounts.map(accountCard)}
+                </div>
+              </>
             ) : (
               <div className="empty-state">
                 Ajoutez votre premier compte ou importez un fichier Finance.
@@ -2064,7 +1942,7 @@ export default function App() {
                 taux de change manquant.
               </p>
             )}
-            <Card title="Actifs">
+            <Card title="Actifs" icon="refresh">
               <div className="tab-bar">
                 {[
                   ["all", "Tous"],
@@ -2163,7 +2041,7 @@ export default function App() {
               utilise soit sa valeur totale, soit ses liquidités et ses
               positions.
             </div>
-            <Card title="Vos positions">
+            <Card title="Vos positions" icon="chart">
               <div className="tab-bar">
                 {[
                   ["all", "Tout"],
@@ -2224,17 +2102,22 @@ export default function App() {
                 </div>
               )}
             </Card>
-            <div className="account-grid">
-              {sortedAccounts
-                .filter((a) => a.kind === "investment")
-                .map(accountCard)}
-            </div>
+            {investmentAccounts.length > 0 && (
+              <>
+                <div className="section-heading">
+                  <h2>Comptes liés</h2>
+                </div>
+                <div className="account-grid">
+                  {investmentAccounts.map(accountCard)}
+                </div>
+              </>
+            )}
           </>
         )}
         {page === "documents" && (
           <>
             <div className="two-columns">
-              <Card title="Imports et sauvegardes">
+              <Card title="Imports et sauvegardes" icon="upload">
                 <p className="footer-note">
                   Import Finance JSON ou CSV avec rapprochement des doublons.
                   Une sauvegarde chiffrée transporte le coffre complet vers un
@@ -2303,7 +2186,7 @@ export default function App() {
                   un emplacement protégé.
                 </p>
               </Card>
-              <Card title="Préférences et synchronisation">
+              <Card title="Préférences et synchronisation" icon="settings">
                 <label className="field">
                   <span>Devise principale</span>
                   <select
@@ -2349,7 +2232,7 @@ export default function App() {
               </Card>
             </div>
             {pendingImport && (
-              <Card title="Vérifier cet import">
+              <Card title="Vérifier cet import" icon="check">
                 <p>
                   {pendingImport.accounts.length} comptes ·{" "}
                   {pendingImport.transactions.length} opérations ·{" "}
@@ -2375,7 +2258,7 @@ export default function App() {
                 </button>
               </Card>
             )}
-            <Card title="Reçus et documents">
+            <Card title="Reçus et documents" icon="document">
               <div className="form-grid">
                 <label className="field">
                   <span>Lier à une opération (facultatif)</span>
@@ -2448,7 +2331,7 @@ export default function App() {
                 </div>
               )}
             </Card>
-            <Card title="Informations à vérifier">
+            <Card title="Informations à vérifier" icon="alert">
               {hidden ? (
                 <p className="meta">Informations masquées.</p>
               ) : (
