@@ -29,7 +29,6 @@ import {
   occurrenceCohort,
   rankAccounts,
   rankByValue,
-  recurrenceAmountAt,
   recurringFlowSummary,
   today,
   transactionsForMonth,
@@ -463,6 +462,10 @@ export default function App() {
     [error, setError] = useState(""),
     [updateReady, setUpdateReady] = useState(false),
     [filter, setFilter] = useState("all"),
+    // Transient id of the transaction quickSettle just wrote (or null) — drives a brief
+    // green flash on that row as instant confirmation now that marking paid no longer opens
+    // a dialog to confirm through. Self-clears via the row's own onAnimationEnd.
+    [justSettledId, setJustSettledId] = useState<string | null>(null),
     // Off by default: rendering every other month's operations unconditionally would let a
     // recurring item's row match by text (".row" + hasText) in more than one month at once,
     // breaking the existing e2e assumption that a label like "Assurance test" resolves to a
@@ -726,13 +729,6 @@ export default function App() {
     setError("");
     setEditor(spec);
   };
-  const recurrenceTypeLabels: Record<Recurrence["recurrenceType"], string> = {
-    subscription: "Abonnement",
-    bill: "Charge",
-    income: "Revenu récurrent",
-    saving: "Épargne / mise de côté",
-    other: "À vérifier",
-  };
   // Distinct metaphor per nature (identite-ui.md), reusing existing icons where one already
   // fits rather than inventing a lookalike: "refresh" for the repeating abonnement itself,
   // "bank" for a fixed charge, "arrow-down" matching the same icon used for income elsewhere,
@@ -988,18 +984,41 @@ export default function App() {
         ? "Prévu"
         : "Pas encore payé";
   }
-  // Opens the editor pre-filled to settled/today rather than writing it on click: the
-  // settlement date must stay "visible et modifiable avant validation" (see
-  // .claude/skills/finance/references/abonnements.md), not silently forced to today.
-  // `transaction` prefills the form even for a not-yet-persisted virtual occurrence,
-  // which has no entry in data.transactions for the usual by-id lookup to find.
-  function markSettled(t: Transaction) {
-    edit({
-      type: "transaction",
-      id: t.id,
-      kind: t.kind,
-      transaction: { ...t, status: "settled", date: today() },
-    });
+  // Writes settled/today directly instead of opening the editor first — explicit user
+  // request to make "Marquer payé" a single instant action, Notion-style ("je mets payé,
+  // il est payé"), superseding the earlier design that opened the editor so the settlement
+  // date stayed visible/editable before saving. `t` may be a not-yet-persisted virtual
+  // occurrence (no entry in data.transactions yet, e.g. a due recurrence not yet marked) —
+  // handled the same way `submit()` in Editor.tsx already does: add if new, replace if not.
+  async function quickSettle(t: Transaction) {
+    if (!data) return;
+    try {
+      // Same "Modification manuelle" stamp Editor.tsx's submit() always applies — quickSettle
+      // bypasses that dialog, but marking paid is still a manual modification and must keep
+      // an imported record's trace (docs/STATUS.md: "Une information importée puis modifiée
+      // garde une indication de modification manuelle"), same as revertToPlanned already does.
+      const next: Transaction = {
+        ...t,
+        status: "settled",
+        date: today(),
+        source: {
+          ...t.source,
+          updatedAt: new Date().toISOString(),
+          note: [t.source.note, "Modification manuelle le " + new Date().toISOString()]
+            .filter(Boolean)
+            .join(" · "),
+        },
+      };
+      await persist({
+        ...data,
+        transactions: data.transactions.some((v) => v.id === t.id)
+          ? data.transactions.map((v) => (v.id === t.id ? next : v))
+          : [...data.transactions, next],
+      });
+      setJustSettledId(t.id);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Enregistrement impossible.");
+    }
   }
   // Limited to recurrence-linked occurrences: occurrenceDate is then a reliable due date
   // to fall back to (see field comment on EditorSpec.transaction). A plain one-off
@@ -1044,7 +1063,13 @@ export default function App() {
   }
   function transactionRow(t: Transaction) {
     return (
-      <div className="row" key={t.id}>
+      <div
+        className={`row${justSettledId === t.id ? " row-flash-positive" : ""}`}
+        key={t.id}
+        onAnimationEnd={() => {
+          if (justSettledId === t.id) setJustSettledId(null);
+        }}
+      >
         <span
           className={`row-icon ${t.kind === "income" ? "positive" : t.kind === "transfer" ? "neutral" : "negative"}`}
         >
@@ -1110,7 +1135,7 @@ export default function App() {
           </span>
           <div className="row-actions">
             {t.status === "planned" ? (
-              <button className="button small secondary" onClick={() => markSettled(t)}>
+              <button className="button small secondary" onClick={() => quickSettle(t)}>
                 <Icon name="check" size={16} />
                 {t.kind === "income"
                   ? "Marquer reçu"
@@ -1145,7 +1170,7 @@ export default function App() {
                 className="icon-button"
                 aria-label={`Modifier ${t.label}`}
                 onClick={() =>
-                  edit({ type: "transaction", id: t.id, kind: t.kind })
+                  edit({ type: "transaction", id: t.id, kind: t.kind, quick: true })
                 }
               >
                 <Icon name="edit" size={17} />
@@ -1181,11 +1206,25 @@ export default function App() {
       cohortItem && !cohortItem.settled
         ? subsVirtualTransaction(r, cohortItem.occurrenceDate, cohortItem.dueAmountMinor)
         : null;
-    const nextDate = r.active ? nextOccurrenceDate(r) : null;
-    const nextAmount = nextDate ? recurrenceAmountAt(r, nextDate) : null;
-    const monthlyEquiv = r.intervalMonths > 1 ? monthlyEquivalentMinor(r) : null;
+    // Long card — name, amount, month, "c'est tout" (explicit user request): cadence, day,
+    // account and the "≈/mois" equivalent used to crowd this row with detail the user found
+    // excessive once they'd seen it in daily use; dropped here, still available from the
+    // pencil's full recurrence editor for whoever needs them. The amount shown always matches
+    // the month named next to it: real defect found in review — this used to fall back to
+    // nextOccurrenceDate's amount (a *different*, later month's due amount) whenever the
+    // selected month had no cohort, right next to text reading "{mois} · Aucune échéance" —
+    // an unrelated number sitting beside a month it has nothing to do with. No amount at all
+    // is the honest state here, matching the "Aucune échéance" text next to it.
+    const amountMinor = cohortItem ? cohortItem.dueAmountMinor : null;
+    const amountCurrency = cohortItem ? cohortItem.currency : r.currency;
     return (
-      <div className="row" key={r.id}>
+      <div
+        className={`row${justSettledId === (dueTxn?.id ?? r.id) ? " row-flash-positive" : ""}`}
+        key={r.id}
+        onAnimationEnd={() => {
+          if (justSettledId === (dueTxn?.id ?? r.id)) setJustSettledId(null);
+        }}
+      >
         <span
           className={`row-icon ${recurrenceTypeRowClass[r.recurrenceType]}`}
         >
@@ -1193,11 +1232,6 @@ export default function App() {
         </span>
         <div className="row-main">
           <span className="row-title">{r.label}</span>
-          <span className="row-detail">
-            {recurrenceTypeLabels[r.recurrenceType]} · Le {r.day} ·{" "}
-            {r.intervalMonths === 1 ? "tous les mois" : `tous les ${r.intervalMonths} mois`}{" "}
-            · {accountName(r.accountId)}
-          </span>
           {/* Same signal a transaction row already gives (green once settled) — the text
               itself ("Payé"/"Pas encore payé") stays the actual source of truth, this only
               reinforces it (design.md: "Ne pas utiliser la couleur seule"). */}
@@ -1209,40 +1243,29 @@ export default function App() {
                 ? `Terminé le ${r.endDate}`
                 : "En pause"
               : cohortItem
-                ? cohortItem.settled
-                  ? `${r.kind === "income" ? "Reçu" : "Payé"} le ${
-                      cohortItem.settled.date ?? "date inconnue"
-                    }${
-                      cohortItem.settled.date &&
-                      cohortItem.settled.date.slice(0, 7) !== month
-                        ? " · hors du mois sélectionné"
-                        : ""
-                    }`
-                  : r.kind === "income"
-                    ? "Pas encore reçu"
-                    : "Pas encore payé"
-                : "Aucune échéance ce mois-ci"}
+                ? `${monthLabel(month)} · ${
+                    cohortItem.settled
+                      ? r.kind === "income"
+                        ? "Reçu"
+                        : "Payé"
+                      : r.kind === "income"
+                        ? "Pas encore reçu"
+                        : "Pas encore payé"
+                  }`
+                : `${monthLabel(month)} · Aucune échéance`}
           </span>
         </div>
         <div className="row-end">
           <div className="row-value">
-            {nextDate ? (
-              <>
-                {display(nextAmount, r.currency)}
-                <span className="row-detail">Prochaine échéance : {nextDate}</span>
-                {monthlyEquiv !== null && (
-                  <span className="row-detail">
-                    ≈ {display(monthlyEquiv, r.currency)}/mois
-                  </span>
-                )}
-              </>
+            {amountMinor !== null ? (
+              display(amountMinor, amountCurrency)
             ) : (
-              <span className="row-detail">Aucune échéance à venir</span>
+              <span className="row-detail">Aucune échéance</span>
             )}
           </div>
           <div className="row-actions">
             {dueTxn && (
-              <button className="button small secondary" onClick={() => markSettled(dueTxn)}>
+              <button className="button small secondary" onClick={() => quickSettle(dueTxn)}>
                 <Icon name="check" size={16} />
                 {r.kind === "income" ? "Marquer reçu" : "Marquer payé"}
               </button>
@@ -1682,8 +1705,15 @@ export default function App() {
                   </button>
                 }
               >
+                {/* Keeps a just-settled row through the flash even though quickSettle already
+                    moved it out of "planned" — otherwise it vanishes from this filtered list
+                    before row-flash-positive ever gets to render, the only place in the app
+                    where marking paid gave no visible confirmation at all (the generic
+                    "Enregistré" toast still fired, but the dedicated flash never did). Self-
+                    resolving: justSettledId clears itself once the flash's onAnimationEnd
+                    fires, so the row leaves this list right after, same as before. */}
                 {transactions
-                  .filter((t) => t.status === "planned")
+                  .filter((t) => t.status === "planned" || t.id === justSettledId)
                   .slice(0, 4)
                   .map(transactionRow)}
                 {!transactions.some((t) => t.status === "planned") && (
@@ -1754,41 +1784,6 @@ export default function App() {
                   <div className="metric-value">{display(s.v)}</div>
                 </div>
               ))}
-            </div>
-            <div className="two-columns">
-              <Card title="Le mouvement du mois" icon="transfer">
-                <FlowChart
-                  income={
-                    summary.incomePlanned === null ||
-                    summary.incomeSettled === null
-                      ? null
-                      : summary.incomePlanned + summary.incomeSettled
-                  }
-                  expense={
-                    summary.expensePlanned === null ||
-                    summary.expenseSettled === null
-                      ? null
-                      : summary.expensePlanned + summary.expenseSettled
-                  }
-                  currency={currency}
-                  hidden={hidden}
-                />
-              </Card>
-              <Card title="Projection nette" icon="chart">
-                <div className="hero-value compact">
-                  {display(summary.remaining)}
-                </div>
-                <p className="footer-note">
-                  Virements internes exclus. Cette projection utilise toutes les
-                  entrées et dépenses connues du mois ; elle ne remplace pas les
-                  soldes de vos comptes.
-                </p>
-                {summary.unknownCount > 0 && (
-                  <p className="warning">
-                    {summary.unknownCount} élément(s) à vérifier.
-                  </p>
-                )}
-              </Card>
             </div>
             <Card
               title="Les opérations"
@@ -1953,22 +1948,19 @@ export default function App() {
         {page === "subscriptions" && (
           <>
             <div className="notice">
-              Cohorte d’échéances : ce qui est dû en {monthLabel(month)}, quel
-              que soit le mois du règlement. Flux réalisé : ce qui a
-              réellement été réglé en {monthLabel(month)}, quelle que soit
-              l’échéance d’origine.
+              Vos abonnements et charges pour {monthLabel(month)}.
             </div>
             <div className="stat-grid">
               {[
                 {
-                  label: `Dû en ${monthLabel(month)}`,
+                  label: "Dû ce mois",
                   value:
                     subsCohort.dueMinor !== null
                       ? display(subsCohort.dueMinor)
                       : "—",
                 },
                 {
-                  label: `Réglé pour ${monthLabel(month)}`,
+                  label: "Réglé ce mois",
                   value:
                     subsCohort.settledMinor !== null
                       ? display(subsCohort.settledMinor)
@@ -1985,7 +1977,7 @@ export default function App() {
                   // Matches cohortSummary's activeCount exactly: every active recurrence,
                   // any kind or classification (revenus et mises de côté compris) — the label
                   // must not promise a narrower scope than what is actually counted.
-                  label: "Récurrences actives",
+                  label: "Abonnements actifs",
                   value: String(subsCohort.activeCount),
                 },
               ].map((s) => (
@@ -2004,12 +1996,12 @@ export default function App() {
             <div className="stat-grid">
               {[
                 {
-                  label: `Payé en ${monthLabel(month)}`,
+                  label: "Payé ce mois",
                   value:
                     subsFlow.paidMinor !== null ? display(subsFlow.paidMinor) : "—",
                 },
                 {
-                  label: `Reçu en ${monthLabel(month)}`,
+                  label: "Reçu ce mois",
                   value:
                     subsFlow.receivedMinor !== null
                       ? display(subsFlow.receivedMinor)

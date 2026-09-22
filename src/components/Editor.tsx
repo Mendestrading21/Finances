@@ -42,6 +42,10 @@ export type EditorSpec = {
    * usual lookup by `id`. Used to open "Marquer payé/reçu" with the settlement date visible
    * and editable before it is actually saved, rather than writing it silently on click. */
   transaction?: Transaction;
+  /** transaction only: render just Libellé/Montant/Mois (the pencil action on a not-yet-settled
+   * row) instead of the full field set. Every other field is preserved unchanged via hidden
+   * inputs — this narrows what is editable, not what is stored. */
+  quick?: boolean;
 };
 const titles = {
   transaction: "Une opération",
@@ -290,6 +294,17 @@ export default function Editor({
         });
       }
       if (spec.type === "transaction") {
+        // Quick editor only exposes Libellé/Montant/Mois; date and budgetMonth come from
+        // hidden inputs carrying the pre-edit value unless the user actually changed the
+        // month. When only the month changes, we don't have — and must not invent — a
+        // precise day, so we clear `date` and set `budgetMonth` instead: the same "month
+        // without a precise day" concept `transactionsForMonth` already resolves via
+        // `date?.slice(0,7) ?? budgetMonth` (src/domain/finance.ts). When the month is left
+        // untouched, date/budgetMonth must come out byte-for-byte identical to before.
+        const originalDate = get("date");
+        const originalBudgetMonth = get("budgetMonth");
+        const originalMonth = originalDate.slice(0, 7) || originalBudgetMonth;
+        const monthChanged = spec.quick === true && get("month") !== originalMonth;
         const t = {
           id,
           label: get("label"),
@@ -297,8 +312,8 @@ export default function Editor({
           amountMinor: num("amountMinor"),
           currency: get("currency"),
           status: get("status") as "planned" | "settled" | "unknown",
-          date: nullable(f.get("date")),
-          budgetMonth: get("budgetMonth") || undefined,
+          date: monthChanged ? null : nullable(f.get("date")),
+          budgetMonth: monthChanged ? get("month") : originalBudgetMonth || undefined,
           accountId: nullable(f.get("accountId")),
           destinationAccountId: nullable(f.get("destinationAccountId")),
           destinationAmountMinor: optional("destinationAmountMinor"),
@@ -472,81 +487,136 @@ export default function Editor({
           )}
           {spec.type === "transaction" && (
             <>
-              {field("Libellé", "label", { required: true })}
-              <label className="field">
-                <span>Type</span>
-                <select
-                  aria-label="Type"
-                  name="kind"
-                  value={kind}
-                  onChange={(e) => setKind(e.target.value as typeof kind)}
-                >
-                  <option value="expense">Dépense</option>
-                  <option value="income">Revenu</option>
-                  <option value="transfer">Virement entre mes comptes</option>
-                </select>
-              </label>
-              {field("Montant", "amountMinor", {
-                required: true,
-                defaultValue: amount("amountMinor"),
-              })}
-              {currency()}
-              {accounts("Compte", "accountId", kind === "transfer", true)}
-              {field("Date de l’opération ou échéance", "date", {
-                type: "date",
-                defaultValue: val("date", item ? "" : today()),
-              })}
-              {field("Mois de budget (facultatif)", "budgetMonth", {
-                type: "month",
-              })}
-              {field("État", "status", {
-                defaultValue: val("status", "planned"),
-                children: (
-                  <>
-                    <option value="planned">
-                      {kind === "income"
-                        ? "Pas encore reçu"
-                        : kind === "expense"
-                          ? "Pas encore payé"
-                          : "Prévu"}
-                    </option>
-                    <option value="settled">
-                      {kind === "income"
-                        ? "Reçu"
-                        : kind === "expense"
-                          ? "Payé"
-                          : "Réglé"}
-                    </option>
-                    <option value="unknown">À vérifier</option>
-                  </>
-                ),
-              })}
-              {field("Catégorie", "category", {
-                defaultValue: val("category", "Divers"),
-                required: true,
-              })}
-              {kind === "transfer" && (
+              {spec.quick ? (
                 <>
-                  {accounts(
-                    "Compte destinataire",
-                    "destinationAccountId",
-                    true,
+                  {field("Libellé", "label", { required: true })}
+                  {field("Montant", "amountMinor", {
+                    required: true,
+                    defaultValue: amount("amountMinor"),
+                  })}
+                  {field("Mois", "month", {
+                    type: "month",
+                    required: true,
+                    defaultValue:
+                      val("date").slice(0, 7) ||
+                      val("budgetMonth") ||
+                      today().slice(0, 7),
+                  })}
+                  {/* Everything below preserves a field the full editor exposes but the
+                      quick editor does not — narrows what is editable, not what is stored. */}
+                  <input type="hidden" name="kind" value={val("kind", "expense")} />
+                  <input
+                    type="hidden"
+                    name="currency"
+                    value={val("currency", "CHF")}
+                  />
+                  <input type="hidden" name="accountId" value={val("accountId")} />
+                  <input
+                    type="hidden"
+                    name="destinationAccountId"
+                    value={val("destinationAccountId")}
+                  />
+                  <input
+                    type="hidden"
+                    name="destinationAmountMinor"
+                    value={amount("destinationAmountMinor")}
+                  />
+                  <input
+                    type="hidden"
+                    name="status"
+                    value={val("status", "planned")}
+                  />
+                  <input
+                    type="hidden"
+                    name="category"
+                    value={val("category", "Divers")}
+                  />
+                  <input type="hidden" name="date" value={val("date")} />
+                  <input
+                    type="hidden"
+                    name="budgetMonth"
+                    value={val("budgetMonth")}
+                  />
+                </>
+              ) : (
+                <>
+                  {field("Libellé", "label", { required: true })}
+                  <label className="field">
+                    <span>Type</span>
+                    <select
+                      aria-label="Type"
+                      name="kind"
+                      value={kind}
+                      onChange={(e) => setKind(e.target.value as typeof kind)}
+                    >
+                      <option value="expense">Dépense</option>
+                      <option value="income">Revenu</option>
+                      <option value="transfer">Virement entre mes comptes</option>
+                    </select>
+                  </label>
+                  {field("Montant", "amountMinor", {
+                    required: true,
+                    defaultValue: amount("amountMinor"),
+                  })}
+                  {currency()}
+                  {accounts("Compte", "accountId", kind === "transfer", true)}
+                  {field("Date de l’opération ou échéance", "date", {
+                    type: "date",
+                    defaultValue: val("date", item ? "" : today()),
+                  })}
+                  {field("Mois de budget (facultatif)", "budgetMonth", {
+                    type: "month",
+                  })}
+                  {field("État", "status", {
+                    defaultValue: val("status", "planned"),
+                    children: (
+                      <>
+                        <option value="planned">
+                          {kind === "income"
+                            ? "Pas encore reçu"
+                            : kind === "expense"
+                              ? "Pas encore payé"
+                              : "Prévu"}
+                        </option>
+                        <option value="settled">
+                          {kind === "income"
+                            ? "Reçu"
+                            : kind === "expense"
+                              ? "Payé"
+                              : "Réglé"}
+                        </option>
+                        <option value="unknown">À vérifier</option>
+                      </>
+                    ),
+                  })}
+                  {field("Catégorie", "category", {
+                    defaultValue: val("category", "Divers"),
+                    required: true,
+                  })}
+                  {kind === "transfer" && (
+                    <>
+                      {accounts(
+                        "Compte destinataire",
+                        "destinationAccountId",
+                        true,
+                      )}
+                      {field(
+                        "Montant reçu (devise du destinataire)",
+                        "destinationAmountMinor",
+                        {
+                          defaultValue: amount("destinationAmountMinor"),
+                          hint: "À renseigner pour un virement entre devises différentes.",
+                        },
+                      )}
+                    </>
                   )}
-                  {field(
-                    "Montant reçu (devise du destinataire)",
-                    "destinationAmountMinor",
-                    {
-                      defaultValue: amount("destinationAmountMinor"),
-                      hint: "À renseigner pour un virement entre devises différentes.",
-                    },
-                  )}
+                  <p className="footer-note field-full">
+                    L’opération alimente votre mois. Les soldes restent des
+                    observations : actualisez-les depuis Mes comptes après
+                    rapprochement.
+                  </p>
                 </>
               )}
-              <p className="footer-note field-full">
-                L’opération alimente votre mois. Les soldes restent des
-                observations : actualisez-les depuis Mes comptes après
-                rapprochement.
-              </p>
             </>
           )}
           {spec.type === "goal" && (
