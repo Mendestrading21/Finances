@@ -483,7 +483,9 @@ img.brand-mark {
   border: 1px solid #2b3247;
   border-radius: var(--radius);
   padding: 29px 30px 24px;
-  box-shadow: var(--shadow);
+  box-shadow:
+    var(--shadow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
   min-width: 0;
 }
 .hero-label {
@@ -670,7 +672,14 @@ img.brand-mark {
     rgba(26, 29, 41, 0.65),
     rgba(18, 20, 29, 0.9)
   );
-  box-shadow: var(--shadow);
+  /* The drop shadow alone read flat against a near-black page background (barely visible
+     at 12% opacity) — the thin inset top highlight is what actually reads as a glass edge
+     catching light, the identity this app already commits to ("verre" in identite-ui.md).
+     Same two-part treatment on .hero-card/.account-card/.stat-card below, one shared
+     language instead of each card inventing its own depth. */
+  box-shadow:
+    var(--shadow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 .card.highlighted {
   border-color: #3e4462;
@@ -686,6 +695,27 @@ img.brand-mark {
   justify-content: space-between;
   gap: 14px;
   margin-bottom: 21px;
+}
+.card-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+/* Small semantic chip in a card's header (Card's optional `icon` prop) — same visual
+   language as .row-icon (same colors/border), just sized for a header instead of a list
+   row, so a card's icon and its rows' icons read as one family, not two. */
+.card-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: #212638;
+  color: #a4b5e5;
+  border: 1px solid rgba(171, 192, 255, 0.07);
 }
 .card-title {
   margin: 0;
@@ -736,25 +766,32 @@ img.brand-mark {
   background:
     radial-gradient(
       ellipse at 90% 0%,
-      rgba(99, 119, 171, 0.08),
-      transparent 65%
+      rgba(99, 119, 171, 0.11),
+      transparent 60%
+    ),
+    radial-gradient(
+      ellipse at 0% 100%,
+      rgba(150, 120, 220, 0.06),
+      transparent 55%
     ),
     #141722;
+  /* This card had no shadow at all before, unlike .card/.hero-card right next to it on
+     Accueil — visibly flatter than its siblings. Same two-part language as those (drop
+     shadow + inset top highlight), just tighter/closer to suit a smaller, denser card. */
+  box-shadow:
+    0 10px 26px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.045);
+  transition:
+    border-color 0.15s ease,
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
 }
 .account-card:hover {
   border-color: #3f4660;
-}
-.account-head > div {
-  flex: 1;
-  min-width: 0;
-}
-.account-head h3 {
-  margin: 4px 0 0;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.5;
-  letter-spacing: 0;
-  font-weight: 400;
+  transform: translateY(-2px);
+  box-shadow:
+    0 16px 34px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 .account-head {
   display: flex;
@@ -763,15 +800,41 @@ img.brand-mark {
   gap: 10px;
   margin-bottom: 14px;
 }
-.institution {
-  /* Block, not flex: this now wraps a trailing .kind-badge (see accountCard in App.tsx) as
-     ordinary inline content, so a long institution name pushes the badge onto its own line
-     instead of the row overflowing — the same safe pattern .row-title already uses for its
-     .tag (index.css above/below). */
-  display: block;
+.account-head > .account-id {
+  flex: 1;
   min-width: 0;
-  font-size: 14px;
-  font-weight: 550;
+}
+/* The account's OWN name (a.name) is the card's primary identity — identite-ui.md: "Le nom
+   du compte est primaire. L'établissement devient une information secondaire." A previous
+   version of this card had that inverted (institution rendered larger/brighter, the
+   account name demoted into a small muted line): a real hierarchy bug, fixed here rather
+   than carried over into the redesign. */
+.account-head h3 {
+  margin: 0 0 5px;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.015em;
+  overflow-wrap: anywhere;
+}
+/* Institution + kind-badge, now the secondary line under the account name (see .account-head
+   h3 above) instead of the other way around. Flex, not the old block-with-inline-badge: a
+   <p> wrapping two independent inline-flex children (name text, badge) wraps more predictably
+   than relying on ordinary inline flow + a trailing nowrap badge. */
+.account-sub {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: 0;
+  min-width: 0;
+}
+.institution {
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
   overflow-wrap: anywhere;
 }
 /* Colored account-nature badge, next to the institution name in accountCard — a compact
@@ -827,6 +890,25 @@ img.brand-mark {
   font-weight: 600;
   flex-shrink: 0;
 }
+/* Same four hues as .kind-badge-* right above, applied to the account's own icon instead of
+   an institution-derived monogram: the icon now says what the account IS (bank/savings/
+   investment/debt), and its color matches the badge carrying that same word next to it. */
+.institution-icon-bank {
+  color: #8aa9ff;
+  background: rgba(138, 169, 255, 0.16);
+}
+.institution-icon-investment {
+  color: #aa96ff;
+  background: rgba(170, 150, 255, 0.16);
+}
+.institution-icon-debt {
+  color: #c0ceef;
+  background: rgba(160, 180, 200, 0.16);
+}
+.institution-icon-savings {
+  color: #c896e6;
+  background: rgba(200, 150, 230, 0.16);
+}
 .balance {
   font-variant-numeric: tabular-nums;
   font-size: 30px;
@@ -851,7 +933,25 @@ img.brand-mark {
   margin-bottom: 6px;
 }
 .account-card .hero-foot {
-  margin-top: 8px;
+  /* A thin top divider instead of margin-only spacing — same pattern .card > .metric
+     already uses to separate stacked sections within one card, reused here instead of a
+     third spacing convention. */
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line-soft);
+}
+/* Now holds only "Actualiser" (SourceLink moved into the details panel below, see App.tsx)
+   — .hero-foot's base justify-content:space-between would otherwise leave a single child
+   pinned to the left with empty space on its right. */
+.account-card-foot {
+  justify-content: flex-end;
+}
+/* Same rhythm as the plain .meta <p> balances just above it inside the same <details> —
+   those get the browser's default block margin (~1em, from their own 12px font-size);
+   SourceLink's own markup (App.tsx) is inline (a plain <span> or <a>) and would otherwise
+   sit flush against the last one instead of matching that spacing. */
+.account-history-source {
+  margin: 12px 0 0;
 }
 .tag {
   display: inline-flex;
@@ -879,223 +979,42 @@ img.brand-mark {
   color: var(--muted);
   font-size: 12px;
 }
-/* "Mes comptes" real table (App.tsx accountRow) — real Notion-style table (user decision, see
-   docs/STATUS.md), kept in the app's existing blue-violet/glass system rather than a separate
-   visual language. .account-grid/.account-card above stay untouched for the Accueil/
-   Investissements glance previews; everything below is scoped to .accounts-table so it cannot
-   leak into those. */
-.accounts-table-wrap {
-  /* Horizontal scroll belongs only here, in the table's own container — never on the page — so
-     an extreme edge case (see the long-institution-name test) can legitimately scroll sideways
-     without document.documentElement.scrollWidth ever exceeding the viewport. */
-  overflow-x: auto;
-  border: 1px solid #2a2e40;
-  border-radius: 20px;
-  background: #141722;
-}
-.accounts-table {
-  width: 100%;
-  min-width: 0;
-  border-collapse: collapse;
-  font-variant-numeric: tabular-nums;
-  /* Fixed, not auto, layout — auto measured giving the non-wrapping columns (Daté, Solde,
-     a 3-icon-button Actions) their full natural width first and only then letting Compte
-     have whatever was left, which at tablet width crushed account names to one character
-     per line (see review screenshot at 834px: "P/o/r/t/ef/e/ui/ll/e…"). Fixed layout with
-     explicit widths below is what actually held up under measurement, on phone and here. */
-  table-layout: fixed;
-}
-.accounts-table th.col-type {
-  /* "Compte bancaire", the longest kind label, measured needing ~103px unwrapped
-     (kind-badge is white-space:nowrap) plus this cell's own padding. */
-  width: 136px;
-}
-.accounts-table th.num {
-  /* "97 495.00 CHF" (the total, the longest realistic amount here) measured needing
-     ~103px unwrapped (.balance is white-space:nowrap — an amount never wraps) plus
-     padding. */
-  width: 116px;
-}
-.accounts-table th.col-date {
-  width: 100px;
-}
-.accounts-table th.col-actions {
-  /* One 44px button (row-actions is column-stacked, see below) plus padding. */
-  width: 80px;
-}
-.accounts-table th:first-child {
-  /* Compte: the one column meant to absorb whatever the other four don't need. Sized to
-     the narrowest width this base (>600px) rule actually has to cover — iPad portrait,
-     834px (~590px of table-wrap budget, measured: 590 − 136 − 116 − 100 − 80 = 158,
-     rounded down for a small margin) — rather than left "auto" (see the table-level
-     comment on why "auto" measured badly here). Wider screens (1440px+) just get
-     unclaimed slack past this, which is harmless. */
-  width: 150px;
-}
-.accounts-table th,
-.accounts-table td {
-  padding: 14px 16px;
-  text-align: left;
-  vertical-align: middle;
-}
-.accounts-table thead th {
-  padding-top: 15px;
-  padding-bottom: 13px;
-  border-bottom: 1px solid var(--line);
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 550;
-  letter-spacing: 0.01em;
-  white-space: nowrap;
-}
-.accounts-table tbody td {
-  border-bottom: 1px solid var(--line-soft);
-}
-.accounts-table tbody tr.account-row:hover td {
-  background: rgba(148, 163, 219, 0.045);
-}
-.accounts-table th.num,
-.accounts-table td.num {
-  text-align: right;
-}
-/* Compact restyle of the shared .balance (index.css above) for a table cell instead of a
-   hero/card amount — same class as accountCard's own so the two stay in one visual system
-   and an existing e2e flow can keep reading an account's updated balance through it.
-   overflow-wrap:anywhere is intentionally undone here: that base rule exists for the wide
-   hero card where wrapping is a rare last resort, but in this narrow column it wrapped
-   real amounts into meaningless fragments ("48 1" / "50.0" / "0 CH" / "F" — see review
-   screenshot at 360px). An amount must stay intact (identite-ui.md, "lisibilité stable des
-   chiffres"): it never wraps here, so the Compte column is what yields width instead. */
-.accounts-table .balance {
-  display: inline-block;
-  font-size: 15px;
-  font-weight: 550;
-  letter-spacing: -0.02em;
-  margin: 0;
-  white-space: nowrap;
-  overflow-wrap: normal;
-}
-.col-account {
-  min-width: 0;
-}
-.account-cell {
+/* Compact "Mes comptes" total bar (see App.tsx accounts-total-card): reuses .stat-card's
+   border/shadow/radius with a bespoke flex layout instead of the default label-over-value
+   stack — a single summary row rather than a fourth stat tile. Not .stat-card's radial
+   highlight, though: measured on real rendered pixels (not just computed at flat opacity),
+   that gradient's radius is sized to the box's own farthest corner — fine in a small square
+   stat tile where it fades out quickly, but this bar spans nearly the full page width, so
+   the same rule barely faded at all and pulled both the label and value text under 4.5:1 in
+   real spots. A flat fill avoids that failure mode instead of tuning the gradient's numbers
+   for one wide exception. */
+.accounts-total-card {
   display: flex;
   align-items: center;
-  gap: 12px;
-  min-width: 0;
+  flex-wrap: wrap;
+  column-gap: 18px;
+  row-gap: 6px;
+  justify-content: space-between;
+  background: #151823;
 }
-.account-cell-text {
-  /* Plain block stacking, not display:grid: a grid (or flex) ITEM's default min-width:auto
-     is its own min-content size, not 0 — with the badge/date lines as grid items that
-     floor bypassed this container's own min-width:0 and forced it wider than its table
-     cell at phone width (measured: a fixed-width column's content visibly overflowing its
-     cell). Plain blocks have no such content-based floor, so overflow-wrap can actually
-     shrink each line down to the column's real available width. */
-  min-width: 0;
-}
-.account-cell-name {
-  display: block;
-  font-size: 14px;
-  font-weight: 550;
-  color: var(--text);
-  overflow-wrap: anywhere;
-}
-.account-cell-institution {
-  display: block;
-  margin-top: 2px;
-  overflow-wrap: anywhere;
-}
-/* Both shown only below 600px (see media query) — the same kind-badge/dateLabel already
-   rendered in .col-type/.col-date, moved here instead of duplicated logic. */
-.account-cell-badge-inline {
-  display: none;
-}
-.account-cell-badge-inline .kind-badge {
-  margin-top: 1px;
-  /* The base .kind-badge is white-space:nowrap (right for a short property-style tag next
-     to institution text at desktop) — but as a min-content floor inside this narrow phone
-     column it forced "Investissement"/"Compte bancaire" to stay one unbroken run, which
-     alone kept the whole table wider than the viewport (measured). white-space:normal alone
-     is not enough since "Investissement" is one single word with no space to break at —
-     overflow-wrap:anywhere is what actually lets it break (confirmed: without it the badge
-     alone measured 93px wide and visibly overflowed the 35px it had to fit in). */
-  display: block;
-  width: 100%;
-  white-space: normal;
-  overflow-wrap: anywhere;
-  text-align: center;
-}
-.account-cell-date-inline {
-  display: none;
-}
-.col-date {
-  color: var(--muted);
-  font-size: 12px;
-  /* Wraps ("Solde au " / "2026-09-21") rather than forcing the column wide enough to hold
-     it on one line — secondary info, unlike Compte or Solde, can afford to give up the
-     width that bought back (see .accounts-table's own comment on why Compte needed it). */
-  overflow-wrap: anywhere;
-}
-.col-actions {
-  text-align: right;
-}
-.accounts-table .row-actions {
-  /* Stacked at every width the table itself uses (not just phone): three icon buttons
-     side by side measured needing ~124px, versus ~44px stacked — the single largest
-     reducible share of the row at any width, and a table row can be taller without harm
-     (Compte already wraps to several lines). */
-  flex-direction: column;
-  align-items: flex-end;
-  justify-content: flex-end;
-  gap: 4px;
-}
-.chevron-open {
-  transform: rotate(180deg);
-}
-.accounts-table .col-actions svg {
-  transition: transform 0.15s ease;
-}
-.total-label {
-  display: inline-flex;
+.accounts-total-label {
+  display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 550;
 }
-.accounts-total-row th,
-.accounts-total-row td {
-  border-bottom: 0;
-  border-top: 1px solid var(--line);
-  padding-top: 16px;
-  padding-bottom: 16px;
-  font-size: 15px;
+.accounts-total-value {
+  font-size: 22px;
   font-weight: 600;
-  color: var(--text);
-}
-/* Same compact treatment as .accounts-table .balance above (nowrap, an amount never
-   wraps), under its own class — not .balance itself, see App.tsx's comment on why. */
-.total-balance {
-  display: inline-block;
-  font-size: 16px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
   white-space: nowrap;
 }
-.account-history-row td {
-  border-bottom: 1px solid var(--line-soft);
-  background: rgba(148, 163, 219, 0.03);
-  padding: 4px 16px 16px;
-}
-.account-history-panel {
-  padding-top: 10px;
-  border-top: 1px solid var(--line-soft);
-  display: grid;
-  gap: 4px;
-}
-.account-history-panel .footer-note {
-  margin: 0 0 4px;
-}
-.account-history-panel .source-link,
-.account-history-panel .meta {
-  font-size: 12px;
+.accounts-total-note {
+  flex-basis: 100%;
+  margin: 0;
 }
 .rows {
   display: grid;
@@ -1107,13 +1026,25 @@ img.brand-mark {
   gap: 12px;
   padding: 15px 0;
   border-bottom: 1px solid var(--line-soft);
+  border-radius: 12px;
   min-width: 0;
+  transition: background-color 0.15s ease;
 }
 .row:last-child {
   border-bottom: 0;
 }
 .row:first-child {
   padding-top: 0;
+}
+/* Rows (Abonnements, Mon mois, comptes liés, documents…) read as one flat list with no
+   feedback on their own — a hover/hold highlight, the same rounded language as everything
+   else already has, makes each row feel like a real interactive row instead of static text.
+   Horizontal padding is unchanged (0), so the row's own box is already inset from the
+   card's edges by the card's own padding — the radius rounds cleanly against that, no
+   layout shift relative to the card's heading. */
+.row:hover,
+.row:focus-within {
+  background: rgba(255, 255, 255, 0.028);
 }
 .row-icon {
   display: flex;
@@ -1134,6 +1065,23 @@ img.brand-mark {
 .row-icon.negative {
   background: #2b232c;
   color: #d0aec3;
+}
+/* Recurrence-nature colors for a subscription/bill/saving row-icon (App.tsx
+   recurrenceTypeRowClass) — the exact same hues as kind-badge-investment/bank/savings
+   (index.css above), just as an icon-chip background/foreground pair instead of a text
+   pill, so an account's nature and a recurrence's nature read as the same color language
+   everywhere. Income reuses .row-icon.positive above rather than a fifth color. */
+.row-icon-subscription {
+  background: rgba(170, 150, 255, 0.16);
+  color: #aa96ff;
+}
+.row-icon-bill {
+  background: rgba(138, 169, 255, 0.16);
+  color: #8aa9ff;
+}
+.row-icon-saving {
+  background: rgba(200, 150, 230, 0.16);
+  color: #c896e6;
 }
 .row-main {
   /* A firm floor, not 0: without it, flex-wrap never has a reason to trigger, and an
@@ -1747,9 +1695,18 @@ input::file-selector-button {
 .stat-card {
   min-width: 0;
   border: 1px solid var(--line-soft);
-  padding: 21px;
+  padding: 18px;
   border-radius: 18px;
-  background: #151823;
+  /* Was a flat solid fill, unlike every other card family on the page (.card/.hero-card/
+     .account-card all carry a subtle top-right glow) — these four tiles read noticeably
+     flatter next to "Votre mois"/the hero card right above them. Same radial-highlight
+     language as .account-card, just fainter to suit a smaller tile. */
+  background:
+    radial-gradient(ellipse at 100% 0%, rgba(120, 140, 205, 0.08), transparent 60%),
+    #151823;
+  box-shadow:
+    0 8px 22px rgba(0, 0, 0, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 .stat-card .metric-value {
   font-size: 26px;
@@ -1898,10 +1855,6 @@ input::file-selector-button {
   .donut-layout {
     gap: 15px;
   }
-  .accounts-table th,
-  .accounts-table td {
-    padding: 13px;
-  }
 }
 @media (max-width: 900px) {
   .auth-screen {
@@ -1980,15 +1933,6 @@ input::file-selector-button {
   }
   .toast {
     left: calc(50% + 98px);
-  }
-  .accounts-table th,
-  .accounts-table td {
-    padding: 12px;
-  }
-  .accounts-table .institution-icon {
-    width: 38px;
-    height: 38px;
-    font-size: 13px;
   }
 }
 @media (max-width: 600px) {
@@ -2132,67 +2076,6 @@ input::file-selector-button {
   }
   .balance {
     font-size: 30px;
-  }
-  /* Below 600px the five columns no longer fit at a comfortable, readable width (see
-     App.tsx accountRow comment): "Type" and "Daté" are dropped as their own columns —
-     their text still shows, moved into extra lines of the Compte cell
-     (.account-cell-badge-inline/-date-inline, same values, not a separate lookup) —
-     rather than shrinking Compte, Solde or the ≥44px action buttons. Every column still
-     gets an explicit pixel width, including Compte — leaving it "auto" measured as only
-     half of the truly remaining space (a display:none th for col-type/col-date was still
-     occupying a share of fixed layout's auto-column distribution despite generating no
-     box), and calc(100% - Npx) measured no better (100% did not resolve to the table's
-     actual rendered width for a fixed-layout column in this engine — confirmed by
-     measuring the header cell itself, not just the body). Plain pixel widths, sized to
-     the narrowest supported width (320px → 292px of table-wrap budget, measured), are
-     what actually held up under measurement; at the wider phone widths this breakpoint
-     also covers (360–600px) they leave unclaimed slack rather than any risk of overflow. */
-  .accounts-table th.col-type,
-  .accounts-table th.col-date {
-    width: 0;
-  }
-  .accounts-table th:first-child {
-    width: 152px;
-  }
-  .accounts-table th.num {
-    /* Measured unconstrained (not guessed): "97 495.00 CHF" needs ~103px at this
-       compact 15/16px table font — this column must never wrap a digit run (see the
-       .balance rule above), so it gets that content need plus its own padding, not a
-       tighter guess. */
-    width: 120px;
-  }
-  .accounts-table th.col-actions {
-    /* One 44px button (row-actions is column-stacked below 600px) plus this cell's own
-       padding — 58px measured too tight against the ≥44px tap-target floor. */
-    width: 60px;
-  }
-  .accounts-table th,
-  .accounts-table td {
-    padding: 10px 8px;
-  }
-  .accounts-table .institution-icon {
-    width: 34px;
-    height: 34px;
-    font-size: 11px;
-    border-radius: 10px;
-  }
-  .accounts-table .account-cell {
-    gap: 8px;
-  }
-  /* Real measurement (screenshot at 360px, not just an estimate) showed keeping "Type" as
-     its own column too still crushed the Compte column to one character per line — folding
-     it in alongside "Daté" is what actually keeps every field readable at phone width. */
-  .accounts-table .col-type,
-  .accounts-table .col-date {
-    display: none;
-  }
-  .account-cell-badge-inline {
-    display: block;
-    margin-top: 2px;
-  }
-  .account-cell-date-inline {
-    display: block;
-    font-size: 11px;
   }
   .row {
     gap: 10px;
@@ -2475,6 +2358,7 @@ input::file-selector-button {
   .card,
   .hero-card,
   .account-card,
+  .stat-card,
   .nav-item.active,
   .mobile-nav,
   .dialog,
