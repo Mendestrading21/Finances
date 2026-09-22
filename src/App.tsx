@@ -462,6 +462,11 @@ export default function App() {
     [error, setError] = useState(""),
     [updateReady, setUpdateReady] = useState(false),
     [filter, setFilter] = useState("all"),
+    // Off by default: rendering every other month's operations unconditionally would let a
+    // recurring item's row match by text (".row" + hasText) in more than one month at once,
+    // breaking the existing e2e assumption that a label like "Assurance test" resolves to a
+    // single row in "Les opérations" — only mounted once the user actually asks to see it.
+    [showAllMonths, setShowAllMonths] = useState(false),
     [subsStatus, setSubsStatus] = useState<"all" | "due" | "settled">("all"),
     [subsSort, setSubsSort] = useState<"amount" | "next">("amount"),
     [more, setMore] = useState(false),
@@ -685,6 +690,27 @@ export default function App() {
     summary = monthSummary(data, month, currency),
     transactions = transactionsForMonth(data, month),
     currentPage = pages.find((p) => p.id === page)!;
+  // Unpaid/unknown first, settled last — what still needs action reads before what's already
+  // handled. Stable sort: transactionsForMonth already returns date order, so relative order
+  // within each status group is untouched, only the two groups are reordered.
+  const sortOperations = (list: Transaction[]) =>
+    [...list].sort(
+      (a, b) => Number(a.status === "settled") - Number(b.status === "settled"),
+    );
+  // "Voir les autres mois" (Mon mois, opt-in) — every other month with a real recorded
+  // transaction, most recent first. Bounded by data.transactions that already exist, never
+  // guessed from a recurrence's own indefinite start/end span (which could stretch years in
+  // either direction) — a genuine history, not an invented range.
+  const otherMonthsWithData = [
+    ...new Set(
+      data.transactions.flatMap((t) => {
+        const m = t.date?.slice(0, 7) ?? t.budgetMonth;
+        return m && m !== month ? [m] : [];
+      }),
+    ),
+  ]
+    .sort()
+    .reverse();
   const display = (value: number | null, unit = currency) =>
     hidden ? "••••••" : money(value, unit);
   const unknownAccounts = data.accounts.filter((a) => !latestBalance(a)).length;
@@ -1762,13 +1788,43 @@ export default function App() {
                   </button>
                 ))}
               </div>
-              {transactions
-                .filter((t) => filter === "all" || t.kind === filter)
-                .map(transactionRow)}
+              {sortOperations(
+                transactions.filter((t) => filter === "all" || t.kind === filter),
+              ).map(transactionRow)}
               {!transactions.length && (
                 <div className="empty-state">
                   Aucune opération datée pour ce mois.
                 </div>
+              )}
+              {otherMonthsWithData.length > 0 && (
+                <>
+                  <button
+                    className="text-button"
+                    onClick={() => setShowAllMonths((v) => !v)}
+                  >
+                    {showAllMonths ? "Masquer" : "Voir"} les autres mois (
+                    {otherMonthsWithData.length})
+                  </button>
+                  {showAllMonths &&
+                    otherMonthsWithData.map((m) => {
+                      const monthOperations = sortOperations(
+                        transactionsForMonth(data, m).filter(
+                          (t) => filter === "all" || t.kind === filter,
+                        ),
+                      );
+                      return (
+                        <div className="month-group" key={m}>
+                          <p className="month-group-heading">{monthLabel(m)}</p>
+                          {monthOperations.map(transactionRow)}
+                          {!monthOperations.length && (
+                            <p className="meta">
+                              Aucune opération pour ce mois avec ce filtre.
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })}
+                </>
               )}
             </Card>
             <Card title="Opérations à dater" icon="alert">

@@ -1019,6 +1019,19 @@ img.brand-mark {
 .rows {
   display: grid;
 }
+/* "Voir les autres mois" (Mon mois) — a sub-heading inside the card's own list, distinct
+   from .section-heading (which separates whole page sections, not rows within one card). */
+.month-group {
+  margin-top: 17px;
+}
+.month-group-heading {
+  margin: 0 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
 .row {
   display: flex;
   align-items: center;
