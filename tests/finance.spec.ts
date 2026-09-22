@@ -339,8 +339,8 @@ test("daily entries: income, currency-synced transfer, recurrence, investment-on
   await dialog.getByRole("button", { name: "Fermer" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
 
-  // 2bis) Statuts explicites : "Marquer payé" ouvre l'éditeur avec la date de règlement
-  // visible et modifiable (pas d'écriture silencieuse), "Remettre à payer" revient en
+  // 2bis) Statuts explicites : "Marquer payé" écrit directement, sans dialogue (exécution
+  // instantanée, date de règlement fixée à aujourd'hui) ; "Remettre à payer" revient en
   // arrière sans effacer la trace du règlement précédent. Exercised from Mon mois' own
   // transactions list (the "flux réalisé" side), independent of the Abonnements page.
   await nav.getByRole("button", { name: "Mon mois", exact: true }).click();
@@ -351,48 +351,35 @@ test("daily entries: income, currency-synced transfer, recurrence, investment-on
   await occurrenceRow
     .getByRole("button", { name: "Marquer payé", exact: true })
     .click();
-  dialog = page.getByRole("dialog");
-  await expect(dialog.getByLabel("Libellé", { exact: true })).toHaveValue(
-    "Assurance test",
-  );
-  await expect(dialog.getByLabel("État", { exact: true })).toHaveValue(
-    "settled",
-  );
-  await expect(
-    dialog.getByLabel("Date de l’opération ou échéance", { exact: true }),
-  ).not.toHaveValue("");
-  await dialog
-    .getByRole("button", { name: "Enregistrer", exact: true })
-    .click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(occurrenceRow).toContainText("Payé");
   await expect(occurrenceRow).not.toContainText("Pas encore payé");
+  // Settled row itself opens the full editor (row-main is clickable once settled) — confirms
+  // the settlement date was really set to today, not left blank by the direct write.
+  await occurrenceRow.click();
+  dialog = page.getByRole("dialog");
+  await expect(dialog.getByLabel("État", { exact: true })).toHaveValue("settled");
+  await expect(
+    dialog.getByLabel("Date de l’opération ou échéance", { exact: true }),
+  ).not.toHaveValue("");
+  await dialog.getByRole("button", { name: "Fermer" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   page.once("dialog", (d) => d.accept());
   await occurrenceRow
     .getByRole("button", { name: "Remettre à payer Assurance test", exact: true })
     .click();
   await expect(occurrenceRow).toContainText("Pas encore payé");
   // Regression: the occurrence is now a persisted transaction (status "planned"), not a
-  // virtual one anymore. Clicking "Marquer payé" a second time must still open the editor
-  // pre-filled to settled/today — spec.transaction must win over the stale persisted
-  // record, not the other way around (see EditorSpec.transaction in Editor.tsx).
+  // virtual one anymore. Clicking "Marquer payé" a second time must still work directly.
   await occurrenceRow
     .getByRole("button", { name: "Marquer payé", exact: true })
-    .click();
-  dialog = page.getByRole("dialog");
-  await expect(dialog.getByLabel("État", { exact: true })).toHaveValue("settled");
-  await expect(
-    dialog.getByLabel("Date de l’opération ou échéance", { exact: true }),
-  ).not.toHaveValue("");
-  await dialog
-    .getByRole("button", { name: "Enregistrer", exact: true })
     .click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(occurrenceRow).toContainText("Payé");
   await expect(occurrenceRow).not.toContainText("Pas encore payé");
 
-  // 2ter) Même régression pour une opération ponctuelle déjà persistée dès sa création
-  // (pas liée à une récurrence) : "Marquer payé" doit aussi la préremplir correctement.
+  // 2ter) Même comportement pour une opération ponctuelle déjà persistée dès sa création
+  // (pas liée à une récurrence) : "Marquer payé" écrit aussi directement, sans dialogue.
   await page.getByRole("button", { name: "Ajouter", exact: true }).click();
   dialog = page.getByRole("dialog");
   await dialog.getByLabel("Libellé").fill("Café test");
@@ -408,14 +395,6 @@ test("daily entries: income, currency-synced transfer, recurrence, investment-on
   await expect(oneOffRow).toContainText("Pas encore payé");
   await oneOffRow
     .getByRole("button", { name: "Marquer payé", exact: true })
-    .click();
-  dialog = page.getByRole("dialog");
-  await expect(dialog.getByLabel("État", { exact: true })).toHaveValue("settled");
-  await expect(
-    dialog.getByLabel("Date de l’opération ou échéance", { exact: true }),
-  ).not.toHaveValue("");
-  await dialog
-    .getByRole("button", { name: "Enregistrer", exact: true })
     .click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(oneOffRow).toContainText("Payé");
@@ -745,19 +724,9 @@ test("subscriptions: a status change made on Abonnements updates Mon mois and Ac
     .locator(".metric-value");
   await expect(resteDu).toContainText("77.70");
 
-  // Mark it paid from Abonnements itself, not from Mon mois.
+  // Mark it paid from Abonnements itself, not from Mon mois — writes directly, no dialog.
   await subsRow
     .getByRole("button", { name: "Marquer payé", exact: true })
-    .click();
-  dialog = page.getByRole("dialog");
-  await expect(dialog.getByLabel("État", { exact: true })).toHaveValue(
-    "settled",
-  );
-  await expect(
-    dialog.getByLabel("Date de l’opération ou échéance", { exact: true }),
-  ).not.toHaveValue("");
-  await dialog
-    .getByRole("button", { name: "Enregistrer", exact: true })
     .click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(subsRow).toContainText("Payé");

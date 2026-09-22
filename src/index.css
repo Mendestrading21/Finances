@@ -175,10 +175,16 @@ img.brand-mark {
   font-weight: 500;
   text-decoration: none;
   line-height: 1.5;
+  transition: background 0.15s ease, color 0.15s ease;
 }
 .nav-item:hover {
   background: #171922;
   color: var(--text);
+}
+/* A full-width row scaling down on press looks like it's shrinking away from the edges it's
+   flush against — a background flash reads as "pressed" here without that artifact. */
+.nav-item:active {
+  background: #1d2030;
 }
 .nav-item.active {
   color: #dbe3ff;
@@ -253,11 +259,18 @@ img.brand-mark {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.1s ease-out;
 }
 .icon-button:hover {
   background: #1d2030;
   color: var(--text);
   border-color: #3a4055;
+}
+.icon-button:active {
+  transform: scale(0.93);
 }
 .avatar {
   width: 36px;
@@ -337,12 +350,20 @@ img.brand-mark {
   text-decoration: none;
   transition:
     background 0.15s ease,
-    border-color 0.15s ease;
+    border-color 0.15s ease,
+    transform 0.1s ease-out;
 }
 .button:hover {
   background: #252938;
   border-color: #424962;
   color: white;
+}
+/* Feedback on press, not on release — a real press has already registered by the time the
+   click event fires, so waiting for :hover/the click to land reads as laggy. Scale is small
+   enough to stay legible at the 44px touch-target floor, and transitions back out just as
+   fast so a quick tap never looks stuck mid-press. */
+.button:active {
+  transform: scale(0.97);
 }
 .button.primary {
   color: #fbfcff;
@@ -725,9 +746,13 @@ img.brand-mark {
   font-size: 12px;
   text-decoration: none;
   white-space: nowrap;
+  transition: color 0.15s ease, opacity 0.1s ease-out;
 }
 .card-action:hover {
   color: #d0daff;
+}
+.card-action:active {
+  opacity: 0.6;
 }
 .two-columns,
 .three-columns {
@@ -1048,6 +1073,22 @@ img.brand-mark {
 .row:focus-within {
   background: rgba(255, 255, 255, 0.028);
 }
+/* quickSettle (App.tsx) writes directly, no confirmation dialog — this brief flash is the
+   only feedback a click actually happened, so it needs to read clearly without depending on
+   the row's post-settle layout shift alone (the "Marquer payé" button disappearing next
+   render could otherwise pass unnoticed). Self-removing: the row's own onAnimationEnd clears
+   the state that adds this class, so it never lingers or needs a timer. */
+@keyframes row-flash-positive {
+  0% {
+    background: rgba(138, 222, 188, 0.3);
+  }
+  100% {
+    background: transparent;
+  }
+}
+.row-flash-positive {
+  animation: row-flash-positive 900ms ease-out;
+}
 .row-icon {
   display: flex;
   align-items: center;
@@ -1353,10 +1394,31 @@ img.brand-mark {
   color: var(--text);
   background: #141722;
   box-shadow: 0 35px 100px rgba(0, 0, 0, 0.5);
+  /* Materializes in rather than popping — React mounts this element fresh on every open
+     (Editor.tsx), so @starting-style's "before this element existed" state is exactly the
+     entrance moment. Closing stays instant: Editor.tsx unmounts synchronously with close(),
+     giving a CSS-only exit transition nothing to animate against (no gap between [open]
+     changing and the node leaving the DOM) — animating that properly needs the unmount
+     itself delayed in Editor.tsx, a separate change, not a CSS one. */
+  transition:
+    opacity 0.2s ease-out,
+    scale 0.2s ease-out;
+}
+@starting-style {
+  .dialog[open] {
+    opacity: 0;
+    scale: 0.96;
+  }
 }
 .dialog::backdrop {
   background: rgba(2, 4, 10, 0.7);
   backdrop-filter: blur(8px);
+  transition: opacity 0.2s ease-out;
+}
+@starting-style {
+  .dialog[open]::backdrop {
+    opacity: 0;
+  }
 }
 .dialog-header {
   display: flex;
@@ -1432,6 +1494,27 @@ img.brand-mark {
 .field input[type="file"] {
   padding: 10px;
   font-size: 14px;
+}
+.field input[type="date"],
+.field input[type="month"],
+.auth-card input[type="date"],
+.auth-card input[type="month"] {
+  color-scheme: dark;
+}
+.field input[type="date"]::-webkit-calendar-picker-indicator,
+.field input[type="month"]::-webkit-calendar-picker-indicator,
+.auth-card input[type="date"]::-webkit-calendar-picker-indicator,
+.auth-card input[type="month"]::-webkit-calendar-picker-indicator {
+  filter: invert(1) brightness(1.4);
+  border-radius: 6px;
+  cursor: pointer;
+  padding: 3px;
+}
+.field input[type="date"]::-webkit-calendar-picker-indicator:hover,
+.field input[type="month"]::-webkit-calendar-picker-indicator:hover,
+.auth-card input[type="date"]::-webkit-calendar-picker-indicator:hover,
+.auth-card input[type="month"]::-webkit-calendar-picker-indicator:hover {
+  filter: invert(1) brightness(1.7);
 }
 input::file-selector-button {
   border: 1px solid var(--line);
@@ -1583,11 +1666,15 @@ input::file-selector-button {
   background: transparent;
   color: var(--muted);
   font-size: 14px;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease-out;
 }
 .tab-button.active {
   color: #e5eaff;
   background: #262d41;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045);
+}
+.tab-button:active {
+  transform: scale(0.96);
 }
 .muted {
   color: var(--muted);
@@ -1711,6 +1798,10 @@ input::file-selector-button {
   font-size: 12px;
   text-decoration: underline;
   text-underline-offset: 4px;
+  transition: opacity 0.1s ease-out;
+}
+.text-button:active {
+  opacity: 0.6;
 }
 .demo-notice {
   justify-content: space-between;
