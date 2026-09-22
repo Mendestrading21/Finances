@@ -137,6 +137,9 @@ strong {
   letter-spacing: -0.045em;
   text-decoration: none;
   margin: 0 10px 44px;
+  /* Real tap-target defect, measured: content-sized to its 39px brand-mark, below the
+     app's 44px floor on every page that shows the sidebar (desktop and tablet). */
+  min-height: 44px;
 }
 .brand-mark {
   width: 39px;
@@ -410,11 +413,10 @@ img.brand-mark {
   font-weight: 550;
   font-variant-numeric: tabular-nums;
 }
-.year-control .icon-button {
-  width: 36px;
-  min-width: 36px;
-  height: 36px;
-}
+/* No size override here: .icon-button's own 44x44 already meets the app's tap-target
+   floor (identite-ui.md/AUDIT_UI_V2). A 36x36 override shipped here previously — real
+   defect, measured by finance-verification (below 44x44 on all 7 pages x 3 viewports,
+   and visibly shorter than the 44px .month-chip pills right beside it). */
 .month-picker-v2 > .button {
   flex-shrink: 0;
 }
@@ -1104,6 +1106,15 @@ img.brand-mark {
   flex: 1 1 140px;
   min-width: 140px;
 }
+/* transactionRow (settled rows only): .row-main itself becomes the "Modifier" target once
+ * the row's own icon-buttons are removed (see transactionRow in App.tsx). Cursor + radius
+ * only — the row's existing hover/focus-within background (.row:hover above) already gives
+ * feedback, this just marks the sub-area as clickable and gives :focus-visible's outline
+ * (index.css above) a rounded edge to sit against instead of a square corner. */
+.row-main-button {
+  cursor: pointer;
+  border-radius: 8px;
+}
 .row-title {
   display: block;
   font-size: 14px;
@@ -1759,7 +1770,11 @@ input::file-selector-button {
 }
 .breadcrumb span {
   padding: 0 11px;
-  color: #50596f;
+  /* Real defect, measured on the actually rendered pixels (not the token alone): the old
+     #50596f gave 2.82:1 against --bg, below WCAG AA's 4.5:1, on all 7 pages (same shared
+     breadcrumb). --subtle is an existing app token, still visibly dimmer than the rest of
+     the breadcrumb, and clears AA with headroom (5.39:1). */
+  color: var(--subtle);
 }
 .text-button {
   min-height: 44px;
