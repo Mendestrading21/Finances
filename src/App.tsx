@@ -89,7 +89,7 @@ function download(raw: string, name: string, type = "application/json") {
 // and there is no verified-rights logo/pictogram registry to draw from here — so the fallback
 // is a locally generated monogram, with initials that reflect a multi-word name instead of a
 // naive slice(0, 2) ("Banque Fictive" → "BF", not "BA"), and a stable color from a small
-// palette within the app's own blue-violet accent family (never an arbitrary hue) so entries
+// palette within the app's own neutral mint accent family (never an arbitrary hue) so entries
 // read as visually distinct in a list, per docs/AUDIT_UI_V2.md.
 function monogramInitials(name: string): string {
   const words = name.trim().split(/\s+/).filter(Boolean);
@@ -98,13 +98,14 @@ function monogramInitials(name: string): string {
   ).toUpperCase();
 }
 const MONOGRAM_PALETTE = [
-  // First two entries mirror --accent/--violet (index.css) exactly, kept in sync by hand
-  // since this array is plain TS, not CSS custom properties.
-  { bg: "rgba(10, 132, 255, 0.16)", fg: "#0a84ff" },
-  { bg: "rgba(143, 107, 255, 0.16)", fg: "#8f6bff" },
-  { bg: "rgba(111, 151, 224, 0.16)", fg: "#6f97e0" },
-  { bg: "rgba(124, 140, 255, 0.16)", fg: "#7c8cff" },
-  { bg: "rgba(200, 150, 230, 0.16)", fg: "#c896e6" },
+  // First entry mirrors --accent (index.css) exactly; the next three mirror the
+  // kind-badge-investment/bank/savings hues, kept in sync by hand since this array is
+  // plain TS, not CSS custom properties.
+  { bg: "rgba(127, 203, 168, 0.16)", fg: "#7fcba8" },
+  { bg: "rgba(171, 159, 219, 0.14)", fg: "#ab9fdb" },
+  { bg: "rgba(143, 171, 201, 0.14)", fg: "#8fabc9" },
+  { bg: "rgba(201, 168, 108, 0.16)", fg: "#c9a86c" },
+  { bg: "rgba(195, 168, 217, 0.14)", fg: "#c3a8d9" },
   { bg: "rgba(160, 180, 200, 0.16)", fg: "#c0ceef" },
 ];
 function monogramColors(name: string): { bg: string; fg: string } {
