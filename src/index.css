@@ -18,7 +18,10 @@
   --positive: #8adebc;
   --negative: #ffa0ac;
   --warning: #e5c186;
-  --radius: 24px;
+  /* Reduced from 24px: the user asked for a squarer, less "bubbly" surface language
+     across cards/dialogs/rows — every other radius in this file that isn't a true
+     circle/pill was scaled down to match this same, more geometric proportion. */
+  --radius: 16px;
   --shadow: 0 12px 40px rgba(0, 0, 0, 0.12);
   background: var(--bg);
   color: var(--text);
@@ -167,7 +170,7 @@ img.brand-mark {
   gap: 12px;
   padding: 11px 13px;
   border: 1px solid transparent;
-  border-radius: 13px;
+  border-radius: 10px;
   background: transparent;
   text-align: left;
   color: #a3a8bc;
@@ -252,7 +255,7 @@ img.brand-mark {
   min-width: 44px;
   height: 44px;
   border: 1px solid var(--line);
-  border-radius: 13px;
+  border-radius: 10px;
   background: rgba(255, 255, 255, 0.025);
   color: var(--muted);
   display: inline-flex;
@@ -312,7 +315,7 @@ img.brand-mark {
   align-items: center;
   gap: 7px;
   padding: 5px 9px;
-  border-radius: 8px;
+  border-radius: 6px;
   border: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.025);
   color: var(--muted);
@@ -340,7 +343,7 @@ img.brand-mark {
   justify-content: center;
   gap: 9px;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: 9px;
   background: var(--surface-raised);
   color: var(--text);
   padding: 11px 17px;
@@ -434,7 +437,7 @@ img.brand-mark {
   align-items: stretch;
   background: #11141e;
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: 11px;
   padding: 4px;
   min-width: 0;
   flex: 1 1 auto;
@@ -470,7 +473,7 @@ img.brand-mark {
 .month-nav-button {
   border-color: transparent;
   background: transparent;
-  border-radius: 10px;
+  border-radius: 8px;
 }
 .month-nav-button:hover {
   background: rgba(255, 255, 255, 0.06);
@@ -521,7 +524,7 @@ img.brand-mark {
   min-height: 44px;
   min-width: 44px;
   padding: 10px 14px;
-  border-radius: 10px;
+  border-radius: 8px;
   background: transparent;
   color: var(--muted);
   font-size: 13px;
@@ -558,7 +561,7 @@ img.brand-mark {
 .currency-picker select {
   min-height: 44px;
   padding: 7px 28px 7px 12px;
-  border-radius: 10px;
+  border-radius: 8px;
   border: 1px solid var(--line);
   background: #141720;
   font-size: 14px;
@@ -672,7 +675,7 @@ img.brand-mark {
   font-size: 14px;
   line-height: 1.6;
   background: linear-gradient(180deg, transparent, rgba(129, 151, 218, 0.035));
-  border-radius: 15px;
+  border-radius: 11px;
   border-bottom: 1px solid var(--line-soft);
 }
 .chart-empty svg {
@@ -801,7 +804,7 @@ img.brand-mark {
 .card-icon {
   width: 30px;
   height: 30px;
-  border-radius: 10px;
+  border-radius: 8px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -859,7 +862,7 @@ img.brand-mark {
   position: relative;
   padding: 18px;
   border: 1px solid #2a2e40;
-  border-radius: 20px;
+  border-radius: 14px;
   background:
     radial-gradient(
       ellipse at 90% 0%,
@@ -977,7 +980,7 @@ img.brand-mark {
   width: 42px;
   height: 42px;
   border: 1px solid rgba(203, 212, 255, 0.13);
-  border-radius: 13px;
+  border-radius: 10px;
   display: inline-flex;
   justify-content: center;
   align-items: center;
@@ -1136,7 +1139,7 @@ img.brand-mark {
   gap: 12px;
   padding: 15px 0;
   border-bottom: 1px solid var(--line-soft);
-  border-radius: 12px;
+  border-radius: 9px;
   min-width: 0;
   transition: background-color 0.15s ease;
 }
@@ -1178,7 +1181,7 @@ img.brand-mark {
   justify-content: center;
   width: 40px;
   height: 40px;
-  border-radius: 12px;
+  border-radius: 9px;
   background: #212638;
   color: #a4b5e5;
   flex-shrink: 0;
@@ -1224,7 +1227,7 @@ img.brand-mark {
  * (index.css above) a rounded edge to sit against instead of a square corner. */
 .row-main-button {
   cursor: pointer;
-  border-radius: 8px;
+  border-radius: 7px;
 }
 .row-title {
   display: block;
@@ -1433,7 +1436,7 @@ img.brand-mark {
   padding: 14px 17px;
   margin: 0 0 20px;
   border: 1px solid rgba(130, 157, 220, 0.17);
-  border-radius: 13px;
+  border-radius: 10px;
   background: rgba(94, 124, 189, 0.065);
   font-size: 12px;
   line-height: 1.8;
@@ -1454,7 +1457,7 @@ img.brand-mark {
   border-color: rgba(183, 143, 81, 0.19);
 }
 .error {
-  border-radius: 12px;
+  border-radius: 9px;
   background: #2a1922;
   border: 1px solid #593039;
   color: #ffb0bb;
@@ -1472,7 +1475,7 @@ img.brand-mark {
   max-height: calc(100dvh - 48px);
   overflow-y: auto;
   padding: 26px;
-  border-radius: 24px;
+  border-radius: 16px;
   border: 1px solid #363b50;
   color: var(--text);
   background: #141722;
@@ -1542,7 +1545,7 @@ img.brand-mark {
   width: 100%;
   min-height: 48px;
   border: 1px solid #363d51;
-  border-radius: 11px;
+  border-radius: 8px;
   background: #10131c;
   padding: 12px 13px;
   color: var(--text);
@@ -1645,7 +1648,7 @@ input::file-selector-button {
   padding: 33px;
   background: linear-gradient(135deg, #1b1f2c, #12151f);
   border: 1px solid #30374b;
-  border-radius: 27px;
+  border-radius: 18px;
   box-shadow: 0 25px 90px #0005;
 }
 .auth-card .brand {
@@ -1689,7 +1692,7 @@ input::file-selector-button {
   margin: 36px 0 20px;
   width: 86px;
   height: 86px;
-  border-radius: 25px;
+  border-radius: 18px;
 }
 .auth-art .pill {
   background: transparent;
@@ -1711,7 +1714,7 @@ input::file-selector-button {
   justify-content: center;
   width: 62px;
   height: 62px;
-  border-radius: 19px;
+  border-radius: 14px;
   color: #b1bbff;
   border: 1px solid #414866;
   background: linear-gradient(145deg, #303c5a, #302840);
@@ -1738,14 +1741,14 @@ input::file-selector-button {
   background: #11141e;
   border: 1px solid var(--line);
   padding: 4px;
-  border-radius: 12px;
+  border-radius: 9px;
   width: fit-content;
   margin-bottom: 23px;
 }
 .tab-button {
   min-height: 44px;
   padding: 9px 15px;
-  border-radius: 9px;
+  border-radius: 7px;
   background: transparent;
   color: var(--muted);
   font-size: 14px;
@@ -1841,7 +1844,7 @@ input::file-selector-button {
   min-width: 0;
   border: 1px solid var(--line-soft);
   padding: 18px;
-  border-radius: 18px;
+  border-radius: 13px;
   /* Was a flat solid fill, unlike every other card family on the page (.card/.hero-card/
      .account-card all carry a subtle top-right glow) — these four tiles read noticeably
      flatter next to "Votre mois"/the hero card right above them. Same radial-highlight
@@ -1944,7 +1947,7 @@ input::file-selector-button {
   transform: translateX(-50%);
   max-width: min(500px, calc(100% - 30px));
   border: 1px solid #485477;
-  border-radius: 13px;
+  border-radius: 10px;
   padding: 14px 18px;
   color: #e9eeff;
   background: #232b3f;
@@ -2126,7 +2129,7 @@ input::file-selector-button {
   }
   .month-nav-bar {
     padding: 3px;
-    border-radius: 13px;
+    border-radius: 10px;
   }
   .year-control {
     padding-right: 6px;
@@ -2164,7 +2167,7 @@ input::file-selector-button {
     padding-right: 9px;
   }
   .hero-card {
-    border-radius: 23px;
+    border-radius: 15px;
     padding: 23px 21px 21px;
   }
   .hero-label {
@@ -2197,7 +2200,7 @@ input::file-selector-button {
   }
   .card {
     padding: 21px;
-    border-radius: 21px;
+    border-radius: 14px;
   }
   .card-header {
     margin-bottom: 17px;
@@ -2234,7 +2237,7 @@ input::file-selector-button {
   .row .institution-icon {
     width: 37px;
     height: 37px;
-    border-radius: 11px;
+    border-radius: 9px;
   }
   .row-title {
     display: block;
@@ -2316,7 +2319,7 @@ input::file-selector-button {
     gap: 2px;
     min-height: 70px;
     padding: 7px 5px;
-    border-radius: 23px;
+    border-radius: 16px;
     border: 1px solid #454957;
     background: rgba(31, 35, 49, 0.95);
     box-shadow:
@@ -2334,7 +2337,7 @@ input::file-selector-button {
     min-height: 54px;
     padding: 5px 1px;
     gap: 6px;
-    border-radius: 15px;
+    border-radius: 11px;
     background: transparent;
     color: #a3aec5;
     font-size: 9px;
@@ -2366,7 +2369,7 @@ input::file-selector-button {
     gap: 5px;
     padding: 13px;
     border: 1px solid #454c66;
-    border-radius: 19px;
+    border-radius: 14px;
     background: #1a1f2f;
     box-shadow: 0 0 90px #0009;
   }
@@ -2376,7 +2379,7 @@ input::file-selector-button {
     gap: 12px;
     min-height: 48px;
     padding: 10px 14px;
-    border-radius: 10px;
+    border-radius: 8px;
     background: transparent;
     color: #d2daef;
     font-size: 14px;
@@ -2389,7 +2392,7 @@ input::file-selector-button {
     width: calc(100% - 20px);
     max-height: calc(100dvh - 20px);
     padding: 22px 19px;
-    border-radius: 23px;
+    border-radius: 16px;
   }
   .dialog-header {
     margin-bottom: 22px;
@@ -2431,7 +2434,7 @@ input::file-selector-button {
   }
   .auth-card {
     padding: 27px 24px;
-    border-radius: 25px;
+    border-radius: 17px;
   }
   .auth-card h1 {
     font-size: 27px;
