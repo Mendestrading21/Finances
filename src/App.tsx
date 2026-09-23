@@ -1471,14 +1471,13 @@ export default function App() {
               {demo ? "Démo fictive" : "Privé"}
             </span>
             <button
-              className="icon-button"
+              className="toggle"
               onClick={() => setHidden(!hidden)}
+              aria-pressed={hidden}
               aria-label={
                 hidden ? "Afficher les montants" : "Masquer les montants"
               }
-            >
-              <Icon name={hidden ? "eye-off" : "eye"} />
-            </button>
+            />
             <button
               className="icon-button"
               onClick={lock}
