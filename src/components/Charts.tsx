@@ -1,6 +1,9 @@
 import type { FinanceData } from "../domain/types";
 import { dateLabel, money, wealthSummary } from "../domain/finance";
-const colors = ["#89a6ff", "#ad96f5", "#60d6cd", "#e8b883", "#d691bd"];
+// Muted, desaturated qualitative set — reuses the same tightened hue family as the
+// account kind-badges (index.css) instead of the old saturated blue/violet pair, so the
+// wealth-allocation donut doesn't reintroduce the neon blue-violet look on its own.
+const colors = ["#7fcba8", "#c9a86c", "#8fabc9", "#c3a8d9", "#8ec9c2"];
 export function WealthChart({
   data,
   currency,
@@ -70,12 +73,6 @@ export function WealthChart({
         role="img"
         aria-label="Évolution des soldes datés, montants détaillés ci-dessous"
       >
-        <defs>
-          <linearGradient id="line">
-            <stop stopColor="#779bff" />
-            <stop offset="1" stopColor="#b38afa" />
-          </linearGradient>
-        </defs>
         {[30, 75, 120].map((y) => (
           <line
             key={y}
@@ -87,17 +84,20 @@ export function WealthChart({
             opacity=".1"
           />
         ))}
+        {/* Flat single-tone stroke instead of a blue-to-violet gradient — same neutral
+            accent as the rest of the app, no two-hue glow on the one chart most visible
+            on Accueil. */}
         <path
           d={path}
           fill="none"
-          stroke="url(#line)"
+          stroke="#7fcba8"
           strokeWidth="3"
           strokeLinecap="round"
           strokeLinejoin="round"
         />
         {segments.map(
           (p, i) =>
-            p && <circle key={i} cx={p.x} cy={p.y} r="4" fill="#a497ff" />,
+            p && <circle key={i} cx={p.x} cy={p.y} r="4" fill="#7fcba8" />,
         )}
       </svg>
       <div className="hero-foot">
@@ -223,9 +223,13 @@ export function FlowChart({
   const max = Math.max(income || 0, expense || 0, 1);
   return (
     <div className="flow-chart">
+      {/* Income/expense direction reuses the app's existing positive/negative status
+          colors instead of the old blue/violet pair — these two bars ARE a received vs.
+          paid-out split, so the same green/red language used everywhere else applies
+          here too, rather than a third, unrelated color meaning. */}
       {[
-        { label: "Entrées prévues et reçues", n: income, color: "#89a6ff" },
-        { label: "Dépenses prévues et payées", n: expense, color: "#b099ed" },
+        { label: "Entrées prévues et reçues", n: income, color: "#8adebc" },
+        { label: "Dépenses prévues et payées", n: expense, color: "#ffa0ac" },
       ].map((i) => (
         <div key={i.label}>
           <div className="hero-foot">
