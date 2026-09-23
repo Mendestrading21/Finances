@@ -729,13 +729,31 @@ export default function App() {
     summary = monthSummary(data, month, currency),
     transactions = transactionsForMonth(data, month),
     currentPage = pages.find((p) => p.id === page)!;
+  // Explicit user request: reçus (revenus) d'abord, puis factures, puis abonnements, virements
+  // et le reste en dernier — puis, à l'intérieur de chaque groupe, le plus gros montant
+  // d'abord. Reads the linked recurrence's own recurrenceType when there is one (a recurring
+  // bill keeps its "facture" classification even once it has its own persisted transaction),
+  // falling back to "facture" for any other one-off expense.
+  const operationTypeRank = (t: Transaction): number => {
+    if (t.kind === "income") return 0;
+    if (t.kind === "transfer") return 3;
+    const recurrenceType = t.recurrenceId
+      ? data.recurrences.find((r) => r.id === t.recurrenceId)?.recurrenceType
+      : undefined;
+    return recurrenceType === "subscription" ? 2 : 1;
+  };
   // Unpaid/unknown first, settled last — what still needs action reads before what's already
-  // handled. Stable sort: transactionsForMonth already returns date order, so relative order
-  // within each status group is untouched, only the two groups are reordered.
+  // handled. Within each of those two status groups, ordered by operationTypeRank then by
+  // amount, largest first (explicit user request) instead of the plain date order this used
+  // to keep as a stable secondary sort.
   const sortOperations = (list: Transaction[]) =>
-    [...list].sort(
-      (a, b) => Number(a.status === "settled") - Number(b.status === "settled"),
-    );
+    [...list].sort((a, b) => {
+      const settledDiff = Number(a.status === "settled") - Number(b.status === "settled");
+      if (settledDiff !== 0) return settledDiff;
+      const typeDiff = operationTypeRank(a) - operationTypeRank(b);
+      if (typeDiff !== 0) return typeDiff;
+      return b.amountMinor - a.amountMinor;
+    });
   // "Voir les autres mois" (Mon mois, opt-in) — every other month with a real recorded
   // transaction, most recent first. Bounded by data.transactions that already exist, never
   // guessed from a recurrence's own indefinite start/end span (which could stretch years in
@@ -1171,17 +1189,8 @@ export default function App() {
             {display(t.amountMinor, t.currency)}
           </span>
           <div className="row-actions">
-            {t.status === "planned" ? (
-              <button
-                className={`button small ${t.kind === "income" ? "receive" : t.kind === "transfer" ? "secondary" : "pay"}`}
-                onClick={() => quickSettle(t)}
-              >
-                <Icon name="check" size={16} />
-                {t.kind === "income" ? "Reçu" : t.kind === "transfer" ? "Régler" : "Payer"}
-              </button>
-            ) : null}
             {
-              // Kept exclusive with the "marquer" action above so a planned row never
+              // Kept exclusive with the "marquer" action below so a planned row never
               // crowds two actions (the label wraps on an iPhone width). A receipt is
               // also most often at hand once the operation is settled; a planned
               // operation can still be reached from Documents et réglages.
@@ -1201,17 +1210,25 @@ export default function App() {
                   </label>
                 )
             }
-            {t.status === "planned" && data?.transactions.some((i) => i.id === t.id) && (
-              <button
-                className="icon-button"
-                aria-label={`Modifier ${t.label}`}
-                onClick={() =>
-                  edit({ type: "transaction", id: t.id, kind: t.kind, quick: true })
-                }
-              >
-                <Icon name="edit" size={17} />
-              </button>
-            )}
+            {
+              // Rendered before the quick-settle button below (not after, as it used to
+              // be) so that button's right edge is always flush against the row's edge —
+              // real defect found in review: a persisted planned row (with this pencil) and
+              // a virtual/projected one (without it, no record to edit yet) sat side by
+              // side with "Payer" starting at two different x positions, since the icon
+              // used to trail the button instead of leading it.
+              t.status === "planned" && data?.transactions.some((i) => i.id === t.id) && (
+                <button
+                  className="icon-button"
+                  aria-label={`Modifier ${t.label}`}
+                  onClick={() =>
+                    edit({ type: "transaction", id: t.id, kind: t.kind, quick: true })
+                  }
+                >
+                  <Icon name="edit" size={17} />
+                </button>
+              )
+            }
             {t.status === "settled" && t.recurrenceId && t.occurrenceDate && (
               <button
                 className="icon-button"
@@ -1228,6 +1245,15 @@ export default function App() {
                 <Icon name="refresh" size={17} />
               </button>
             )}
+            {t.status === "planned" ? (
+              <button
+                className={`button small ${t.kind === "income" ? "receive" : t.kind === "transfer" ? "secondary" : "pay"}`}
+                onClick={() => quickSettle(t)}
+              >
+                <Icon name="check" size={16} />
+                {t.kind === "income" ? "Reçu" : t.kind === "transfer" ? "Régler" : "Payer"}
+              </button>
+            ) : null}
           </div>
         </div>
       </div>

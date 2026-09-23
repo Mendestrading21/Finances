@@ -401,6 +401,18 @@ Preuves : `pnpm run typecheck` (0 erreur), `pnpm run test` (**142/142**), `pnpm 
 
 Fusionné dans `main` (commit `c4f9302`, PR #28). CI (`Finance verification`) et déploiement (`Deploy Finance to GitHub Pages`) vérifiés verts sur ce commit.
 
+## Correctif — bouton d'action désaligné + tri des opérations par nature et montant (corrigé et testé le 23 septembre 2026)
+
+Retour utilisateur avec une capture annotée de Mon mois : le bouton « Payer » d'une ligne d'opération ne démarrait pas au même endroit d'une ligne à l'autre, et l'ordre des opérations ne suivait ni leur nature ni leur montant.
+
+**Cause du désalignement** (`src/App.tsx`, `transactionRow`) : le crayon « Modifier » ne s'affiche que pour une opération planifiée déjà persistée (une occurrence de récurrence pas encore réglée n'a pas encore de transaction propre à éditer) — deux lignes « pas encore payé » pouvaient donc afficher un bouton seul ou bouton + crayon selon leur origine. Le crayon était rendu *après* le bouton dans `.row-actions` (flex, ancré à droite via `.row-end`), donc le bord droit du bouton reculait d'une ligne à l'autre selon qu'un crayon suivait ou non. Corrigé en rendant le crayon (et l'icône « remettre à prévu ») *avant* le bouton d'action au lieu d'après : le bouton est désormais toujours le dernier élément de `.row-actions`, son bord droit reste fixe quelle que soit la présence du crayon.
+
+**Tri des opérations** (`sortOperations`, Mon mois) : conserve le tri « pas encore réglé d'abord » déjà existant, puis trie chaque groupe de statut par nature — reçu (revenu) d'abord, puis facture, puis abonnement, puis virement — et à l'intérieur de chaque nature, par montant décroissant (le plus gros d'abord), comme demandé explicitement. La nature d'une opération liée à une récurrence reprend le `recurrenceType` de cette récurrence (`subscription` → abonnement, tout le reste → facture) ; une opération manuelle sans récurrence est classée facture par défaut.
+
+Nouveau test e2e dédié (`Mon mois: reçu, facture, abonnement, virement — montant décroissant dans chaque groupe, bouton toujours aligné`) : construit un jeu d'opérations couvrant les quatre natures avec des montants distincts, vérifie l'ordre exact des lignes, et compare la position (bounding box) du bouton « Payer » entre une ligne avec crayon et une ligne sans — même bord droit dans les deux cas.
+
+Preuves : `pnpm run typecheck` (0 erreur), `pnpm run test` (**142/142**), `pnpm run build` (réussi), les 10 scénarios `test:e2e` — dont le nouveau — rejoués individuellement, tous verts (le run groupé reste le flake connu déjà documenté : resource contention Chromium `--single-process` dans ce bac à sable, un ensemble différent de tests échoue à chaque run groupé, jamais les mêmes deux fois de suite — pas une régression).
+
 ## État réel
 
 | Élément                           | État                                                                                                                                                                   | Résultat et limite                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |

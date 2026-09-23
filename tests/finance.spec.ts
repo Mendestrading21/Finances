@@ -907,6 +907,122 @@ test("subscriptions: a status change made on Abonnements updates Mon mois and Ac
   expect(errors).toEqual([]);
 });
 
+test("Mon mois: reçu, facture, abonnement, virement — montant décroissant dans chaque groupe, bouton toujours aligné", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("/");
+  await page.getByLabel("Phrase secrète", { exact: true }).fill(passphrase);
+  await page.getByLabel("Confirmer la phrase secrète").fill(passphrase);
+  await page.getByRole("button", { name: "Créer mon coffre" }).click();
+  const nav = page.getByRole("navigation", {
+    name: "Navigation principale",
+    exact: true,
+  });
+  async function newAccount(name: string) {
+    await nav.getByRole("button", { name: "Mes comptes", exact: true }).click();
+    await page.getByRole("button", { name: "Ajouter", exact: true }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Nom du compte").fill(name);
+    await dialog.getByLabel("Établissement").fill("Banque Fictive");
+    await dialog
+      .getByRole("button", { name: "Enregistrer", exact: true })
+      .click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+  }
+  await newAccount("Compte tri test");
+  await newAccount("Compte tri destination");
+
+  // Two one-off, unpaid, PERSISTED transactions (they exist in data.transactions the moment
+  // they're saved, whatever their status) — each therefore shows the "Modifier" pencil next to
+  // its quick-settle button, unlike the two recurrence occurrences below (not yet materialized,
+  // so no row to edit exists for them until settled).
+  await nav.getByRole("button", { name: "Mon mois", exact: true }).click();
+  async function newOperation(
+    kind: "income" | "expense" | "transfer",
+    label: string,
+    amount: string,
+  ) {
+    await page.getByRole("button", { name: "Ajouter", exact: true }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.locator('select[name="kind"]').selectOption(kind);
+    await dialog.getByLabel("Libellé").fill(label);
+    await dialog.getByLabel("Montant", { exact: true }).fill(amount);
+    await dialog
+      .getByLabel("Compte", { exact: true })
+      .selectOption({ label: "Compte tri test · CHF" });
+    if (kind === "transfer")
+      await dialog
+        .getByLabel("Compte destinataire", { exact: true })
+        .selectOption({ label: "Compte tri destination · CHF" });
+    // Status left at its default ("planned") — every row in this test stays unpaid, so the
+    // status-group sort (existing, unchanged) never reorders them ahead of one another.
+    await dialog
+      .getByRole("button", { name: "Enregistrer", exact: true })
+      .click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+  }
+  await newOperation("income", "Revenu test tri", "200");
+  await newOperation("expense", "Facture ponctuelle test", "100");
+  await newOperation("transfer", "Virement test tri", "75");
+
+  // Two recurrences due this month, left unsettled — occurrenceDueDate generates a virtual,
+  // unmaterialized transaction for each, shown on Mon mois alongside the persisted ones above.
+  async function newRecurrence(nature: "bill" | "subscription", label: string, amount: string) {
+    await nav.getByRole("button", { name: "Abonnements", exact: true }).click();
+    await page.getByRole("button", { name: "Ajouter", exact: true }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Libellé", { exact: true }).fill(label);
+    await dialog.getByLabel("Nature", { exact: true }).selectOption(nature);
+    await dialog.getByLabel("Montant", { exact: true }).fill(amount);
+    await dialog
+      .getByLabel("Compte", { exact: true })
+      .selectOption({ label: "Compte tri test · CHF" });
+    await dialog.getByLabel("Catégorie", { exact: true }).fill("Test tri");
+    await dialog.getByLabel("Jour du mois", { exact: true }).fill("1");
+    await dialog.getByLabel("Début", { exact: true }).fill("2020-01-01");
+    await dialog
+      .getByRole("button", { name: "Enregistrer", exact: true })
+      .click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+  }
+  await newRecurrence("bill", "Charge récurrente test", "50");
+  await newRecurrence("subscription", "Abo test tri", "30");
+
+  await nav.getByRole("button", { name: "Mon mois", exact: true }).click();
+  const operationsCard = page.locator(".card", {
+    has: page.locator(".card-title", { hasText: "Les opérations" }),
+  });
+  await expect(operationsCard.locator(".row-title")).toHaveText([
+    "Revenu test tri", // reçu (revenu) — seul de son groupe
+    "Facture ponctuelle test", // facture, 100 > 50
+    "Charge récurrente test", // facture, 50
+    "Abo test tri", // abonnement — seul de son groupe
+    "Virement test tri", // virement — toujours en dernier
+  ]);
+
+  // The persisted "Facture ponctuelle test" row has a leading "Modifier" pencil before its
+  // "Payer" button; the virtual "Charge récurrente test" row has none. Both buttons must still
+  // end at the exact same x — the real defect a user screenshot showed: the button used to
+  // trail any icon instead of leading it, so its right edge shifted row to row.
+  const pencilRowButton = operationsCard
+    .locator(".row", { hasText: "Facture ponctuelle test" })
+    .getByRole("button", { name: "Payer", exact: true });
+  const noPencilRowButton = operationsCard
+    .locator(".row", { hasText: "Charge récurrente test" })
+    .getByRole("button", { name: "Payer", exact: true });
+  const pencilBox = await pencilRowButton.boundingBox();
+  const noPencilBox = await noPencilRowButton.boundingBox();
+  if (!pencilBox || !noPencilBox) throw new Error("Payer button not found");
+  expect(pencilBox.x + pencilBox.width).toBeCloseTo(
+    noPencilBox.x + noPencilBox.width,
+    0,
+  );
+
+  expect(errors).toEqual([]);
+});
+
 // Regression: a single very long word (no spaces) in an account or institution name overflowed
 // the page horizontally once the grid's last column had no blank cells left to absorb it —
 // .institution and the account-head <h3> had no overflow-wrap, unlike .balance. Six accounts
