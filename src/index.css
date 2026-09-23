@@ -16,26 +16,113 @@
   --line: #262936;
   --line-soft: rgba(215, 224, 255, 0.075);
   --text: #f4f5fc;
-  --muted: #a3a8bc;
-  --subtle: #7f859b;
+  /* Lightened from #a3a8bc (WCAG formula, not estimated) as a direct consequence of the
+     halo/glass intensification below: --muted is the app's most pervasive text color (row
+     details, labels, meta, chart text…), and once --accent-glow-ambient and --glass-bg both
+     rise, the worst realistic surface it sits on — a dense .item-card.row nested inside a
+     .card, itself sitting under the body's ambient glow at rest — drops from a comfortable
+     6.8:1 to 4.11:1, under AA. #aeb4c9 restores 4.97:1 there (row rest) / 4.89:1 (row hover,
+     fill 0.045) / 5.60:1 (single-glass .card text) / 7.10:1 (.dialog) — recomputed for every
+     surface it appears on, not estimated (numbers include the later hue pass, which darkened
+     the glow layer itself — see the --accent token comment — and widened these margins
+     slightly further). */
+  --muted: #aeb4c9;
+  /* Lightened from #7f859b (WCAG formula): .breadcrumb is the only site using this token, and
+     it sits at the very top of the page — squarely inside body::before's top-left ambient
+     glow, reachable at that glow's peak while scrolling since the glow layer is `position:
+     fixed`. At the new --accent-glow-ambient (0.24), the un-lightened token measured 3.93:1
+     there (fails AA); #8a91a9 measures 4.60:1 against that same worst-case composite (and
+     6.31:1 away from the glow), a real margin, not a hairline. Re-verified again after the
+     later hue pass darkened the glow layer's RGB triple (see the --accent token comment):
+     4.83:1 at the worst case, margin widened further; the away-from-glow number is unchanged
+     since it never involves the glow's hue. */
+  --subtle: #8a91a9;
   /* Pivot from the mint/sage accent to a single deliberate blue (user reference, PR 1 of
      the "verre + bleu néon" redesign) — still one hue, not the old blue-violet duo: every
      accent, glow and glass tint in this file now derives from this one blue family instead
-     of pairing a second saturated hue against it. --accent-strong is a TEXT tone only
-     (a:hover, .card-action:hover — ~8-9:1 against --bg/--surface); the button gradient
-     stops (--accent-button-from/--accent-button-to) are FOND-only and are never used as
-     text color. --violet stays a compatibility alias resolving to --accent, unchanged in
-     kind from before, so no code should read --violet as a distinct hue. */
-  --accent: #4f8cff; /* 6.14:1 on --bg, 5.56:1 on --surface */
-  --accent-strong: #79b0ff; /* text only (a:hover, .card-action:hover) — 8.91:1 on --bg, 8.06:1 on --surface */
+     of pairing a second saturated hue against it.
+     Hue pass (user, after seeing the halo/glass intensity pass live: the blue itself read as
+     "trop bleu" — too vivid/saturated — asking for something a touch darker/calmer
+     everywhere, not a lighter or more washed-out blue, and NOT a reversal of the halo/glass
+     opacity work above). --accent moved from #4f8cff to #397bf7: in HSL that's the same
+     hue (219°) with lightness reduced ~6pp (65%→59%) and saturation reduced 8pp (100%→92%) —
+     a real, visible shift toward a deeper, slightly muted blue, not a different hue family.
+     Every hardcoded rgba(…) glow/border/badge-border tint in this file that used to spell out
+     the OLD accent's RGB triple (79, 140, 255) now spells out this new one (57, 123, 247)
+     instead, so the halo, every card/row border, the button glow rings etc. all carry the
+     same darker blue — see each site's own recomputed number, all re-verified by the WCAG
+     formula against the new composite (the darker glow interacts differently with each
+     surface it sits under, not just uniformly darker — some margins improved, a few needed a
+     follow-up token fix, e.g. .nav-eyebrow below).
+     --accent-strong is a TEXT tone only — originally only a:hover/.card-action:hover, now ALSO
+     the resting color for every small text label that sits directly on a glass surface
+     (.card-action, .text-button, .source-link, .auth-art .pill, .nav-item.active svg,
+     .mobile-nav .active; see each site) — recomputed by formula against every actual
+     composited glass+glow surface it rests on (4.54–8.80:1 worst case, see site comments).
+     In the hue pass, --accent-strong is DELIBERATELY desaturated only (100%→90% S), lightness
+     UNCHANGED (73.7%): darkening it by the same amount as --accent dropped its margin on the
+     tightest of those surfaces (the mobile tab-bar's active label) under AA (3.96:1) — this
+     token exists specifically as an accessibility safety margin for small text, so unlike
+     --accent it keeps its brightness and only picks up the calmer, less-saturated family the
+     rest of the hue pass introduces. The button gradient stops (--accent-button-from/
+     --accent-button-to) are FOND-only, never text, and are a separately-tuned pair — not the
+     rgb(79,140,255) family at all — so the hue pass leaves them as they were.
+     --violet stays a compatibility alias resolving to --accent, unchanged in kind from
+     before, so no code should read --violet as a distinct hue. Bare --accent as TEXT is kept
+     ONLY where it never composites with the halo/glass (e.g. .a, non-text icon uses) — see
+     "verre + bleu néon, halo/glass intensity pass" comments throughout this file for exactly
+     which sites were moved to --accent-strong and why. */
+  --accent: #397bf7; /* was #4f8cff — 5.04:1 on --bg, 4.56:1 on --surface (bare --accent as text is otherwise unused live — see comment) */
+  --accent-strong: #80b1f8; /* was #79b0ff — text tone, 9.00:1 on --bg, 8.14:1 on --surface (flat); see site comments for composited-surface numbers */
   --accent-button-to: #2a52c8; /* primary button FOND only, never text — white text on it = 6.69:1 */
   --violet: var(--accent);
   --accent-button-from: #3a6bd8; /* button gradient start, white text on it = 4.91:1 — do not lighten further */
-  --accent-glow: rgba(79, 140, 255, 0.35);
-  --accent-glow-strong: rgba(79, 140, 255, 0.55);
-  --accent-glow-ambient: rgba(79, 140, 255, 0.14); /* verified ceiling: .16+ fails --subtle text at 4.48:1 */
-  --glass-bg: rgba(255, 255, 255, 0.055);
-  --glass-bg-raised: rgba(255, 255, 255, 0.085);
+  /* --accent-glow/-strong: box-shadow GLOW opacities only (never a text/background pair —
+     every usage is a decorative outer or inset shadow, e.g. .button.primary, .toggle,
+     .row-icon hover ring, .nav-item.active), so raising these has no contrast floor to clear;
+     raised for a visibly more pronounced glow per the reference mockups' halo-around-controls
+     look (user: "vraiment améliore tout le thème"). RGB triple also updated to the darker hue
+     (57, 123, 247) in the later hue pass — see the --accent token comment above. */
+  --accent-glow: rgba(57, 123, 247, 0.45); /* was rgba(79, 140, 255, 0.35) */
+  --accent-glow-strong: rgba(57, 123, 247, 0.65); /* was rgba(79, 140, 255, 0.55) */
+  /* Ambient background halo — was rgba(79, 140, 255, 0.14), previously capped there because
+     .16 already failed --subtle text at 4.48:1 (see prior comment, now superseded). Raised to
+     0.24 (+71% relative — the "clearly perceptible, not just technically present" halo the
+     reference mockups show) now that --subtle above is itself lightened for headroom.
+     RGB triple later updated to the darker hue (57, 123, 247) in the hue pass — see the
+     --accent token comment above; re-verified by the WCAG relative-luminance formula, this
+     composite still clears every text token that can sit on bare --bg+glow with real margin —
+     see --subtle's own comment above and body::before below for the exact worst-case numbers. */
+  --accent-glow-ambient: rgba(57, 123, 247, 0.24);
+  /* --glass-bg (card/hero/stat/account-card/auth-card fill): was 0.055, a fill this subtle
+     read as barely-there "glass" rather than a visible translucent surface. Raised to 0.09
+     (+64%) — every text token that lands directly on ONE glass layer over bg+glow (--text,
+     --muted, --accent-strong, card-title, row-title, hero-value, kind-badge-*, etc.) is
+     recomputed against this exact composite at each call site (and again after the later hue
+     pass darkened the glow layer itself); the tightest is --accent-strong at 5.26:1
+     (.card-action/.text-button/.source-link resting text) — see site comments. */
+  --glass-bg: rgba(255, 255, 255, 0.09);
+  /* --glass-bg-raised (.dialog, .sidebar, .mobile-nav, .month-picker-panel,
+     .account-card:hover): was 0.085. Raised more conservatively than --glass-bg itself (to
+     0.11, +29%, not the same +64%) because this token also lights the sidebar and mobile-nav,
+     both of which carry SMALL text/icon at their tightest margins (nav-eyebrow, the mobile
+     tab-bar's active label) — 0.11 is the highest value that still clears every one of those
+     after BOTH passes (mobile-nav active label 4.84:1 at its tighter gradient stop; sidebar
+     nav-eyebrow, re-lightened again after the hue pass — see its own comment — 4.64:1);
+     a straight proportional bump to ~0.14 measured as low as 3.80–4.21:1 on those two (before
+     the hue pass) and was rejected. See each site's own comment for its exact recomputed
+     number. */
+  --glass-bg-raised: rgba(255, 255, 255, 0.11);
+  /* --glass-bg-row (.item-card.row, .glass-row): deliberately left at 0.04, UNCHANGED, rather
+     than raised alongside the two tokens above. A row using this class is always nested
+     INSIDE a .card (Abonnements' list, Investissements' positions) — its composited surface
+     is already bg+glow+the card's OWN --glass-bg fill (now 0.09) plus this row fill on top, a
+     4-layer stack, and --muted (the row's own detail/meta text) already lands at only 4.97:1
+     there even with this token held at its original value; raising it further measured as low
+     as 4.11:1 (fails AA). identite-ui.md's own split — glass reserved for command/container
+     surfaces, dense lists staying the lighter "verre-without-blur" treatment — already argued
+     for keeping rows less intense than cards; this is that same call, now load-bearing for
+     contrast too, not just style. */
   --glass-bg-row: rgba(255, 255, 255, 0.04);
   --glass-blur: 22px;
   --radius-pill: 999px;
@@ -62,11 +149,38 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  background: var(--bg);
+  position: relative;
+}
+/* Ambient halo, on its own fixed layer rather than `background-attachment: fixed` on
+   `body` — that property is unreliable on mobile Safari/iOS in particular (a well-known
+   rendering limitation, not fixed by any polyfill), which left this halo invisible on a
+   real phone despite rendering correctly in this sandbox's desktop Chromium the whole time
+   this redesign was verified. `position: fixed` on a dedicated layer instead is reliably
+   supported everywhere, including iOS.
+   Intensity pass (real phone capture at 390px still read this as flat/near-invisible even
+   with the anchoring fixed): the top-left source (--accent-glow-ambient) goes from 0.14 to
+   0.24 — the ceiling wasn't the halo's own visibility limit, it was --subtle text's contrast
+   margin at the time; --subtle is now lightened instead (see its own token comment above) so
+   the halo itself could actually rise. The other two sources, not gated by any text token
+   (nothing but non-text/icon content ever sits over the top-right or bottom-right corners of
+   the page), go up by a comparable relative amount: top-right 0.09 → 0.16, bottom 0.10 →
+   0.18. All three stay below source 1's own 0.24 so it remains the single conservative
+   worst case every glass/card text computation in this file is checked against — see the
+   token block above and each glass surface's own comment. Same geometry (same three light
+   sources, same radii/positions) — only the opacities changed, plus a third source near the
+   bottom so a long page (Mon mois) never scrolls into a flat, glow-free stretch, the two top
+   sources not reaching past roughly one viewport height. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
   background:
     radial-gradient(1100px 620px at 12% -8%, var(--accent-glow-ambient), transparent 60%),
-    radial-gradient(800px 520px at 105% 8%, rgba(79, 140, 255, 0.09), transparent 55%),
-    var(--bg);
-  background-attachment: fixed;
+    radial-gradient(800px 520px at 105% 8%, rgba(57, 123, 247, 0.16), transparent 55%),
+    radial-gradient(900px 500px at 20% 115%, rgba(57, 123, 247, 0.18), transparent 60%);
 }
 /* "Verre" utility pair — PR 1 defines these, PR 2 applies them (identite-ui.md: reserve
    glass for a page's few command/container surfaces, e.g. cards/dialogs/nav, never for a
@@ -83,7 +197,7 @@ body {
   border: 1px solid transparent;
   background:
     linear-gradient(var(--glass-bg), var(--glass-bg)) padding-box,
-    linear-gradient(135deg, rgba(79, 140, 255, 0.35), rgba(255, 255, 255, 0.07)) border-box;
+    linear-gradient(135deg, rgba(57, 123, 247, 0.45), rgba(255, 255, 255, 0.1)) border-box;
   backdrop-filter: blur(var(--glass-blur));
   -webkit-backdrop-filter: blur(var(--glass-blur));
 }
@@ -91,7 +205,7 @@ body {
   border: 1px solid transparent;
   background:
     linear-gradient(var(--glass-bg-row), var(--glass-bg-row)) padding-box,
-    linear-gradient(135deg, rgba(79, 140, 255, 0.22), rgba(255, 255, 255, 0.05)) border-box;
+    linear-gradient(135deg, rgba(57, 123, 247, 0.3), rgba(255, 255, 255, 0.08)) border-box;
 }
 button,
 input,
@@ -245,14 +359,26 @@ img.brand-mark {
 }
 .nav-item.active {
   color: #eaf1ff;
-  background: linear-gradient(135deg, rgba(79, 140, 255, 0.2), rgba(79, 140, 255, 0.07));
-  border-color: rgba(79, 140, 255, 0.35);
+  /* Wash raised 0.2/0.07 → 0.28/0.1 and border 0.35 → 0.45 alongside the halo/glass intensity
+     pass (matches .mobile-nav .active's border, below, for the same active-state language on
+     both nav surfaces). #eaf1ff label text stays extremely safe on this (7.52:1+, recomputed
+     by formula against the sidebar's own new composite) — the actual constraint this pass
+     found was the ACTIVE ICON below, not this label; see its own comment. */
+  background: linear-gradient(135deg, rgba(57, 123, 247, 0.28), rgba(57, 123, 247, 0.1));
+  border-color: rgba(57, 123, 247, 0.45);
   box-shadow:
     inset 0 0 18px -6px var(--accent-glow),
     0 2px 14px -4px var(--accent-glow);
 }
+/* Was var(--accent) — non-text (icon), so only WCAG 1.4.11's 3:1 floor applies, but at this
+   pass's new sidebar composite (--glass-bg-raised now lighting the sidebar's own translucent
+   base more) bare --accent measured as low as 2.65:1 at the wash's stronger gradient stop —
+   fails even that lower floor. --accent-strong (already this file's designated TEXT-safe
+   variant of the same hue, used at rest for .card-action et al. below) measures 3.84:1 in the
+   same worst case: still one accent hue, just the lighter member of the pair, and correct for
+   an icon that needs to read clearly on a brighter surface. */
 .nav-item.active svg {
-  color: var(--accent);
+  color: var(--accent-strong);
 }
 .sidebar-footer {
   margin-top: auto;
@@ -340,9 +466,13 @@ img.brand-mark {
  * Contrast (by formula, WCAG 1.4.11 non-text/UI-component floor of 3:1, not the 4.5:1 text
  * floor — the thumb carries no text): white #fff thumb vs the off-state track
  * (var(--surface-raised), #1c1f29) ≈16.4:1; the same white thumb vs the on-state track
- * (var(--accent), #4f8cff) ≈3.22:1 — clears 3:1 with a real if modest margin. The softer
- * #eef1fb tried first measured only ≈2.85:1 on the accent track (fails), which is why the
- * thumb is pure white rather than the app's usual off-white text tone. */
+ * (var(--accent)) ≈3.22:1 at the original #4f8cff — clears 3:1 with a real if modest margin.
+ * The softer #eef1fb tried first measured only ≈2.85:1 on the accent track (fails), which is
+ * why the thumb is pure white rather than the app's usual off-white text tone.
+ * Re-verified after the later hue pass darkened --accent to #397bf7 (see its token comment):
+ * white thumb vs the new, darker on-state track now measures ≈3.93:1 — the darker track gave
+ * this pairing MORE margin, not less, so it was never the constraint that pass had to work
+ * around (--accent-strong was, for the small-text sites — see the --accent token comment). */
 .toggle {
   position: relative;
   display: inline-flex;
@@ -522,7 +652,7 @@ img.brand-mark {
   border: 1px solid transparent;
   background:
     linear-gradient(rgba(225, 230, 255, 0.04), rgba(225, 230, 255, 0.04)) padding-box,
-    linear-gradient(135deg, rgba(79, 140, 255, 0.22), rgba(255, 255, 255, 0.05)) border-box;
+    linear-gradient(135deg, rgba(57, 123, 247, 0.3), rgba(255, 255, 255, 0.08)) border-box;
   box-shadow: none;
 }
 /* Quick-settle action, colored by what it does rather than a neutral grey like every other
@@ -610,7 +740,7 @@ img.brand-mark {
      border-box gradient standing in for the border color. */
   background:
     linear-gradient(#11141e, #11141e) padding-box,
-    linear-gradient(135deg, rgba(79, 140, 255, 0.22), rgba(255, 255, 255, 0.05)) border-box;
+    linear-gradient(135deg, rgba(57, 123, 247, 0.3), rgba(255, 255, 255, 0.08)) border-box;
   color: var(--text);
   font-size: 14px;
   font-weight: 550;
@@ -623,7 +753,11 @@ img.brand-mark {
 .month-picker-trigger:hover {
   background:
     linear-gradient(#1a1e2c, #1a1e2c) padding-box,
-    linear-gradient(135deg, rgba(79, 140, 255, 0.32), rgba(255, 255, 255, 0.08)) border-box;
+    /* Was 0.32/0.08. The rest-state secondary border pair above moved 0.22/0.05 → 0.3/0.08
+       (halo/glass intensity pass), so this hover value — which needs to stay visibly
+       brighter than rest, not collide with it — moves up by the same +0.10/+0.03 delta it
+       always had, to 0.42/0.11. Non-text border, no contrast floor. */
+    linear-gradient(135deg, rgba(57, 123, 247, 0.42), rgba(255, 255, 255, 0.11)) border-box;
 }
 .month-picker-trigger:active {
   transform: scale(0.97);
@@ -663,7 +797,7 @@ img.brand-mark {
   width: 288px;
   max-width: min(320px, calc(100vw - 32px));
   padding: 14px;
-  border: 1px solid rgba(79, 140, 255, 0.28);
+  border: 1px solid rgba(57, 123, 247, 0.38); /* was 0.28 — non-text edge, halo/glass intensity pass */
   border-radius: 14px;
   background:
     linear-gradient(var(--glass-bg-raised), var(--glass-bg-raised)),
@@ -741,8 +875,11 @@ img.brand-mark {
  * branded choice at a glance. A flat fill of var(--accent) itself, not the previous
  * color-mix() wash — a 78%-opacity mix over this panel's own translucent background no
  * longer clears AA at the new blue accent (measured 3.88-4.16:1 depending on panel/backdrop
- * compositing), where the dark text on a fully solid var(--accent) is a verified 5.83:1
- * (same pairing as .tab-button.active). */
+ * compositing), where the dark text on a fully solid var(--accent) was a verified 5.83:1
+ * (same pairing as .tab-button.active) at the original #4f8cff. Re-verified after the later
+ * hue pass darkened --accent to #397bf7 (see its token comment): 4.78:1 — the darker
+ * background narrowed this particular margin (unlike the white-on-accent pairing above, which
+ * widened), but it still clears AA's 4.5:1 floor for this 13px bold text with real margin. */
 .month-picker-cell.active {
   color: #0e130f;
   background: var(--accent);
@@ -793,7 +930,7 @@ img.brand-mark {
   border: 1px solid transparent;
   background:
     linear-gradient(var(--glass-bg), var(--glass-bg)) padding-box,
-    linear-gradient(135deg, rgba(79, 140, 255, 0.35), rgba(255, 255, 255, 0.07)) border-box;
+    linear-gradient(135deg, rgba(57, 123, 247, 0.45), rgba(255, 255, 255, 0.1)) border-box;
   backdrop-filter: blur(var(--glass-blur));
   -webkit-backdrop-filter: blur(var(--glass-blur));
   border-radius: var(--radius);
@@ -887,8 +1024,12 @@ img.brand-mark {
   border-radius: 11px;
   border-bottom: 1px solid var(--line-soft);
 }
+/* Icon (non-text, 3:1 floor). Was #7985a4: against this card's own new, lighter --glass-bg
+   composite (plus this element's own 0.02 fill) that measured 2.80:1 — under even the 3:1
+   non-text floor. #838fb1 restored 3.20:1, formula-verified against the same composite, then
+   3.39:1 after the later hue pass darkened the glow layer (see the --accent token comment). */
 .chart-empty svg {
-  color: #7985a4;
+  color: #838fb1;
 }
 .chart-empty p {
   margin: 0;
@@ -978,15 +1119,31 @@ img.brand-mark {
      page's own top-left ambient glow): L≈0.0090, within 0.0003 of the old flat --surface's
      own L≈0.0087 — every figure already in this file computed against --surface (--text
      13.4:1, --muted 6.1:1, --accent 4.5–5.6:1, status tones 7.5–9.2:1) stays valid within
-     rounding. The one real edge case: directly under the page's top-left ambient glow
-     hotspot (body's fixed radial gradient, only reachable mid-scroll, never at rest)
-     --accent text on this background measures ≈4.51:1, a hairline above AA rather than the
-     usual comfortable margin — flagged for finance-verification to spot-check on a real
-     scrolled capture rather than patched with an unreviewed token change. */
+     rounding.
+     RESOLVED in the halo/glass intensity pass, not just re-flagged: the edge case above (bare
+     --accent as .card-action's text color, measuring a hairline 4.51:1 under the page's
+     top-left glow hotspot — reachable mid-scroll since that glow layer is `position: fixed`)
+     would have failed outright once --accent-glow-ambient and --glass-bg both rose. Rather
+     than raise --accent itself (it had no headroom to give at the time — the .toggle
+     thumb-vs-track pairing elsewhere in this file sat at a tight, verified 3.22:1 non-text
+     margin against --accent used as a FOND), .card-action/.text-button/.source-link moved to
+     --accent-strong at rest (was already used at hover) — see each site's own comment.
+     At this pass's new --glass-bg (0.09) and --accent-glow-ambient (0.24), the worst case
+     (top-left hotspot, single glass layer) measures --text 10.06:1, --muted (#aeb4c9, also
+     lightened — see its token comment) 5.30:1, --accent-strong 4.93:1 — all recomputed by the
+     WCAG relative-luminance formula, real margins, not hairlines.
+     Re-verified once more after the later hue pass (--accent/--accent-strong both darkened —
+     see the --accent token comment for why): --text 10.63:1, --muted 5.60:1, --accent-strong
+     5.26:1 against this same worst-case composite (the darker glow layer actually widened
+     every one of these margins slightly, since the darker glow leaves the composited surface
+     itself a little darker under the same light text). --accent as a plain FOND also gained
+     headroom in the hue pass (darker accent → more contrast for white/light content on top of
+     it), so the .toggle margin cited above is no longer the binding constraint it once was —
+     see .toggle's own comment for its current number. */
   border: 1px solid transparent;
   background:
     linear-gradient(var(--glass-bg), var(--glass-bg)) padding-box,
-    linear-gradient(135deg, rgba(79, 140, 255, 0.35), rgba(255, 255, 255, 0.07)) border-box;
+    linear-gradient(135deg, rgba(57, 123, 247, 0.45), rgba(255, 255, 255, 0.1)) border-box;
   backdrop-filter: blur(var(--glass-blur));
   -webkit-backdrop-filter: blur(var(--glass-blur));
   box-shadow: var(--shadow);
@@ -1038,13 +1195,21 @@ img.brand-mark {
   letter-spacing: -0.025em;
   line-height: 1.4;
 }
+/* Rest color was var(--accent) (see .card comment above for the full before/after): once the
+   halo/glass intensity pass raised --accent-glow-ambient and --glass-bg, --accent's own
+   already-thin margin here (a hairline 4.51:1 even before this pass) would have failed
+   outright. --accent-strong instead — this file's text-safe variant of the same hue,
+   previously hover-only — measures 5.26:1 against the same worst-case composite (recomputed
+   again after the later hue pass darkened both tokens — see the --accent token comment).
+   Hover moves to --text (near-white) so the state is still visually distinct from rest, since
+   hover would otherwise land on the same value rest now uses. */
 .card-action {
   min-height: 44px;
   display: inline-flex;
   align-items: center;
   gap: 5px;
   background: transparent;
-  color: var(--accent);
+  color: var(--accent-strong);
   padding: 6px 0 6px 10px;
   font-size: 12px;
   text-decoration: none;
@@ -1052,7 +1217,7 @@ img.brand-mark {
   transition: color 0.15s ease, opacity 0.1s ease-out;
 }
 .card-action:hover {
-  color: var(--accent-strong);
+  color: var(--text);
 }
 .card-action:active {
   opacity: 0.6;
@@ -1088,7 +1253,7 @@ img.brand-mark {
   border: 1px solid transparent;
   background:
     linear-gradient(var(--glass-bg), var(--glass-bg)) padding-box,
-    linear-gradient(135deg, rgba(79, 140, 255, 0.35), rgba(255, 255, 255, 0.07)) border-box;
+    linear-gradient(135deg, rgba(57, 123, 247, 0.45), rgba(255, 255, 255, 0.1)) border-box;
   backdrop-filter: blur(var(--glass-blur));
   -webkit-backdrop-filter: blur(var(--glass-blur));
   box-shadow: var(--shadow);
@@ -1100,11 +1265,15 @@ img.brand-mark {
 /* Intensify-in-place, same pattern as .item-card.row:hover/.month-picker-trigger:hover —
    border stays transparent (the resting rule's real border color), only the two gradient
    layers brighten, since there's no flat border-color left to swap once the resting state
-   is already the gradient-border technique. */
+   is already the gradient-border technique. Rebalanced alongside the halo/glass intensity
+   pass: the REST border pair above moved 0.35/0.07 → 0.45/0.1, so this hover pair (which used
+   to be exactly that new rest value) moves up by the same +0.10/+0.03 delta it always had
+   over rest, to 0.55/0.13, so hovering still visibly brightens the edge instead of landing on
+   an unchanged border. Non-text border, no contrast floor to clear. */
 .account-card:hover {
   background:
     linear-gradient(var(--glass-bg-raised), var(--glass-bg-raised)) padding-box,
-    linear-gradient(135deg, rgba(79, 140, 255, 0.45), rgba(255, 255, 255, 0.1)) border-box;
+    linear-gradient(135deg, rgba(57, 123, 247, 0.55), rgba(255, 255, 255, 0.13)) border-box;
   transform: translateY(-2px);
 }
 .account-head {
@@ -1183,31 +1352,50 @@ img.brand-mark {
 }
 .kind-badge-bank {
   /* Retuned lot 2/3 (finance-identite-visuelle): the previous #8fabc9 sat only ~8° of hue
-     from --accent (#4f8cff) at near-full saturation difference alone, which still read as
-     "a second, dimmer blue" next to the new single-accent interactive color — identite-ui.md
-     forbids reusing the accent hue for anything but selection/action. Shifted to a neutral
-     slate-teal (H184° vs accent's H219°, a different hue family, not a second blue or a
-     violet) at the same saturation/lightness band as the sibling kind-badge-* and
-     institution-icon-* hues (S~32–59%, L~65–85% across the set). Contrast recomputed by the WCAG relative
-     luminance formula against the badge's own composited rgba(…, 0.14) background (glass card
-     layer over --bg/--surface): text 6.6–7.7:1, icon (non-text) same pair ≥3:1 — see PR report.
-     rgba tuple mirrors the hex, same convention as -investment/-savings above. */
+     from --accent (originally #4f8cff, now #397bf7 — see its token comment) at near-full
+     saturation difference alone, which still read as "a second, dimmer blue" next to the
+     single-accent interactive color — identite-ui.md forbids reusing the accent hue for
+     anything but selection/action. Shifted to a neutral slate-teal (H184° vs accent's H219°,
+     a different hue family, not a second blue or a violet) at the same saturation/lightness
+     band as the sibling kind-badge-* and institution-icon-* hues (S~32–59%, L~65–85% across
+     the set). This badge's own hue (137,190,194) is independent of --accent/the glow and was
+     never touched by either pass — only the CARD COMPOSITE it sits on moved, twice:
+     Re-lightened in the halo/glass intensity pass: this badge sits on .account-card, whose own
+     --glass-bg fill rose (see its token comment) — against that new, lighter card composite
+     the ORIGINAL #89bec2 measured only 4.09:1 (rest) / 3.79:1 (.account-card:hover, which
+     swaps to the even lighter --glass-bg-raised) against its own 0.14-alpha badge fill, under
+     AA. #97d2d6 (same hue, scaled brighter, formula-verified) restored 5.01:1 / 4.74:1.
+     Re-verified again after the later hue pass (the glow layer beneath the card composite
+     darkened — see the --accent token comment): 5.27:1 / 4.97:1, margins widened further.
+     Icon twin .institution-icon-bank below gets the same new hex to keep the badge/icon pair
+     visually matched, though its own non-text 3:1 floor never needed the lightening. */
   background: rgba(137, 190, 194, 0.14);
-  color: #89bec2;
+  color: #97d2d6;
 }
 .kind-badge-investment {
+  /* Same halo/glass re-lightening as .kind-badge-bank above: ORIGINAL #ab9fdb measured 3.60:1
+     (rest) / 3.25:1 (hover) against its own composited badge fill once --glass-bg/-raised
+     rose — under AA even at rest. #cabbff restored 4.99:1 / 4.71:1, then 5.24:1 / 4.94:1
+     after the later hue pass darkened the glow layer beneath the card (see the --accent
+     token comment). */
   background: rgba(171, 159, 219, 0.14);
-  color: #ab9fdb;
+  color: #cabbff;
 }
 .kind-badge-debt {
-  /* MONOGRAM_PALETTE[5] (#c0ceef), already the most muted swatch in that set and already
-     verified for contrast — left as-is rather than retuned again. */
+  /* MONOGRAM_PALETTE[5] (#c0ceef), already the most muted swatch in that set. Re-verified
+     (not just left as-is) against the halo/glass intensity pass's new --glass-bg/-raised
+     composite: 5.18:1 (rest) / 4.90:1 (.account-card:hover); re-verified again after the
+     hue pass: 5.44:1 / 5.14:1 — still clears AA with real margin both times, so this one
+     genuinely never needed retuning. */
   background: rgba(160, 180, 200, 0.16);
   color: #c0ceef;
 }
 .kind-badge-savings {
+  /* Same halo/glass re-lightening as .kind-badge-bank above: ORIGINAL #c3a8d9 measured 4.01:1
+     (rest) / 3.61:1 (hover) — under AA even at rest. #d9bbf1 restored 4.98:1 / 4.70:1, then
+     5.24:1 / 4.94:1 after the later hue pass (see the --accent token comment). */
   background: rgba(195, 168, 217, 0.14);
-  color: #c3a8d9;
+  color: #d9bbf1;
 }
 .institution-icon {
   width: 42px;
@@ -1227,12 +1415,14 @@ img.brand-mark {
    an institution-derived monogram: the icon now says what the account IS (bank/savings/
    investment/debt), and its color matches the badge carrying that same word next to it. */
 .institution-icon-bank {
-  /* Same retuned slate-teal as .kind-badge-bank above, same rationale — kept as one pair. */
-  color: #89bec2;
+  /* Same retuned slate-teal as .kind-badge-bank above, same rationale and same halo/glass
+     re-lightened hex — kept as one visually matched pair (this icon's own non-text 3:1 floor
+     never needed the lightening, done for consistency, not compliance). */
+  color: #97d2d6;
   background: rgba(137, 190, 194, 0.14);
 }
 .institution-icon-investment {
-  color: #ab9fdb;
+  color: #cabbff;
   background: rgba(171, 159, 219, 0.14);
 }
 .institution-icon-debt {
@@ -1240,7 +1430,7 @@ img.brand-mark {
   background: rgba(160, 180, 200, 0.16);
 }
 .institution-icon-savings {
-  color: #c3a8d9;
+  color: #d9bbf1;
   background: rgba(195, 168, 217, 0.14);
 }
 .balance {
@@ -1460,9 +1650,11 @@ img.brand-mark {
 .row:focus-within .row-icon,
 .row:hover .institution-icon,
 .row:focus-within .institution-icon {
-  border-color: rgba(79, 140, 255, 0.4);
+  /* Non-text ring, raised 0.4→0.5 / 0.18→0.25 (plus --accent-glow-strong's own token bump)
+     for a more pronounced hover glow, matching the reference mockups' icon-ring look. */
+  border-color: rgba(57, 123, 247, 0.5);
   box-shadow:
-    0 0 0 1px rgba(79, 140, 255, 0.18),
+    0 0 0 1px rgba(57, 123, 247, 0.25),
     0 0 14px -2px var(--accent-glow-strong);
 }
 .row-main {
@@ -1578,10 +1770,17 @@ img.brand-mark {
  * the parent .card's own would be pure GPU cost with no visible gain, and would fight this
  * row's own hover intensification below). Contrast recomputed for this row's own text
  * colors (.row-title #e0e3ee, .row-detail/.meta --muted) against the composited surface a
- * row actually renders here — .glass-bg-row's 4% white over the parent .card's own already-
- * glass background — L≈0.0152, close to the old flat --surface's own sibling
- * --surface-raised (L≈0.0139): --muted measures 6.8:1 at rest, 6.3:1 on the brighter hover
- * fill below, both comfortably above AA's 4.5:1 floor. */
+ * row actually renders here — .glass-bg-row's 4% white over the parent .card's own glass
+ * background, itself over body's ambient glow at its worst (peak, reachable while scrolling
+ * since that glow layer is `position: fixed`): the earlier "6.8:1" figure for --muted was
+ * computed WITHOUT the glow contribution and was optimistic — including it, --muted (now
+ * #aeb4c9, itself lightened for this reason — see its token comment) measures 4.97:1 at rest
+ * here and 4.89:1 on the hover fill below (reduced from 0.065 to 0.045 specifically to keep
+ * this margin real rather than sub-AA once the ambient glow and the parent .card's own
+ * --glass-bg both rose — see --glass-bg-row's own token comment for why THIS token stayed
+ * put instead of rising with them). Both clear AA's 4.5:1 floor with real margin (numbers
+ * include the later hue pass on --accent-glow-ambient's RGB triple — see the --accent token
+ * comment — which widened both slightly further). */
 .item-card.row {
   padding: 14px 16px;
   margin-bottom: 10px;
@@ -1589,7 +1788,7 @@ img.brand-mark {
   border: 1px solid transparent;
   background:
     linear-gradient(var(--glass-bg-row), var(--glass-bg-row)) padding-box,
-    linear-gradient(135deg, rgba(79, 140, 255, 0.22), rgba(255, 255, 255, 0.05)) border-box;
+    linear-gradient(135deg, rgba(57, 123, 247, 0.3), rgba(255, 255, 255, 0.08)) border-box;
   box-shadow: var(--shadow);
   transition: background 0.15s ease;
 }
@@ -1603,8 +1802,13 @@ img.brand-mark {
 .item-card.row:hover,
 .item-card.row:focus-within {
   background:
-    linear-gradient(rgba(255, 255, 255, 0.065), rgba(255, 255, 255, 0.065)) padding-box,
-    linear-gradient(135deg, rgba(79, 140, 255, 0.32), rgba(255, 255, 255, 0.08)) border-box;
+    /* Fill was 0.065; lowered to 0.045 in the halo/glass intensity pass — see the rule's own
+       comment above for why (the row's --muted text is the binding constraint here, not the
+       fill's own visibility). Still visibly brighter than the 0.04 rest fill, and the border
+       pair below (rebalanced the same way as .month-picker-trigger:hover) carries most of
+       the hover cue now. */
+    linear-gradient(rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.045)) padding-box,
+    linear-gradient(135deg, rgba(57, 123, 247, 0.42), rgba(255, 255, 255, 0.11)) border-box;
 }
 .positive {
   color: var(--positive);
@@ -1789,7 +1993,7 @@ img.brand-mark {
   border: 1px solid transparent;
   background:
     linear-gradient(var(--glass-bg-raised), var(--glass-bg-raised)) padding-box,
-    linear-gradient(135deg, rgba(79, 140, 255, 0.35), rgba(255, 255, 255, 0.07)) border-box;
+    linear-gradient(135deg, rgba(57, 123, 247, 0.45), rgba(255, 255, 255, 0.1)) border-box;
   backdrop-filter: blur(var(--glass-blur));
   -webkit-backdrop-filter: blur(var(--glass-blur));
   box-shadow: 0 35px 100px rgba(0, 0, 0, 0.5);
@@ -1855,12 +2059,19 @@ img.brand-mark {
    but the same near-opaque dark fill .auth-card input uses just below, not .glass-row's own
    4% white film: these fields sit inside an already-glass .dialog or .card (verre empilé sur
    verre), and a second lightening film on top measured 4.38:1 for the placeholder against a
-   .dialog's own composited background — under AA's 4.5:1 floor. This rgba(6,7,13,0.4) fill
-   (same value already proven for .auth-card input) measures, by formula, ≈4.82:1 for the
-   placeholder against a .dialog and ≈4.90:1 against a plain .card (the "Préférences et
-   synchronisation" select on Documents et réglages isn't in a dialog at all); the typed
-   --text color clears both by a wide margin (≈17:1). No blur of its own — the .dialog/.card
-   around it already supplies that. */
+   .dialog's own composited background — under AA's 4.5:1 floor.
+   Opacity raised again in the halo/glass intensity pass, from 0.4 to 0.7: once --glass-bg and
+   --glass-bg-raised both rose (see their token comments), the card/dialog surface THIS fill
+   sits on top of got lighter, and 0.4 alone was no longer opaque enough to keep the
+   placeholder legible — measured 3.87:1 against a plain .card / 4.43:1 against a .dialog,
+   both under AA. This is the same "near-opaque dark fill, deliberately not glass" input
+   already used for exactly the reason of staying legible regardless of what's behind it — so
+   making it MORE opaque as that backdrop lightens is the same design intent, not a reversal
+   of it. At 0.7, formula-verified: placeholder ≈4.64:1 against a plain .card/.auth-card input
+   and ≈4.88:1 against a .dialog input; the typed --text color keeps its very wide margin
+   (≈16-17:1). Re-verified again after the later hue pass darkened the glow layer beneath
+   these surfaces (see the --accent token comment): ≈4.69:1 / ≈4.89:1, both margins held or
+   widened slightly. No blur of its own — the .dialog/.card around it already supplies that. */
 .field input,
 .field select,
 .field textarea {
@@ -1869,8 +2080,8 @@ img.brand-mark {
   border: 1px solid transparent;
   border-radius: 8px;
   background:
-    linear-gradient(rgba(6, 7, 13, 0.4), rgba(6, 7, 13, 0.4)) padding-box,
-    linear-gradient(135deg, rgba(79, 140, 255, 0.22), rgba(255, 255, 255, 0.05)) border-box;
+    linear-gradient(rgba(6, 7, 13, 0.7), rgba(6, 7, 13, 0.7)) padding-box,
+    linear-gradient(135deg, rgba(57, 123, 247, 0.3), rgba(255, 255, 255, 0.08)) border-box;
   padding: 12px 13px;
   color: var(--text);
   font-size: 14px;
@@ -1883,15 +2094,16 @@ img.brand-mark {
    auth card's own glass, lightens enough to wash out the placeholder color below. A
    dedicated near-opaque dark fill instead, with the same gradient-border technique
    (padding-box/border-box layering) — no blur of its own, the card around it already
-   supplies that. */
+   supplies that. Opacity raised 0.4→0.7 alongside .field input above — same reason, same
+   recomputed numbers, see its comment. */
 .auth-card input {
   width: 100%;
   min-height: 48px;
   border: 1px solid transparent;
   border-radius: 8px;
   background:
-    linear-gradient(rgba(6, 7, 13, 0.4), rgba(6, 7, 13, 0.4)) padding-box,
-    linear-gradient(135deg, rgba(79, 140, 255, 0.22), rgba(255, 255, 255, 0.05)) border-box;
+    linear-gradient(rgba(6, 7, 13, 0.7), rgba(6, 7, 13, 0.7)) padding-box,
+    linear-gradient(135deg, rgba(57, 123, 247, 0.3), rgba(255, 255, 255, 0.08)) border-box;
   padding: 12px 13px;
   color: var(--text);
   font-size: 14px;
@@ -1990,7 +2202,7 @@ input::file-selector-button {
   border: 1px solid transparent;
   background:
     linear-gradient(var(--glass-bg), var(--glass-bg)) padding-box,
-    linear-gradient(135deg, rgba(79, 140, 255, 0.35), rgba(255, 255, 255, 0.07)) border-box;
+    linear-gradient(135deg, rgba(57, 123, 247, 0.45), rgba(255, 255, 255, 0.1)) border-box;
   backdrop-filter: blur(var(--glass-blur));
   -webkit-backdrop-filter: blur(var(--glass-blur));
   border-radius: var(--radius);
@@ -2039,11 +2251,16 @@ input::file-selector-button {
   height: 86px;
   border-radius: 18px;
 }
+/* Was var(--accent): this pill sits directly on the auth screen's own page background (no
+   glass fill between it and body's ambient glow), so at the halo intensity pass's new
+   --accent-glow-ambient (0.24) bare --accent measured 4.47:1 there — under AA. --accent-strong
+   (this file's text-safe variant of the same hue) measures 6.88:1 in the same composite
+   (recomputed after the later hue pass — see the --accent token comment). */
 .auth-art .pill {
   background: transparent;
   border: 0;
   padding-left: 0;
-  color: var(--accent);
+  color: var(--accent-strong);
 }
 .auth-card .mobile-brand {
   display: none;
@@ -2063,9 +2280,19 @@ input::file-selector-button {
   width: 62px;
   height: 62px;
   border-radius: 16px;
+  /* Icon (non-text, 3:1 floor). border/background raised 0.28→0.38 / 0.12→0.17 in the
+     halo/glass intensity pass for a more visible badge outline — 3.48:1 for this icon against
+     its own new background at that point, real margin. --accent itself was NOT touched in
+     that pass (the .toggle thumb-vs-track pairing elsewhere in this file sat at a tight,
+     verified 3.22:1 margin against --accent used as a FOND, and lightening it then would have
+     broken that). --accent WAS later darkened in the hue pass (user feedback — see its token
+     comment) once the toggle's own margin had independently widened enough to allow it
+     (darkening --accent as a FOND only ever helps a light foreground's contrast, never hurts
+     it — see the .toggle comment for its current number). This icon against its own new,
+     also-darkened badge background: 3.11:1 — still clears the 3:1 floor. */
   color: var(--accent);
-  border: 1px solid rgba(79, 140, 255, 0.28);
-  background: rgba(79, 140, 255, 0.12);
+  border: 1px solid rgba(57, 123, 247, 0.38);
+  background: rgba(57, 123, 247, 0.17);
   box-shadow: none;
 }
 .auth-links {
@@ -2167,13 +2394,16 @@ input::file-selector-button {
   color: var(--muted);
   overflow-wrap: anywhere;
 }
+/* Was var(--accent) — always rendered inside a glass card/dialog (account-card details,
+   editor dialogs); moved to --accent-strong for the same reason as .card-action above (see
+   its comment) — no :hover rule here to preserve, so this is a direct swap. */
 .source-link {
   min-height: 44px;
   display: inline-flex;
   align-items: center;
   gap: 5px;
   font-size: 12px;
-  color: var(--accent);
+  color: var(--accent-strong);
 }
 .stat-grid {
   display: grid;
@@ -2189,7 +2419,7 @@ input::file-selector-button {
   border: 1px solid transparent;
   background:
     linear-gradient(var(--glass-bg), var(--glass-bg)) padding-box,
-    linear-gradient(135deg, rgba(79, 140, 255, 0.35), rgba(255, 255, 255, 0.07)) border-box;
+    linear-gradient(135deg, rgba(57, 123, 247, 0.45), rgba(255, 255, 255, 0.1)) border-box;
   backdrop-filter: blur(var(--glass-blur));
   -webkit-backdrop-filter: blur(var(--glass-blur));
   box-shadow: var(--shadow);
@@ -2213,23 +2443,37 @@ input::file-selector-button {
   font-size: 17px;
   letter-spacing: -0.03em;
 }
+/* Lightened from #858da5 (WCAG formula): this label sits on the sidebar's own composite,
+   which lightened when --glass-bg-raised rose (halo/glass intensity pass) and shifted again
+   when the glow layer's hue darkened (hue pass) — the ORIGINAL color passed comfortably
+   before either pass (4.68:1) but measured 3.80:1 after the first and 4.24:1 after the
+   second, both under AA. #8b94ad restores 4.64:1 against the final worst-case composite. */
 .nav-eyebrow {
   margin: 0 13px 14px;
   font-size: 9px;
-  color: #858da5;
+  color: #8b94ad;
 }
 .breadcrumb span {
   padding: 0 11px;
   /* Real defect, measured on the actually rendered pixels (not the token alone): the old
      #50596f gave 2.82:1 against --bg, below WCAG AA's 4.5:1, on all 7 pages (same shared
      breadcrumb). --subtle is an existing app token, still visibly dimmer than the rest of
-     the breadcrumb, and clears AA with headroom (5.39:1). */
+     the breadcrumb.
+     This is the ONE site --subtle is used at, and the sole reason it's now lightened (see its
+     own token comment): this label sits at the very top of the page, inside body::before's
+     top-left ambient glow at its new, stronger peak (0.24, up from 0.14) — reachable while
+     scrolling since that glow layer is `position: fixed`. --subtle now clears AA there with a
+     real margin (4.83:1, after the later hue pass also darkened the glow's RGB triple — see
+     --subtle's own token comment), not a hairline, and 6.31:1 away from the glow. */
   color: var(--subtle);
 }
+/* Was var(--accent) — appears both inside .notice/.demo-notice and inside a plain .card
+   ("Voir les autres mois"); moved to --accent-strong for the same reason as .card-action
+   above, the tighter of its two contexts (no :hover rule here to preserve). */
 .text-button {
   min-height: 44px;
   background: transparent;
-  color: var(--accent);
+  color: var(--accent-strong);
   padding: 6px 0;
   font-size: 12px;
   text-decoration: underline;
@@ -2652,9 +2896,11 @@ input::file-selector-button {
     padding: 7px 5px;
     border-radius: 16px;
     /* Retinted to the app's blue-glass vocabulary (was a hue-neutral slate rgba) — same
-       --glass-bg-raised sheen the sidebar/month picker panel now use, opacity/blur kept
-       exactly as before. */
-    border: 1px solid rgba(79, 140, 255, 0.22);
+       --glass-bg-raised sheen the sidebar/month picker panel now use. Border raised 0.22→0.32
+       in the halo/glass intensity pass (non-text edge, no contrast floor); --glass-bg-raised
+       itself also rose (see its token comment) but this bar's own near-opaque 0.95 base fill
+       keeps that mostly out of the way of the label text below. */
+    border: 1px solid rgba(57, 123, 247, 0.32);
     background:
       linear-gradient(var(--glass-bg-raised), var(--glass-bg-raised)),
       rgba(24, 27, 40, 0.95);
@@ -2688,14 +2934,25 @@ input::file-selector-button {
   /* Unlike .nav-item.active (near-white label text over this same tint), the mobile label
      text here is itself accent-colored, so it sits on a background tinted with its own hue
      — a self-similar pairing that separates far less in luminance than a light-vs-blue one
-     does. Measured against .nav-item.active's literal .20/.07 wash with var(--accent) as the
-     label color: only ~3.15-3.8:1 at 9px, failing AA. Two changes bring it back to a safe
-     margin: var(--accent-strong) (the text-calibrated ~8:1 tone) instead of --accent, and a
-     lighter .14/.05 wash instead of .20/.07 — together ~5.0-5.7:1 at both gradient stops. */
+     does. Measured against .nav-item.active's ORIGINAL .20/.07 wash with var(--accent) as the
+     label color: only ~3.15-3.8:1 at 9px, failing AA. Two changes brought it back to a safe
+     margin: var(--accent-strong) (the text-calibrated tone) instead of --accent, and a
+     lighter .14/.05 wash instead of .20/.07.
+     Re-verified in the halo/glass intensity pass (body's ambient glow raised, and this bar's
+     own --glass-bg-raised fill raised too — see their token comments): this wash is left
+     UNCHANGED at .14/.05 — a straight proportional bump measured as low as 3.85:1 at the
+     bottom source's new peak, under AA — while the unchanged .14/.05 still clears it, at
+     4.61:1 (stronger stop) / 5.20:1 (weaker stop), both recomputed against the new, lighter
+     --glass-bg-raised composite. Only the border-color rose, 0.35→0.45 (non-text, matches
+     .nav-item.active's own border bump for the same active-state language on both surfaces).
+     Re-verified once more after the later hue pass (--accent-strong desaturated only, kept at
+     its original lightness specifically to protect this tightest of its sites, and the glow
+     layer beneath this bar darkened too — see the --accent token comment): 4.84:1 / 5.34:1,
+     both margins widened further, not narrowed. */
   .mobile-nav .active {
     color: var(--accent-strong);
-    background: linear-gradient(135deg, rgba(79, 140, 255, 0.14), rgba(79, 140, 255, 0.05));
-    border-color: rgba(79, 140, 255, 0.35);
+    background: linear-gradient(135deg, rgba(57, 123, 247, 0.14), rgba(57, 123, 247, 0.05));
+    border-color: rgba(57, 123, 247, 0.45);
     box-shadow:
       inset 0 0 18px -6px var(--accent-glow),
       0 2px 14px -4px var(--accent-glow);

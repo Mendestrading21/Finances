@@ -97,16 +97,23 @@ function monogramInitials(name: string): string {
     words.length > 1 ? words[0][0] + words[1][0] : name.replace(/\s+/g, "").slice(0, 2)
   ).toUpperCase();
 }
+// Standalone palette for unassociated investment positions (identified by hash, not by
+// account kind) — deliberately NOT a live mirror of index.css's --accent/kind-badge-* hues:
+// an earlier version of this comment claimed exactly that "kept in sync by hand" sync, and
+// it silently drifted every time the "verre + bleu néon" redesign retuned those CSS tokens
+// (the mint fg below was the original --accent from before that redesign even started).
+// Each fg is verified by the WCAG relative-luminance formula against this exact composite:
+// the badge's own semi-transparent bg over .institution-icon inside `.item-card.row` nested
+// inside `.card`, itself under body's ambient glow at its peak (reachable while scrolling,
+// since that glow layer is `position: fixed`) — the worst case this component actually
+// renders in (Investissements' unassociated-position rows). All six clear 4.5:1 there.
 const MONOGRAM_PALETTE = [
-  // First entry mirrors --accent (index.css) exactly; the next three mirror the
-  // kind-badge-investment/bank/savings hues, kept in sync by hand since this array is
-  // plain TS, not CSS custom properties.
-  { bg: "rgba(127, 203, 168, 0.16)", fg: "#7fcba8" },
-  { bg: "rgba(171, 159, 219, 0.14)", fg: "#ab9fdb" },
-  { bg: "rgba(143, 171, 201, 0.14)", fg: "#8fabc9" },
-  { bg: "rgba(201, 168, 108, 0.16)", fg: "#c9a86c" },
-  { bg: "rgba(195, 168, 217, 0.14)", fg: "#c3a8d9" },
-  { bg: "rgba(160, 180, 200, 0.16)", fg: "#c0ceef" },
+  { bg: "rgba(57, 123, 247, 0.16)", fg: "#98c0f9" }, // 4.71:1 — blue family, echoes --accent
+  { bg: "rgba(171, 159, 219, 0.14)", fg: "#c5bde6" }, // 4.61:1
+  { bg: "rgba(143, 171, 201, 0.14)", fg: "#b1c5da" }, // 4.62:1
+  { bg: "rgba(201, 168, 108, 0.16)", fg: "#d9c299" }, // 4.58:1
+  { bg: "rgba(195, 168, 217, 0.14)", fg: "#d2bde2" }, // 4.63:1
+  { bg: "rgba(160, 180, 200, 0.16)", fg: "#c0ceef" }, // 4.90:1 — already safe, unchanged
 ];
 function monogramColors(name: string): { bg: string; fg: string } {
   let hash = 0;
