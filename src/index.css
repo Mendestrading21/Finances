@@ -13,8 +13,8 @@
   --text: #f4f5fc;
   --muted: #a3a8bc;
   --subtle: #7f859b;
-  --accent: #8aa9ff;
-  --violet: #aa96ff;
+  --accent: #0a84ff;
+  --violet: #8f6bff;
   --positive: #8adebc;
   --negative: #ffa0ac;
   --warning: #e5c186;
@@ -73,15 +73,15 @@ a {
   text-underline-offset: 4px;
 }
 a:hover {
-  color: #b5c9ff;
+  color: #4da6ff;
 }
 :focus-visible {
-  outline: 2px solid #a6bcff;
+  outline: 2px solid #4da6ff;
   outline-offset: 4px;
 }
 ::selection {
   color: #fff;
-  background: #48447e;
+  background: #33417f;
 }
 h1,
 h2,
@@ -190,16 +190,16 @@ img.brand-mark {
   background: #1d2030;
 }
 .nav-item.active {
-  color: #dbe3ff;
+  color: #d9ebff;
   background: linear-gradient(
     110deg,
-    rgba(111, 139, 241, 0.15),
-    rgba(154, 115, 232, 0.07)
+    rgba(10, 132, 255, 0.18),
+    rgba(143, 107, 255, 0.1)
   );
-  border-color: rgba(131, 151, 221, 0.13);
+  border-color: rgba(10, 132, 255, 0.2);
 }
 .nav-item.active svg {
-  color: #a0b8ff;
+  color: #4da6ff;
 }
 .sidebar-footer {
   margin-top: auto;
@@ -376,17 +376,17 @@ img.brand-mark {
    only reading as "roughly white-ish on roughly blue-ish". */
 .button.primary {
   color: #fbfcff;
-  border-color: #8b9ce4;
-  background: linear-gradient(120deg, #576eb7, #7563b7);
+  border-color: #6f93ff;
+  background: linear-gradient(120deg, #3a5fd9, #6a46c9);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.15),
-    0 4px 18px rgba(85, 78, 153, 0.13);
+    0 4px 18px rgba(58, 86, 217, 0.16);
 }
 .button.primary:hover {
-  background: linear-gradient(120deg, #5a71b8, #7866b8);
+  background: linear-gradient(120deg, #4260d6, #7550d6);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.2),
-    0 6px 22px rgba(85, 78, 153, 0.2);
+    0 6px 22px rgba(66, 96, 224, 0.22);
 }
 .button.secondary {
   background: linear-gradient(
@@ -396,6 +396,30 @@ img.brand-mark {
   );
   border-color: #303441;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+/* Quick-settle action, colored by what it does rather than a neutral grey like every other
+ * secondary button — "Payer" (an expense not yet settled) reads red, "Reçu" (income not yet
+ * settled) reads green, the same --negative/--positive tokens already used for row amounts
+ * and icons elsewhere, so the color isn't a new meaning to learn. */
+.button.pay {
+  color: var(--negative);
+  border-color: rgba(255, 160, 172, 0.35);
+  background: rgba(255, 160, 172, 0.08);
+}
+.button.pay:hover {
+  background: rgba(255, 160, 172, 0.15);
+  border-color: rgba(255, 160, 172, 0.5);
+  color: var(--negative);
+}
+.button.receive {
+  color: var(--positive);
+  border-color: rgba(138, 222, 188, 0.35);
+  background: rgba(138, 222, 188, 0.08);
+}
+.button.receive:hover {
+  background: rgba(138, 222, 188, 0.15);
+  border-color: rgba(138, 222, 188, 0.5);
+  color: var(--positive);
 }
 .button.small {
   padding: 7px 12px;
@@ -422,137 +446,192 @@ img.brand-mark {
   display: flex;
   align-items: center;
   gap: 10px;
-  /* Bounds this against .period-bar's own width instead of sizing to its content (all
-   * 12 chips unscrolled): without it, nothing forces .month-nav-bar below to shrink, and
-   * it grows the whole page wider than the viewport instead of scrolling internally. */
+  /* Bounds this against .period-bar's own width instead of sizing to its content: without
+   * it, nothing forces .month-picker below to shrink and truncate its label, and it grows
+   * the whole page wider than the viewport instead of ellipsising in place. */
   min-width: 0;
   max-width: 100%;
 }
-/* Single visual control: the year stepper and the month strip used to be two separate
- * bordered/filled boxes placed edge to edge, which read as a small stack of nested cards
- * rather than one date control ("les dates c'est moche"). One shared surface with an
- * internal divider reads as a single native-style control instead. */
-.month-nav-bar {
-  display: flex;
-  align-items: stretch;
-  background: #11141e;
-  border: 1px solid var(--line);
-  border-radius: 11px;
-  padding: 4px;
-  min-width: 0;
-  flex: 1 1 auto;
-}
-.year-control {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  flex-shrink: 0;
-  padding-right: 8px;
-  margin-right: 6px;
-  border-right: 1px solid var(--line-soft);
-}
-.year-control strong {
-  min-width: 48px;
-  text-align: center;
-  font-size: 14px;
-  font-weight: 550;
-  font-variant-numeric: tabular-nums;
-}
 /* No size override here: .icon-button's own 44x44 already meets the app's tap-target
    floor (identite-ui.md/AUDIT_UI_V2). A 36x36 override shipped here previously — real
-   defect, measured by finance-verification (below 44x44 on all 7 pages x 3 viewports,
-   and visibly shorter than the 44px .month-chip pills right beside it). */
+   defect, measured by finance-verification (below 44x44 on all 7 pages x 3 viewports). */
 .month-picker-v2 > .button {
   flex-shrink: 0;
 }
-/* Modifier on the year stepper's .icon-button pair: plain chrome so they read as part of
- * the unified bar instead of their own separate bordered chiclets sitting inside it — the
- * same "no box inside a box" fix as .month-nav-bar, applied to its two nav buttons. Kept as
- * an addition to .icon-button (not a replacement) so its 44px target, focus-visible ring,
- * disabled and press states stay exactly what the rest of the app already relies on. */
-.month-nav-button {
+/* Anchor for the popover panel below (position: absolute is relative to this). */
+.month-picker {
+  position: relative;
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: 100%;
+}
+/* Compact "Septembre 2026" trigger, replacing the old always-visible 12-chip scrolling
+ * strip: the same pattern a native date control already uses, instead of a bordered bar
+ * with every month crammed into it ("les dates c'est moche" — the strip read as one merged,
+ * cramped bar at any width). Opens `.month-picker-panel` below on click. */
+.month-picker-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  max-width: 100%;
+  padding: 9px 14px 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: #11141e;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 550;
+  font-variant-numeric: tabular-nums;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.1s ease-out;
+}
+.month-picker-trigger:hover {
+  background: #1a1e2c;
+  border-color: #3a4055;
+}
+.month-picker-trigger:active {
+  transform: scale(0.97);
+}
+.month-picker-trigger-icon,
+.month-picker-caret {
+  flex-shrink: 0;
+  color: var(--muted);
+}
+.month-picker-trigger-label {
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Reuses the existing chevron-right glyph as a rotating disclosure caret instead of adding
+ * a new icon: pointing down while the panel is closed, up once it's open. */
+.month-picker-caret {
+  transform: rotate(90deg);
+  transition: transform 0.15s ease;
+}
+.month-picker-trigger[aria-expanded="true"] .month-picker-caret {
+  transform: rotate(-90deg);
+}
+/* Command surface, not a data surface, so it gets the app's "verre" (glass) treatment
+ * instead of `.dialog`'s opaque card (identite-ui.md: "réserver le verre à la navigation et
+ * aux commandes") — same layered rgba-background + backdrop-filter as `.mobile-nav`, with a
+ * solid fallback for browsers without blur support and prefers-reduced-transparency below.
+ * Materializes in like `.dialog` does and for the same reason: React mounts this element
+ * fresh every time the panel opens, so @starting-style's "before this element existed"
+ * state is exactly the opening moment — no JS animation needed. */
+.month-picker-panel {
+  position: absolute;
+  z-index: 50;
+  top: calc(100% + 8px);
+  left: 0;
+  width: 288px;
+  max-width: min(320px, calc(100vw - 32px));
+  padding: 14px;
+  border: 1px solid #363b50;
+  border-radius: 14px;
+  background: rgba(20, 23, 34, 0.92);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+  transition:
+    opacity 0.15s ease-out,
+    scale 0.15s ease-out,
+    translate 0.15s ease-out;
+}
+@starting-style {
+  .month-picker-panel {
+    opacity: 0;
+    scale: 0.96;
+    translate: 0 -4px;
+  }
+}
+.month-picker-panel-year {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.month-picker-year-label {
+  min-width: 56px;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+/* Plain chrome on the year-nav pair so they read as part of the panel instead of their own
+ * bordered chiclets — an addition to .icon-button (not a replacement), so its 44px target,
+ * focus-visible ring, disabled and press states stay exactly what the rest of the app
+ * already relies on. */
+.month-picker-year-button {
   border-color: transparent;
   background: transparent;
   border-radius: 8px;
 }
-.month-nav-button:hover {
+.month-picker-year-button:hover {
   background: rgba(255, 255, 255, 0.06);
   border-color: transparent;
 }
-.month-row {
-  position: relative;
-  display: flex;
-  gap: 4px;
-  background: transparent;
-  border: 0;
-  padding: 0;
-  overflow-x: auto;
-  /* The actual fix: a flex item's automatic min-width is its content size unless this is
-   * also set explicitly — without it, overflow-x:auto alone does not reliably force this
-   * row to respect the space .month-nav-bar has, across nested flex containers. */
-  min-width: 0;
-  flex: 1 1 auto;
-  /* Twelve chips never fit at 390px: scroll, never wrap onto a second line, which
-   * would defeat the point of a compact single-row month picker. */
-  flex-wrap: nowrap;
-  scroll-snap-type: x proximity;
-  /* The row scrolls (see above) but used to hard-clip whatever chip landed on the edge —
-   * a month abbreviation sliced mid-letter against a straight border, which is what read
-   * as "ugly" in review. A mask fades the last ~18px to the bar's own background instead,
-   * so a partially-visible chip tapers off like a native scroller rather than getting cut.
-   * mask-image paints relative to .month-row's own box, not its scrolled content, so the
-   * fade stays fixed at the edges while chips scroll underneath it — no JS needed. Turned
-   * off under prefers-reduced-transparency below. */
-  -webkit-mask-image: linear-gradient(
-    to right,
-    transparent,
-    #000 18px,
-    #000 calc(100% - 18px),
-    transparent
-  );
-  mask-image: linear-gradient(
-    to right,
-    transparent,
-    #000 18px,
-    #000 calc(100% - 18px),
-    transparent
-  );
+.month-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
 }
-.month-chip {
-  scroll-snap-align: center;
-  flex-shrink: 0;
+.month-picker-cell {
+  position: relative;
   min-height: 44px;
-  min-width: 44px;
-  padding: 10px 14px;
+  padding: 10px 4px;
   border-radius: 8px;
   background: transparent;
   color: var(--muted);
   font-size: 13px;
   font-weight: 500;
-  transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease-out;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    transform 0.1s ease-out;
 }
-.month-chip:hover {
+.month-picker-cell:hover {
   background: rgba(255, 255, 255, 0.05);
   color: var(--text);
 }
-.month-chip:active {
+.month-picker-cell:active {
   transform: scale(0.94);
 }
 /* Tinted with the app's blue-violet accent (identite-ui.md: "utiliser l'accent bleu-violet
- * pour la sélection") instead of the flat neutral grey this used previously — the selected
- * month now reads as a colored, branded choice at a glance instead of just "less dim than
- * its siblings". Text/background contrast checked at ~11:1, well past AA. */
-.month-chip.active {
+ * pour la sélection") instead of a flat neutral grey, so the selected month reads as a
+ * colored, branded choice at a glance. Built from var(--accent)/var(--violet) rather than a
+ * fixed hex so it tracks whichever blue those tokens land on; same opacities (32%/24%/28%)
+ * as the flat-color version this replaces. Text/background contrast checked at ~11:1. */
+.month-picker-cell.active {
   color: #eef1ff;
   background: linear-gradient(
     120deg,
-    rgba(126, 148, 234, 0.32),
-    rgba(154, 115, 232, 0.24)
+    color-mix(in srgb, var(--accent) 32%, transparent),
+    color-mix(in srgb, var(--violet) 24%, transparent)
   );
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.1),
-    0 0 0 1px rgba(154, 137, 224, 0.28);
+    0 0 0 1px color-mix(in srgb, var(--violet) 28%, transparent);
   font-weight: 600;
+}
+/* Small "today" marker, independent of `.active` (the committed selection) — a real
+ * calendar's usual dot under the current day, so browsing another month/year in the panel
+ * never loses track of where "now" is. Hidden once a cell is also `.active`: redundant on
+ * top of the highlight it already has. */
+.month-picker-cell.today:not(.active)::after {
+  content: "";
+  position: absolute;
+  bottom: 6px;
+  left: 50%;
+  translate: -50% 0;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--accent);
 }
 .currency-picker {
   font-size: 12px;
@@ -580,7 +659,7 @@ img.brand-mark {
   background:
     radial-gradient(
       ellipse at 95% 0,
-      rgba(112, 93, 179, 0.14),
+      rgba(90, 70, 224, 0.17),
       transparent 65%
     ),
     linear-gradient(130deg, #181e2b, #131622 70%);
@@ -674,7 +753,7 @@ img.brand-mark {
   color: var(--muted);
   font-size: 14px;
   line-height: 1.6;
-  background: linear-gradient(180deg, transparent, rgba(129, 151, 218, 0.035));
+  background: linear-gradient(180deg, transparent, rgba(20, 120, 255, 0.045));
   border-radius: 11px;
   border-bottom: 1px solid var(--line-soft);
 }
@@ -827,7 +906,7 @@ img.brand-mark {
   align-items: center;
   gap: 5px;
   background: transparent;
-  color: #a9b7dc;
+  color: #7fb0f2;
   padding: 6px 0 6px 10px;
   font-size: 12px;
   text-decoration: none;
@@ -835,7 +914,7 @@ img.brand-mark {
   transition: color 0.15s ease, opacity 0.1s ease-out;
 }
 .card-action:hover {
-  color: #d0daff;
+  color: #a8ccff;
 }
 .card-action:active {
   opacity: 0.6;
@@ -866,12 +945,12 @@ img.brand-mark {
   background:
     radial-gradient(
       ellipse at 90% 0%,
-      rgba(99, 119, 171, 0.11),
+      rgba(20, 120, 255, 0.14),
       transparent 60%
     ),
     radial-gradient(
       ellipse at 0% 100%,
-      rgba(150, 120, 220, 0.06),
+      rgba(143, 107, 255, 0.09),
       transparent 55%
     ),
     #141722;
@@ -954,12 +1033,12 @@ img.brand-mark {
   vertical-align: middle;
 }
 .kind-badge-bank {
-  background: rgba(138, 169, 255, 0.16);
-  color: #8aa9ff;
+  background: rgba(10, 132, 255, 0.16);
+  color: #0a84ff;
 }
 .kind-badge-investment {
-  background: rgba(170, 150, 255, 0.16);
-  color: #aa96ff;
+  background: rgba(143, 107, 255, 0.16);
+  color: #8f6bff;
 }
 .kind-badge-debt {
   /* Not MONOGRAM_PALETTE[3] (#7c8cff): measured on the real rendered card (see review notes),
@@ -994,12 +1073,12 @@ img.brand-mark {
    an institution-derived monogram: the icon now says what the account IS (bank/savings/
    investment/debt), and its color matches the badge carrying that same word next to it. */
 .institution-icon-bank {
-  color: #8aa9ff;
-  background: rgba(138, 169, 255, 0.16);
+  color: #0a84ff;
+  background: rgba(10, 132, 255, 0.16);
 }
 .institution-icon-investment {
-  color: #aa96ff;
-  background: rgba(170, 150, 255, 0.16);
+  color: #8f6bff;
+  background: rgba(143, 107, 255, 0.16);
 }
 .institution-icon-debt {
   color: #c0ceef;
@@ -1201,12 +1280,12 @@ img.brand-mark {
    pill, so an account's nature and a recurrence's nature read as the same color language
    everywhere. Income reuses .row-icon.positive above rather than a fifth color. */
 .row-icon-subscription {
-  background: rgba(170, 150, 255, 0.16);
-  color: #aa96ff;
+  background: rgba(143, 107, 255, 0.16);
+  color: #8f6bff;
 }
 .row-icon-bill {
-  background: rgba(138, 169, 255, 0.16);
-  color: #8aa9ff;
+  background: rgba(10, 132, 255, 0.16);
+  color: #0a84ff;
 }
 .row-icon-saving {
   background: rgba(200, 150, 230, 0.16);
@@ -1311,6 +1390,38 @@ img.brand-mark {
   border-color: transparent;
   background: transparent;
 }
+/* A list row that also reads as its own boxed card — Abonnements' recurring charges and
+ * Investissements' positions are the main content of their card body (not a settlement
+ * history sitting under a hero number), so the plain divided-list look shared with every
+ * other row read as flat there. Same radial-highlight/shadow language as .account-card,
+ * sized for a list row; added alongside .row rather than replacing it so hover/press/flash/
+ * spacing stay the one shared implementation. Compound selector (not a standalone class)
+ * so it naturally outranks the plain .row/.row:last-child/.row:hover rules above without
+ * needing !important. */
+.item-card.row {
+  padding: 14px 16px;
+  margin-bottom: 10px;
+  border: 1px solid #262b3c;
+  border-radius: 10px;
+  background:
+    radial-gradient(ellipse at 100% 0%, rgba(120, 140, 205, 0.07), transparent 60%),
+    #141722;
+  box-shadow:
+    0 6px 18px rgba(0, 0, 0, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.035);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.item-card.row:last-child {
+  margin-bottom: 0;
+  border: 1px solid #262b3c;
+}
+.item-card.row:hover,
+.item-card.row:focus-within {
+  border-color: #333a52;
+  background:
+    radial-gradient(ellipse at 100% 0%, rgba(120, 140, 205, 0.1), transparent 60%),
+    #171a26;
+}
 .positive {
   color: var(--positive);
 }
@@ -1332,7 +1443,7 @@ img.brand-mark {
   min-width: 0;
   max-width: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #7796f2, #a38cdd);
+  background: linear-gradient(90deg, #2f8bff, #8f6bff);
 }
 .goal-card .progress {
   margin: 22px 0 13px;
@@ -1435,12 +1546,12 @@ img.brand-mark {
   gap: 11px;
   padding: 14px 17px;
   margin: 0 0 20px;
-  border: 1px solid rgba(130, 157, 220, 0.17);
+  border: 1px solid rgba(20, 120, 255, 0.22);
   border-radius: 10px;
-  background: rgba(94, 124, 189, 0.065);
+  background: rgba(20, 120, 255, 0.09);
   font-size: 12px;
   line-height: 1.8;
-  color: #b6c2de;
+  color: #a8c6f0;
 }
 .notice p {
   margin: 0;
@@ -1563,7 +1674,7 @@ img.brand-mark {
 .field select:focus,
 .field textarea:focus,
 .auth-card input:focus {
-  border-color: #8aa3ef;
+  border-color: #3d8bff;
 }
 .field small {
   font-size: 12px;
@@ -1574,7 +1685,7 @@ img.brand-mark {
   width: 18px;
   height: 18px;
   min-height: 18px;
-  accent-color: #8c9ff4;
+  accent-color: #0a84ff;
   margin-right: 7px;
 }
 .field input[type="file"] {
@@ -1698,7 +1809,7 @@ input::file-selector-button {
   background: transparent;
   border: 0;
   padding-left: 0;
-  color: #a5b1d3;
+  color: #9db3e8;
 }
 .auth-card .mobile-brand {
   display: none;
@@ -1715,9 +1826,9 @@ input::file-selector-button {
   width: 62px;
   height: 62px;
   border-radius: 14px;
-  color: #b1bbff;
-  border: 1px solid #414866;
-  background: linear-gradient(145deg, #303c5a, #302840);
+  color: #9fc4ff;
+  border: 1px solid #3d5188;
+  background: linear-gradient(145deg, #223a63, #2a1f52);
   box-shadow: 0 8px 25px rgba(25, 29, 48, 0.5);
 }
 .auth-links {
@@ -1728,7 +1839,7 @@ input::file-selector-button {
 .auth-links button {
   min-height: 44px;
   background: transparent;
-  color: #a2b5ec;
+  color: #7fb0ff;
   font-size: 14px;
   text-decoration: underline;
   text-underline-offset: 4px;
@@ -1754,8 +1865,8 @@ input::file-selector-button {
   font-size: 14px;
   transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease-out;
 }
-/* Same blue-violet accent as .month-chip.active (identite-ui.md: "utiliser l'accent
- * bleu-violet pour la sélection") instead of the flat neutral grey this used previously —
+/* Same blue-violet accent as the month picker's selected-cell state (identite-ui.md:
+ * "utiliser l'accent bleu-violet pour la sélection") instead of the flat neutral grey this used previously —
  * every segmented tab group (Mon mois' Tout/Revenus/Dépenses/Virements, Abonnements'
  * Actifs/etc.) now reads its selection as a colored, branded choice like the month picker
  * right above it, not "less dim than its siblings". */
@@ -1763,12 +1874,12 @@ input::file-selector-button {
   color: #eef1ff;
   background: linear-gradient(
     120deg,
-    rgba(126, 148, 234, 0.32),
-    rgba(154, 115, 232, 0.24)
+    rgba(20, 120, 255, 0.36),
+    rgba(143, 107, 255, 0.28)
   );
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.1),
-    0 0 0 1px rgba(154, 137, 224, 0.28);
+    0 0 0 1px rgba(110, 120, 240, 0.32);
   font-weight: 600;
 }
 .tab-button:active {
@@ -1850,7 +1961,7 @@ input::file-selector-button {
      flatter next to "Votre mois"/the hero card right above them. Same radial-highlight
      language as .account-card, just fainter to suit a smaller tile. */
   background:
-    radial-gradient(ellipse at 100% 0%, rgba(120, 140, 205, 0.08), transparent 60%),
+    radial-gradient(ellipse at 100% 0%, rgba(30, 120, 255, 0.11), transparent 60%),
     #151823;
   box-shadow:
     0 8px 22px rgba(0, 0, 0, 0.18),
@@ -1924,7 +2035,7 @@ input::file-selector-button {
   margin-top: 18px;
 }
 .button:has(input:focus-visible) {
-  outline: 2px solid #a6bcff;
+  outline: 2px solid #4da6ff;
   outline-offset: 4px;
 }
 .action-stack .button {
@@ -2127,35 +2238,19 @@ input::file-selector-button {
     gap: 10px;
     margin-bottom: 17px;
   }
-  .month-nav-bar {
-    padding: 3px;
-    border-radius: 10px;
+  .month-picker-trigger {
+    padding: 8px 12px 8px 10px;
+    font-size: 13px;
   }
-  .year-control {
-    padding-right: 6px;
-    margin-right: 4px;
+  .month-picker-panel {
+    width: min(280px, calc(100vw - 32px));
+    padding: 12px;
   }
-  .year-control strong {
-    min-width: 40px;
+  .month-picker-grid {
+    gap: 5px;
   }
-  .month-row {
-    -webkit-mask-image: linear-gradient(
-      to right,
-      transparent,
-      #000 14px,
-      #000 calc(100% - 14px),
-      transparent
-    );
-    mask-image: linear-gradient(
-      to right,
-      transparent,
-      #000 14px,
-      #000 calc(100% - 14px),
-      transparent
-    );
-  }
-  .month-chip {
-    padding: 8px 11px;
+  .month-picker-cell {
+    padding: 9px 3px;
     font-size: 12px;
   }
   .currency-picker {
@@ -2347,11 +2442,11 @@ input::file-selector-button {
     font-weight: 450;
   }
   .mobile-nav .active {
-    color: #c0ccff;
+    color: #a8ccff;
     background: linear-gradient(
       140deg,
-      rgba(127, 149, 229, 0.16),
-      rgba(139, 117, 206, 0.09)
+      rgba(20, 120, 255, 0.2),
+      rgba(143, 107, 255, 0.11)
     );
   }
   .mobile-nav button svg,
@@ -2504,11 +2599,12 @@ input::file-selector-button {
     backdrop-filter: none;
     background: #03050bed;
   }
-  /* The edge fade is a transparency effect (fades chip content to see-through, not just
-   * to a solid color) — show the month row's full, hard edges instead of tapering them. */
-  .month-row {
-    -webkit-mask-image: none;
-    mask-image: none;
+  /* Glass command surface (see .month-picker-panel above) falls back to the same solid
+   * card tone `.dialog` uses, matching how `.sidebar`/`.mobile-nav` degrade here too. */
+  .month-picker-panel {
+    background: #141722;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
   }
 }
 @media (forced-colors: active) {
