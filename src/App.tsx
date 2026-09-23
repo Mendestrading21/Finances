@@ -729,6 +729,22 @@ export default function App() {
     summary = monthSummary(data, month, currency),
     transactions = transactionsForMonth(data, month),
     currentPage = pages.find((p) => p.id === page)!;
+  // Per-account share of total wealth (verre + bleu néon lot 3/3, Mes comptes card) —
+  // composes accountRanking's own valueMinor (already in `currency`, same as wealth.totalMinor
+  // below since both calls share that currency) against wealth.totalMinor: no new domain
+  // function, no re-derivation of either value. Only built when totalMinor is a real positive
+  // number — against a zero or unknown total, a percentage isn't a fact, it's a divide-by-zero
+  // or a meaningless ratio. A debt's share can come out negative, which is accurate (it
+  // subtracts from the total), not hidden or clamped to zero.
+  const accountWealthShare =
+    wealth.totalMinor && wealth.totalMinor > 0
+      ? new Map(
+          accountRanking.ranked.map((r) => [
+            r.item.id,
+            (r.valueMinor / (wealth.totalMinor as number)) * 100,
+          ]),
+        )
+      : null;
   // Explicit user request: reçus (revenus) d'abord, puis factures, puis abonnements, virements
   // et le reste en dernier — puis, à l'intérieur de chaque groupe, le plus gros montant
   // d'abord. Reads the linked recurrence's own recurrenceType when there is one (a recurring
@@ -817,6 +833,16 @@ export default function App() {
     subsCohortItems.map((i) => [i.recurrenceId, i]),
   );
   const subsCohort = cohortSummary(data, month, currency);
+  // Settled-progress widget (verre + bleu néon lot 3/3) — same settledMinor/dueMinor pair
+  // cohortSummary already computes for the stat-cards above it, just as a ratio. Null when
+  // either side is unknown, or when nothing is due this month (a 0/0 bar would read as
+  // "fully settled" for a month with nothing to settle, which isn't the same fact).
+  const subsSettledPct =
+    subsCohort.dueMinor !== null &&
+    subsCohort.settledMinor !== null &&
+    subsCohort.dueMinor > 0
+      ? Math.min(100, (subsCohort.settledMinor / subsCohort.dueMinor) * 100)
+      : null;
   const subsFlow = recurringFlowSummary(data, month, currency);
   // Coût mensuel par nature pour l'aperçu de l'Accueil : somme de l'équivalent mensuel de
   // chaque récurrence active de cette nature, converti vers la devise d'affichage — même
@@ -956,6 +982,32 @@ export default function App() {
     const b = latestBalance(a),
       unverified = a.balances.at(-1),
       show = b || unverified;
+    // Mini sparkline (verre + bleu néon lot 3/3) — from the account's own real dated
+    // balance history (a.balances, the same array latestBalance() already reads above),
+    // never a page without one: only rendered once at least two points both have an
+    // amount AND a date, so a single opening balance or an undated entry draws nothing
+    // rather than a fabricated trend line.
+    const sparkPoints = a.balances
+      .filter(
+        (bal): bal is typeof bal & { amountMinor: number; asOf: string } =>
+          bal.amountMinor !== null && bal.asOf !== null,
+      )
+      .sort((x, y) => x.asOf.localeCompare(y.asOf));
+    const sparkline =
+      sparkPoints.length >= 2
+        ? (() => {
+            const values = sparkPoints.map((p) => p.amountMinor);
+            const low = Math.min(...values),
+              high = Math.max(...values),
+              range = high - low || 1;
+            const coords = sparkPoints.map((p, i) => ({
+              x: (i * 64) / (sparkPoints.length - 1),
+              y: 20 - ((p.amountMinor - low) / range) * 18 - 1,
+            }));
+            return coords.map((c) => `${c.x},${c.y}`).join(" ");
+          })()
+        : null;
+    const share = accountWealthShare?.get(a.id);
     return (
       <article className="account-card" key={a.id}>
         <div className="account-head">
@@ -971,6 +1023,25 @@ export default function App() {
               </span>
             </p>
           </div>
+          {sparkline && !hidden && (
+            <svg
+              className="account-sparkline"
+              viewBox="0 0 64 20"
+              width="52"
+              height="18"
+              role="img"
+              aria-label="Tendance du solde daté"
+            >
+              <polyline
+                points={sparkline}
+                fill="none"
+                stroke="#4f8cff"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          )}
           <button
             className="icon-button"
             onClick={() => edit({ type: "account", id: a.id })}
@@ -982,6 +1053,12 @@ export default function App() {
         <div className="balance">
           {display(show?.amountMinor ?? null, a.currency)}
         </div>
+        {share !== undefined && !hidden && (
+          <p className="meta account-share">
+            {share >= 0 ? "" : "−"}
+            {Math.abs(share).toFixed(1)} % du patrimoine
+          </p>
+        )}
         <p className="meta">
           {b?.asOf
             ? `Solde au ${b.asOf}`
@@ -2072,6 +2149,23 @@ export default function App() {
                 {subsCohort.excluded} occurrence(s) exclue(s) du total : taux
                 de change manquant.
               </p>
+            )}
+            {/* Settled-progress bar (verre + bleu néon lot 3/3) — subsSettledPct is the
+                exact settledMinor/dueMinor pair above, already shown as stat-cards, as a
+                ratio; no new domain calculation. */}
+            {subsSettledPct !== null && (
+              <>
+                <div className="hero-foot" style={{ marginTop: 4 }}>
+                  <span>Réglé ce mois</span>
+                  <span>{Math.round(subsSettledPct)} %</span>
+                </div>
+                <div className="progress">
+                  <div
+                    className="progress-fill"
+                    style={{ width: `${subsSettledPct}%` }}
+                  />
+                </div>
+              </>
             )}
             <div className="stat-grid">
               {[
