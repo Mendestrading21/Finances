@@ -352,8 +352,13 @@ test("daily entries: income, currency-synced transfer, recurrence, investment-on
     .getByRole("button", { name: "Marquer payé", exact: true })
     .click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
+  // Instant write still gives visible feedback: a brief green flash (row-flash-positive,
+  // self-clearing via the row's own onAnimationEnd, not a timer) is the only confirmation a
+  // dialog-less "Marquer payé" click actually did something.
+  await expect(occurrenceRow).toHaveClass(/row-flash-positive/);
   await expect(occurrenceRow).toContainText("Payé");
   await expect(occurrenceRow).not.toContainText("Pas encore payé");
+  await expect(occurrenceRow).not.toHaveClass(/row-flash-positive/);
   // Settled row itself opens the full editor (row-main is clickable once settled) — confirms
   // the settlement date was really set to today, not left blank by the direct write.
   await occurrenceRow.click();
@@ -399,6 +404,56 @@ test("daily entries: income, currency-synced transfer, recurrence, investment-on
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(oneOffRow).toContainText("Payé");
   await expect(oneOffRow).not.toContainText("Pas encore payé");
+
+  // 2quater) Pencil/quick-edit icon: only offered while a row is not yet settled (a settled
+  // row's own click opens the full editor instead, exercised above). It exposes only Libellé,
+  // Montant and Mois — not the full field set — and changing Mois must move the transaction to
+  // a different month's list without inventing a precise date for it.
+  await page.getByRole("button", { name: "Ajouter", exact: true }).click();
+  dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Libellé").fill("Note test crayon");
+  await dialog.getByLabel("Montant", { exact: true }).fill("12");
+  await dialog
+    .getByLabel("Compte", { exact: true })
+    .selectOption({ label: "Compte principal test · CHF" });
+  await dialog
+    .getByRole("button", { name: "Enregistrer", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  const pencilRow = page.locator(".row", { hasText: "Note test crayon" });
+  await pencilRow
+    .getByRole("button", { name: "Modifier Note test crayon", exact: true })
+    .click();
+  dialog = page.getByRole("dialog");
+  await expect(dialog.getByLabel("Libellé", { exact: true })).toBeVisible();
+  await expect(dialog.getByLabel("Montant", { exact: true })).toBeVisible();
+  await expect(dialog.getByLabel("Mois", { exact: true })).toBeVisible();
+  // The full field set (Compte, Devise, État, Catégorie, Type) is deliberately absent here —
+  // this is the narrower quick editor, not the full one reused for everything else.
+  await expect(dialog.getByLabel("Compte", { exact: true })).toHaveCount(0);
+  await expect(dialog.getByLabel("Devise", { exact: true })).toHaveCount(0);
+  await expect(dialog.getByLabel("État", { exact: true })).toHaveCount(0);
+  await expect(dialog.getByLabel("Catégorie", { exact: true })).toHaveCount(0);
+  await expect(dialog.getByLabel("Type", { exact: true })).toHaveCount(0);
+  // 2 months away is always a different month regardless of when the suite runs, and
+  // Date's own month rollover handles a year boundary without extra arithmetic here.
+  const pencilTargetDate = new Date();
+  pencilTargetDate.setMonth(pencilTargetDate.getMonth() + 2);
+  const pencilTargetMonth = `${pencilTargetDate.getFullYear()}-${String(
+    pencilTargetDate.getMonth() + 1,
+  ).padStart(2, "0")}`;
+  await dialog.getByLabel("Mois", { exact: true }).fill(pencilTargetMonth);
+  await dialog
+    .getByRole("button", { name: "Enregistrer", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  // Gone from this month's own lists (no date, and budgetMonth no longer matches here).
+  await expect(page.getByText("Note test crayon", { exact: true })).toHaveCount(0);
+  // Present under "Voir les autres mois", with no invented date — only the month is known.
+  await page.getByRole("button", { name: /Voir les autres mois/ }).click();
+  const movedRow = page.locator(".month-group", { hasText: "Note test crayon" });
+  await expect(movedRow).toBeVisible();
+  await expect(movedRow).toContainText("jour à vérifier");
 
   // 3) Transfer between two accounts of different currencies: source account is required,
   // currency is deduced from it, and the destination amount is required across currencies.
@@ -719,19 +774,34 @@ test("subscriptions: a status change made on Abonnements updates Mon mois and Ac
   // separate "opérations" and "aperçu" rows, so no "tous les" filter is needed here.
   const subsRow = page.locator(".row", { hasText: "Charge test abo" });
   await expect(subsRow).toContainText("Pas encore payé");
-  const resteDu = page
-    .locator(".stat-card", { hasText: "Reste dû" })
-    .locator(".metric-value");
+  const statValue = (label: string) =>
+    page.locator(".stat-card", { hasText: label }).locator(".metric-value");
+  const resteDu = statValue("Reste dû");
   await expect(resteDu).toContainText("77.70");
+  // Item 3: Abonnements' stat labels were simplified from denser cohort jargon — assert the
+  // actual simplified French wording each figure sits under, not just the figures themselves.
+  // "Charge test abo" is the only (active, expense) recurrence, due but not yet settled.
+  await expect(statValue("Dû ce mois")).toContainText("77.70");
+  await expect(statValue("Abonnements actifs")).toContainText("1");
 
   // Mark it paid from Abonnements itself, not from Mon mois — writes directly, no dialog.
   await subsRow
     .getByRole("button", { name: "Marquer payé", exact: true })
     .click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
+  // Same instant-write green flash as Mon mois' rows (row-flash-positive), exercised here on
+  // an Abonnements row specifically, per its own self-clearing onAnimationEnd.
+  await expect(subsRow).toHaveClass(/row-flash-positive/);
   await expect(subsRow).toContainText("Payé");
   await expect(subsRow).not.toContainText("Pas encore payé");
   await expect(resteDu).toContainText("0.00");
+  // Settling the recurrence-linked transaction feeds both the cohort's "Réglé ce mois" and
+  // the realized-flow "Payé ce mois" / "Reçu ce mois" trio (recurringFlowSummary) — a distinct
+  // calculation from cohortSummary above, also independently checked here.
+  await expect(statValue("Réglé ce mois")).toContainText("77.70");
+  await expect(statValue("Payé ce mois")).toContainText("77.70");
+  await expect(statValue("Reçu ce mois")).toContainText("0.00");
+  await expect(subsRow).not.toHaveClass(/row-flash-positive/);
 
   // Mon mois: exactly one row for the occurrence itself (excluding the separate recurrence
   // preview row, which also mentions "tous les") — no duplicate transaction was created.
@@ -741,13 +811,26 @@ test("subscriptions: a status change made on Abonnements updates Mon mois and Ac
     .filter({ hasNotText: "tous les" });
   await expect(monthOccurrenceRow).toHaveCount(1);
   await expect(monthOccurrenceRow).toContainText("Payé");
+  // Item 4: "Le mouvement du mois" and "Projection nette" were removed from Mon mois (they
+  // still exist on Accueil, checked just below) — confirm Mon mois genuinely lost them, not
+  // merely that no earlier test happened to look for them here.
+  const mouvementDuMoisHeading = page.getByRole("heading", {
+    name: "Le mouvement du mois",
+    exact: true,
+  });
+  const projectionNette = page.getByText("Projection nette du mois", { exact: true });
+  await expect(mouvementDuMoisHeading).toHaveCount(0);
+  await expect(projectionNette).toHaveCount(0);
 
-  // Accueil: the settlement is reflected in the month's confirmed figures.
+  // Accueil: the settlement is reflected in the month's confirmed figures, and this is where
+  // the two cards above actually still live.
   await nav.getByRole("button", { name: "Vue d’ensemble", exact: true }).click();
   const expensesConfirmed = page
     .locator(".metric", { hasText: "Dépenses confirmées" })
     .locator(".metric-value");
   await expect(expensesConfirmed).toContainText("77.70");
+  await expect(mouvementDuMoisHeading).toBeVisible();
+  await expect(projectionNette).toBeVisible();
 
   // Reload and unlock: everything above survives, still no duplicate.
   await page.reload();
@@ -765,9 +848,13 @@ test("subscriptions: a status change made on Abonnements updates Mon mois and Ac
     page.getByRole("heading", { name: "Une vue sur l’essentiel.", exact: true }),
   ).toBeVisible();
   await expect(expensesConfirmed).toContainText("77.70");
+  await expect(mouvementDuMoisHeading).toBeVisible();
+  await expect(projectionNette).toBeVisible();
   await nav.getByRole("button", { name: "Mon mois", exact: true }).click();
   await expect(monthOccurrenceRow).toHaveCount(1);
   await expect(monthOccurrenceRow).toContainText("Payé");
+  await expect(mouvementDuMoisHeading).toHaveCount(0);
+  await expect(projectionNette).toHaveCount(0);
   await nav.getByRole("button", { name: "Abonnements", exact: true }).click();
   await expect(subsRow).toContainText("Payé");
   await expect(resteDu).toContainText("0.00");

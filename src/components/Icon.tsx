@@ -58,7 +58,6 @@ const paths: Record<string, ReactNode> = {
   ),
   "chevron-right": <path d="m9 5 7 7-7 7" />,
   "chevron-left": <path d="m15 5-7 7 7 7" />,
-  "chevron-down": <path d="m5 9 7 7 7-7" />,
   // Was a smaller 12-unit diagonal span (6↔18) — visibly lighter than `plus`'s 14-unit
   // reach (5↔19) although the two are meant to read as the same weight (see `plus` above).
   // Widened to the same 5↔19 span so neither looks bigger next to the other.
@@ -94,12 +93,6 @@ const paths: Record<string, ReactNode> = {
     <>
       <path d="m9 3-.7 3-2.6 1-2.6-.8L1.8 9l2 2.2v2l-2 2.2 1.3 2.8 2.6-.8 2.6 1L9 21h6l.7-2.6 2.6-1 2.6.8 1.3-2.8-2-2.2v-2l2-2.2-1.3-2.8-2.6.8-2.6-1L15 3Z" />
       <circle cx="12" cy="12" r="3" />
-    </>
-  ),
-  search: (
-    <>
-      <circle cx="10.5" cy="10.5" r="6.5" />
-      <path d="m16 16 5 5" />
     </>
   ),
   bank: (
@@ -146,15 +139,9 @@ const paths: Record<string, ReactNode> = {
       <path d="M12 8v5m0 3v.5" />
     </>
   ),
-  moon: <path d="M20.8 13.7A9 9 0 0 1 10.3 3.2 9 9 0 1 0 20.8 13.7Z" />,
   edit: (
     <>
       <path d="m14 5 5 5M4 20l5-1L21 7a2 2 0 0 0-4-4L5 15Z" />
-    </>
-  ),
-  trash: (
-    <>
-      <path d="M3 6h18M9 3h6M5 6l1 15h12l1-15M10 10v7m4-7v7" />
     </>
   ),
   // identite-ui.md suggests a clock/horloge for "à payer" — added for card headers about

@@ -51,42 +51,47 @@ export function MonthPicker({
   }, [month]);
   return (
     <div className="month-picker-v2">
-      <div className="year-control">
-        <button
-          type="button"
-          className="icon-button"
-          aria-label="Année précédente"
-          onClick={() => onChange(withMonth(monthNumber, year - 1))}
-        >
-          <Icon name="chevron-left" size={16} />
-        </button>
-        <strong>{year}</strong>
-        <button
-          type="button"
-          className="icon-button"
-          aria-label="Année suivante"
-          onClick={() => onChange(withMonth(monthNumber, year + 1))}
-        >
-          <Icon name="chevron-right" size={16} />
-        </button>
-      </div>
-      <div className="month-row" role="group" aria-label="Choisir un mois">
-        {MONTHS.map(({ name, short }, index) => {
-          const value = withMonth(index + 1);
-          return (
-            <button
-              type="button"
-              key={value}
-              ref={value === month ? activeChip : undefined}
-              className={`month-chip ${value === month ? "active" : ""}`}
-              aria-label={name}
-              aria-pressed={value === month}
-              onClick={() => onChange(value)}
-            >
-              {short}
-            </button>
-          );
-        })}
+      {/* Year stepper and month strip share one surface (.month-nav-bar) instead of each
+       * drawing their own border/background side by side — two adjacent boxed chiclets
+       * previously read as a small stack of nested cards rather than one date control. */}
+      <div className="month-nav-bar">
+        <div className="year-control">
+          <button
+            type="button"
+            className="icon-button month-nav-button"
+            aria-label="Année précédente"
+            onClick={() => onChange(withMonth(monthNumber, year - 1))}
+          >
+            <Icon name="chevron-left" size={16} />
+          </button>
+          <strong>{year}</strong>
+          <button
+            type="button"
+            className="icon-button month-nav-button"
+            aria-label="Année suivante"
+            onClick={() => onChange(withMonth(monthNumber, year + 1))}
+          >
+            <Icon name="chevron-right" size={16} />
+          </button>
+        </div>
+        <div className="month-row" role="group" aria-label="Choisir un mois">
+          {MONTHS.map(({ name, short }, index) => {
+            const value = withMonth(index + 1);
+            return (
+              <button
+                type="button"
+                key={value}
+                ref={value === month ? activeChip : undefined}
+                className={`month-chip ${value === month ? "active" : ""}`}
+                aria-label={name}
+                aria-pressed={value === month}
+                onClick={() => onChange(value)}
+              >
+                {short}
+              </button>
+            );
+          })}
+        </div>
       </div>
       {month !== currentMonth && (
         <button
