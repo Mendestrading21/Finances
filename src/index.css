@@ -1751,10 +1751,22 @@ input::file-selector-button {
   font-size: 14px;
   transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease-out;
 }
+/* Same blue-violet accent as .month-chip.active (identite-ui.md: "utiliser l'accent
+ * bleu-violet pour la sélection") instead of the flat neutral grey this used previously —
+ * every segmented tab group (Mon mois' Tout/Revenus/Dépenses/Virements, Abonnements'
+ * Actifs/etc.) now reads its selection as a colored, branded choice like the month picker
+ * right above it, not "less dim than its siblings". */
 .tab-button.active {
-  color: #e5eaff;
-  background: #262d41;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045);
+  color: #eef1ff;
+  background: linear-gradient(
+    120deg,
+    rgba(126, 148, 234, 0.32),
+    rgba(154, 115, 232, 0.24)
+  );
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 0 0 1px rgba(154, 137, 224, 0.28);
+  font-weight: 600;
 }
 .tab-button:active {
   transform: scale(0.96);

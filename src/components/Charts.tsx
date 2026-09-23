@@ -1,5 +1,5 @@
 import type { FinanceData } from "../domain/types";
-import { money, wealthSummary } from "../domain/finance";
+import { dateLabel, money, wealthSummary } from "../domain/finance";
 const colors = ["#89a6ff", "#ad96f5", "#60d6cd", "#e8b883", "#d691bd"];
 export function WealthChart({
   data,
@@ -101,15 +101,15 @@ export function WealthChart({
         )}
       </svg>
       <div className="hero-foot">
-        <span>{dates[0]}</span>
-        <span>{dates.at(-1)}</span>
+        <span>{dateLabel(dates[0])}</span>
+        <span>{dateLabel(dates.at(-1) as string)}</span>
       </div>
       <details className="chart-details">
         <summary>Voir les valeurs exactes</summary>
         {points.map((p) => (
           <div className="row" key={p.date}>
             <span>
-              {p.date}
+              {dateLabel(p.date)}
               {p.partial ? " · partiel" : ""}
             </span>
             <span>{money(p.totalMinor, currency)}</span>
