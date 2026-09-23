@@ -907,7 +907,7 @@ test("subscriptions: a status change made on Abonnements updates Mon mois and Ac
   expect(errors).toEqual([]);
 });
 
-test("Mon mois: reçu, facture, abonnement, virement — montant décroissant dans chaque groupe, bouton toujours aligné", async ({
+test("Mon mois: reçu, facture, abonnement, virement — montant décroissant dans chaque groupe, bouton toujours aligné, montant coloré par nature", async ({
   page,
 }) => {
   const errors: string[] = [];
@@ -1019,6 +1019,23 @@ test("Mon mois: reçu, facture, abonnement, virement — montant décroissant da
     noPencilBox.x + noPencilBox.width,
     0,
   );
+
+  // Amount color follows kind, not status — an expense reads red whether it's still due or
+  // already paid (a real gap found in review: only income ever got a color, expense amounts
+  // stayed plain white even though .row-icon already colored the same row's icon red).
+  await expect(
+    operationsCard.locator(".row", { hasText: "Revenu test tri" }).locator(".row-value"),
+  ).toHaveClass(/positive/);
+  await expect(
+    operationsCard
+      .locator(".row", { hasText: "Facture ponctuelle test" })
+      .locator(".row-value"),
+  ).toHaveClass(/negative/);
+  await expect(
+    operationsCard
+      .locator(".row", { hasText: "Virement test tri" })
+      .locator(".row-value"),
+  ).not.toHaveClass(/positive|negative/);
 
   expect(errors).toEqual([]);
 });

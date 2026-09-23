@@ -415,6 +415,22 @@ Preuves : `pnpm run typecheck` (0 erreur), `pnpm run test` (**142/142**), `pnpm 
 
 Fusionné dans `main` (commit `e1e45d1`, PR #31). CI (`Finance verification`) et déploiement (`Deploy Finance to GitHub Pages`) vérifiés verts sur ce commit.
 
+## Correctif — montant coloré par nature sur toutes les listes d'opérations (corrigé et testé le 23 septembre 2026)
+
+Retour utilisateur avec une capture annotée : le montant d'une dépense déjà payée (« Loyer », « Courses du quotidien ») restait en texte blanc neutre, sans lien visuel avec le fait qu'il s'agit d'une sortie d'argent — seul le revenu (« Salaire ») était coloré (vert). L'icône de la ligne, elle, était déjà rouge pour une dépense (`.row-icon` coloré par `t.kind` depuis un lot antérieur) : le montant ne suivait pas cette même règle.
+
+Corrigé dans `src/App.tsx`, aux trois endroits où un montant d'opération datée (revenu/dépense) s'affiche en `.row-value`, pour que la couleur suive la nature de l'opération plutôt que son seul statut — donc valable aussi bien avant qu'après règlement, cohérent avec `.row-icon` qui fait déjà ça :
+
+- `transactionRow` (Mon mois) : dépense → rouge (`negative`), en plus du vert déjà existant pour un revenu ; un virement reste neutre.
+- `subscriptionRow` (Abonnements, aperçu Accueil) : n'avait aucune couleur de montant du tout jusqu'ici — ajouté, revenu récurrent → vert, dépense récurrente → rouge (un abonnement/une facture n'a pas de nature « virement »).
+- Aperçu « Abonnements et charges récurrentes » sur Accueil (liste indépendante de `subscriptionRow`, même donnée) : même correctif.
+
+Non touché intentionnellement : les positions d'investissement (`.row-value` sur Investissements) n'ont pas de nature revenu/dépense, donc restent neutres — pas de couleur inventée là où le concept ne s'applique pas.
+
+Le test e2e du lot précédent (tri par nature/montant) est étendu avec une assertion de classe CSS (`positive`/`negative`) sur les trois natures présentes dans son jeu de données (revenu, dépense, virement), plutôt qu'un nouveau test séparé.
+
+Preuves : `pnpm run typecheck` (0 erreur), `pnpm run test` (**142/142**), `pnpm run build` (réussi), les 10 scénarios `test:e2e` — dont le test étendu — rejoués individuellement, tous verts (run groupé toujours sujet au même flake connu de ce bac à sable, un ensemble différent de tests à chaque fois, jamais une régression réelle). Vérifié visuellement par capture réelle sur Mon mois et Accueil : dépenses en rouge qu'elles soient payées ou non, revenu en vert, virement neutre, cohérent partout.
+
 ## État réel
 
 | Élément                           | État                                                                                                                                                                   | Résultat et limite                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
