@@ -368,6 +368,16 @@ Preuves : `pnpm run typecheck` (0 erreur), `pnpm run test` (**142/142**), `pnpm 
 
 Fusionné dans `main` (commit `b5b8e74`, PR #24). CI (`Finance verification`) et déploiement (`Deploy Finance to GitHub Pages`) vérifiés verts sur ce commit.
 
+## Correctif — focus clavier perdu après un règlement instantané (corrigé et testé le 23 septembre 2026)
+
+Limite documentée depuis le lot « Paiement instantané » (voir « Prochaine action » ci-dessous, historique) : le bouton « Payer »/« Reçu »/« Régler » disparaît de la ligne dès qu'elle est réglée (remplacé par `row-main` cliquable ou par les icônes de ligne réglée), donc l'élément qui avait le focus clavier est retiré du DOM — le navigateur ramène alors le focus sur `<body>`, sans rien indiquer où continuer au clavier.
+
+Corrigé dans `src/App.tsx` : chaque ligne (`transactionRow`, `subscriptionRow`) porte désormais un `data-row-id` stable (l'id de la transaction réglée, inchangé par `quickSettle`) et `tabIndex={-1}` (repère de secours programmatique, hors de l'ordre de tabulation normal). Un nouvel effet déclenché par `justSettledId` retrouve la ligne par cet id une fois le DOM à jour et déplace le focus sur son premier contrôle réel (le crayon, l'icône de reçu, ou `row-main` devenu cliquable), avec la ligne elle-même en repli. Ne se déclenche que si le focus est effectivement tombé sur `<body>` — ne vole jamais un focus que la personne a déplacé entre-temps.
+
+Vérifié à la fois par script Playwright indépendant (transactionRow sur Mon mois **et** subscriptionRow sur Abonnements, `document.activeElement` confirmé hors de `<body>` et dans la ligne concernée après le clic) et par une nouvelle assertion e2e ajoutée au scénario « daily entries » existant.
+
+Preuves : `pnpm run typecheck` (0 erreur), `pnpm run test` (**142/142**), `pnpm run build` (réussi), les 9 scénarios `test:e2e` — dont le nouveau contrôle de focus — rejoués individuellement, tous verts (le run groupé reste le flake connu déjà documenté, pas une régression).
+
 ## État réel
 
 | Élément                           | État                                                                                                                                                                   | Résultat et limite                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
@@ -442,7 +452,7 @@ Toutes les captures utilisent la démonstration fictive. Elles ne prouvent ni Sa
 
 V2.1 à V2.8, les correctifs PWA/actions de ligne, la carte « Le mouvement du mois », la section « Aperçu du mois », les badges de nature de compte, la table « Mes comptes », la refonte visuelle générale (retour aux cartes), le tri « pas payé d'abord » + « Voir les autres mois », la simplification des lignes réglées + l'audit qualité, le paiement instantané/éditeur rapide/simplification Abonnements-Mon mois, l'audit à sept agents (sécurité, calculs, patrimoine, design, import/migration, éditeur, couverture e2e), les dates lisibles du graphique de patrimoine + accent des onglets de filtre, les coins plus carrés dans toute l'app et les boutons payer/reçu colorés + cartes Abonnements/Investissements + refonte du sélecteur de mois + palette bleu néon sont livrés, fusionnés dans `main` (commits `12f1d1d`, `a466623`, `de04fb4`, `525ee77`, `e51f39a`, `45c59c8`, `696018d`, `4fb4e3c`, `91ad711`, `5b9bf29`, `249c009`, `04ad766`, `b47b1e3`, `14eccee`, `b5b8e74`) et déployés sur le site public. Un élément vu sur une capture Notion de référence (table mensuelle « Impôt ») reste hors périmètre : aucune donnée fiscale ni modèle correspondant n'existe dans Finance, et en ajouter un exigerait d'inventer une structure sans demande explicite ni source. Reste à faire :
 
-1. Limite fonctionnelle documentée, non corrigée : le focus clavier après « Marquer payé » retombe encore sur `<body>` dans ce cas précis (le libellé du bouton change après l'enregistrement) — nécessite de re-cibler la ligne par identifiant de transaction, laissé pour un lot séparé.
+1. Le focus clavier après « Payer »/« Reçu »/« Régler » est corrigé (section « Correctif — focus clavier perdu après un règlement instantané » ci-dessus) : la ligne est re-ciblée par son identifiant de transaction, plus de perte de focus vers `<body>`.
 2. Aucune autre piste engagée sans demande explicite de l'utilisateur : ce fil a déjà connu plusieurs itérations visuelles non concluantes avant que la dernière passe soit acceptée — mieux vaut confirmer à chaque lot plutôt que d'enchaîner sans retour.
 
 Chaque lot est terminé avec tests ciblés, parcours navigateur, captures fictives et relecture indépendante vérifiés ; la CI distante et le site publié sont recontrôlés après chaque fusion.

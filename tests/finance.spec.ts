@@ -359,6 +359,17 @@ test("daily entries: income, currency-synced transfer, recurrence, investment-on
   await expect(occurrenceRow).toContainText("Payé");
   await expect(occurrenceRow).not.toContainText("Pas encore payé");
   await expect(occurrenceRow).not.toHaveClass(/row-flash-positive/);
+  // Regression: the "Payer" button that had focus disappears once the row settles (replaced
+  // by row-main becoming the "Modifier" target) — the browser used to drop focus to <body>
+  // with nothing keyboard-reachable pointing back at the row that just changed. The row is
+  // re-targeted by its stable id and focus moves onto its first real control instead.
+  await expect(async () => {
+    const activeIsBody = await page.evaluate(
+      () => document.activeElement === document.body,
+    );
+    expect(activeIsBody).toBe(false);
+  }).toPass({ timeout: 2000 });
+  await expect(occurrenceRow.locator(":focus")).toHaveCount(1);
   // Settled row itself opens the full editor (row-main is clickable once settled) — confirms
   // the settlement date was really set to today, not left blank by the direct write.
   await occurrenceRow.click();

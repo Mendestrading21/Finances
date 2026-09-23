@@ -549,6 +549,27 @@ export default function App() {
       if (preview) URL.revokeObjectURL(preview.url);
     };
   }, [preview]);
+  // quickSettle's row loses whatever button was focused when it's marked paid/received (the
+  // "Payer"/"Reçu"/"Régler" action itself disappears once the row settles), so the browser
+  // drops focus to <body> — documented as a known gap until this fix. Re-target the row that
+  // just settled by its stable id (transactionRow/subscriptionRow both stamp data-row-id) once
+  // the DOM has actually updated, landing on its first real interactive control (the pencil,
+  // the receipt icon, or row-main itself once settled rows make that clickable) or the row's
+  // own container as a fallback — never leaving focus stranded on <body>. Only steps in if
+  // focus really did land on <body>: never steals focus the user has since moved themselves.
+  useEffect(() => {
+    if (!justSettledId) return;
+    const raf = requestAnimationFrame(() => {
+      if (document.activeElement !== document.body) return;
+      const row = document.querySelector<HTMLElement>(
+        `[data-row-id="${CSS.escape(justSettledId)}"]`,
+      );
+      const target =
+        row?.querySelector<HTMLElement>('[role="button"], button, [tabindex="0"]') ?? row;
+      target?.focus();
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [justSettledId]);
   const renderSession = session.current;
   function navigate(p: Page) {
     setPage(p);
@@ -1079,6 +1100,8 @@ export default function App() {
       <div
         className={`row${justSettledId === t.id ? " row-flash-positive" : ""}`}
         key={t.id}
+        data-row-id={t.id}
+        tabIndex={-1}
         onAnimationEnd={() => {
           if (justSettledId === t.id) setJustSettledId(null);
         }}
@@ -1241,6 +1264,8 @@ export default function App() {
       <div
         className={`row item-card${justSettledId === flashKey ? " row-flash-positive" : ""}`}
         key={r.id}
+        data-row-id={flashKey}
+        tabIndex={-1}
         onAnimationEnd={() => {
           if (justSettledId === flashKey) setJustSettledId(null);
         }}
