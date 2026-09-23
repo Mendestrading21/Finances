@@ -26,6 +26,28 @@ export function recurrenceAmountFields(
 ): Pick<Recurrence, "amountMinor" | "amountEffectiveFrom" | "amountHistory"> {
   return existing ? withRecurrenceAmount(existing, amountMinor) : { amountMinor };
 }
+/** Resolves the date/budgetMonth pair a transaction save should carry, given the quick
+ * editor's single Mois field and the date/budgetMonth values present before this save (read
+ * from the visible fields in the full editor, or from the hidden inputs in the quick editor).
+ * The full editor never passes `quick: true`, so it always keeps its own visible date/
+ * budgetMonth untouched — `originalDate`/`originalBudgetMonth` pass straight through. In the
+ * quick editor, if the month field wasn't actually changed, the original date/budgetMonth come
+ * out byte-for-byte identical; if it was changed, the precise day is unknown, so `date` is
+ * cleared and `budgetMonth` carries the new month instead — the same "month without a precise
+ * day" concept `transactionsForMonth` already resolves via `date?.slice(0,7) ?? budgetMonth`
+ * (src/domain/finance.ts). Exported for direct unit testing of this exact merge, independent
+ * of form/DOM plumbing. */
+export function transactionDateFields(
+  quick: boolean,
+  month: string,
+  originalDate: string,
+  originalBudgetMonth: string,
+): Pick<Transaction, "date" | "budgetMonth"> {
+  const originalMonth = originalDate.slice(0, 7) || originalBudgetMonth;
+  return quick && month !== originalMonth
+    ? { date: null, budgetMonth: month }
+    : { date: originalDate || null, budgetMonth: originalBudgetMonth || undefined };
+}
 export type EditorSpec = {
   type:
     | "transaction"
@@ -171,6 +193,7 @@ export default function Editor({
       ) : (
         <input
           aria-label={label}
+          aria-describedby={options.hint ? `${name}-hint` : undefined}
           name={name}
           type={options.type || "text"}
           defaultValue={options.defaultValue ?? val(name)}
@@ -187,7 +210,11 @@ export default function Editor({
           }
         />
       )}{" "}
-      {options.hint && <small>{options.hint}</small>}
+      {/* aria-describedby above lets a screen reader announce this alongside the field
+          instead of only sighted users seeing it. */}
+      {options.hint && (
+        <small id={`${name}-hint`}>{options.hint}</small>
+      )}
     </label>
   );
   const accounts = (
@@ -295,16 +322,14 @@ export default function Editor({
       }
       if (spec.type === "transaction") {
         // Quick editor only exposes Libellé/Montant/Mois; date and budgetMonth come from
-        // hidden inputs carrying the pre-edit value unless the user actually changed the
-        // month. When only the month changes, we don't have — and must not invent — a
-        // precise day, so we clear `date` and set `budgetMonth` instead: the same "month
-        // without a precise day" concept `transactionsForMonth` already resolves via
-        // `date?.slice(0,7) ?? budgetMonth` (src/domain/finance.ts). When the month is left
-        // untouched, date/budgetMonth must come out byte-for-byte identical to before.
-        const originalDate = get("date");
-        const originalBudgetMonth = get("budgetMonth");
-        const originalMonth = originalDate.slice(0, 7) || originalBudgetMonth;
-        const monthChanged = spec.quick === true && get("month") !== originalMonth;
+        // hidden inputs carrying the pre-edit value — transactionDateFields() decides whether
+        // the month actually changed and resolves both fields from that (see its docstring).
+        const { date, budgetMonth } = transactionDateFields(
+          spec.quick === true,
+          get("month"),
+          get("date"),
+          get("budgetMonth"),
+        );
         const t = {
           id,
           label: get("label"),
@@ -312,8 +337,8 @@ export default function Editor({
           amountMinor: num("amountMinor"),
           currency: get("currency"),
           status: get("status") as "planned" | "settled" | "unknown",
-          date: monthChanged ? null : nullable(f.get("date")),
-          budgetMonth: monthChanged ? get("month") : originalBudgetMonth || undefined,
+          date,
+          budgetMonth,
           accountId: nullable(f.get("accountId")),
           destinationAccountId: nullable(f.get("destinationAccountId")),
           destinationAmountMinor: optional("destinationAmountMinor"),
@@ -802,7 +827,12 @@ export default function Editor({
           </p>
         )}
         <div className="form-actions">
-          <button type="button" className="button secondary" onClick={onClose}>
+          <button
+            type="button"
+            className="button secondary"
+            disabled={busy}
+            onClick={onClose}
+          >
             Annuler
           </button>
           <button className="button primary" disabled={busy}>

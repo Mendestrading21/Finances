@@ -135,7 +135,15 @@ export function recurrenceAmountAt(recurrence: Recurrence, at: string): number {
 /** Pure, no-op-safe amount change: the previous amount is preserved in `amountHistory`, dated
  * from when it actually took effect, so occurrences before `effectiveFrom` keep showing it.
  * Only occurrences from `effectiveFrom` onward see the new amount. Never touches settled or
- * otherwise materialized Transactions, which already carry their own frozen amount. */
+ * otherwise materialized Transactions, which already carry their own frozen amount.
+ * An `effectiveFrom` at or before the recurrence's currently active effective date (e.g. two
+ * edits the same day, since callers commonly default to `today()`) amends that still-pending
+ * change in place instead of archiving it: it was never actually in effect for any occurrence,
+ * so archiving it would put a history entry at or after the new current date, corrupting
+ * `amountHistory`'s strictly-increasing invariant (validateData would then reject the result)
+ * and, short of that, making `recurrenceAmountAt` return an older amount for a later date than
+ * for an earlier one. Reaching further back, past an already-archived change, is rejected —
+ * this pure function cannot safely re-splice history that far. */
 export function withRecurrenceAmount(
   recurrence: Recurrence,
   amountMinor: number,
@@ -145,18 +153,24 @@ export function withRecurrenceAmount(
     throw new Error("Montant de récurrence invalide.");
   if (!isDate(effectiveFrom)) throw new Error("Date d’effet invalide.");
   if (amountMinor === recurrence.amountMinor) return recurrence;
-  return {
-    ...recurrence,
-    amountMinor,
-    amountEffectiveFrom: effectiveFrom,
-    amountHistory: [
-      ...(recurrence.amountHistory ?? []),
-      {
-        amountMinor: recurrence.amountMinor,
-        effectiveFrom: currentAmountFrom(recurrence),
-      },
-    ],
-  };
+  const currentFrom = currentAmountFrom(recurrence);
+  const history = recurrence.amountHistory ?? [];
+  if (effectiveFrom > currentFrom)
+    return {
+      ...recurrence,
+      amountMinor,
+      amountEffectiveFrom: effectiveFrom,
+      amountHistory: [
+        ...history,
+        { amountMinor: recurrence.amountMinor, effectiveFrom: currentFrom },
+      ],
+    };
+  const archivedBoundary = history.length
+    ? history[history.length - 1].effectiveFrom
+    : null;
+  if (archivedBoundary !== null && effectiveFrom <= archivedBoundary)
+    throw new Error("Date d’effet antérieure à un changement déjà archivé.");
+  return { ...recurrence, amountMinor, amountEffectiveFrom: effectiveFrom, amountHistory: history };
 }
 
 /** Normalizes any cadence to a monthly figure for comparison — e.g. 1200/year and 100/month

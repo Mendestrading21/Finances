@@ -365,16 +365,25 @@ img.brand-mark {
 .button:active {
   transform: scale(0.97);
 }
+/* Real contrast defect, measured: the #fbfcff label at 14px/550 against this gradient's
+   darker stop (#617acb) is 3.97:1, below WCAG AA's 4.5:1 for normal text — the hover
+   gradient was worse still (3.17:1 / 3.87:1 on its two stops). Both stops below are
+   darkened just enough to clear 4.5:1 (checked ~4.7–4.9:1) while keeping the same hue and
+   angle, so "Ajouter" and the other primary actions stay legible at a glance instead of
+   only reading as "roughly white-ish on roughly blue-ish". */
 .button.primary {
   color: #fbfcff;
   border-color: #8b9ce4;
-  background: linear-gradient(120deg, #617acb, #7563b7);
+  background: linear-gradient(120deg, #576eb7, #7563b7);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.15),
     0 4px 18px rgba(85, 78, 153, 0.13);
 }
 .button.primary:hover {
-  background: linear-gradient(120deg, #728bdd, #8573c9);
+  background: linear-gradient(120deg, #5a71b8, #7866b8);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    0 6px 22px rgba(85, 78, 153, 0.2);
 }
 .button.secondary {
   background: linear-gradient(
@@ -411,19 +420,36 @@ img.brand-mark {
   align-items: center;
   gap: 10px;
   /* Bounds this against .period-bar's own width instead of sizing to its content (all
-   * 12 chips unscrolled): without it, nothing forces .month-row below to shrink, and it
-   * grows the whole page wider than the viewport instead of scrolling internally. */
+   * 12 chips unscrolled): without it, nothing forces .month-nav-bar below to shrink, and
+   * it grows the whole page wider than the viewport instead of scrolling internally. */
   min-width: 0;
   max-width: 100%;
+}
+/* Single visual control: the year stepper and the month strip used to be two separate
+ * bordered/filled boxes placed edge to edge, which read as a small stack of nested cards
+ * rather than one date control ("les dates c'est moche"). One shared surface with an
+ * internal divider reads as a single native-style control instead. */
+.month-nav-bar {
+  display: flex;
+  align-items: stretch;
+  background: #11141e;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 4px;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 .year-control {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
   flex-shrink: 0;
+  padding-right: 8px;
+  margin-right: 6px;
+  border-right: 1px solid var(--line-soft);
 }
 .year-control strong {
-  min-width: 52px;
+  min-width: 48px;
   text-align: center;
   font-size: 14px;
   font-weight: 550;
@@ -436,37 +462,94 @@ img.brand-mark {
 .month-picker-v2 > .button {
   flex-shrink: 0;
 }
+/* Modifier on the year stepper's .icon-button pair: plain chrome so they read as part of
+ * the unified bar instead of their own separate bordered chiclets sitting inside it — the
+ * same "no box inside a box" fix as .month-nav-bar, applied to its two nav buttons. Kept as
+ * an addition to .icon-button (not a replacement) so its 44px target, focus-visible ring,
+ * disabled and press states stay exactly what the rest of the app already relies on. */
+.month-nav-button {
+  border-color: transparent;
+  background: transparent;
+  border-radius: 10px;
+}
+.month-nav-button:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: transparent;
+}
 .month-row {
+  position: relative;
   display: flex;
   gap: 4px;
-  background: #11141e;
-  border: 1px solid var(--line);
-  padding: 4px;
-  border-radius: 12px;
+  background: transparent;
+  border: 0;
+  padding: 0;
   overflow-x: auto;
   /* The actual fix: a flex item's automatic min-width is its content size unless this is
    * also set explicitly — without it, overflow-x:auto alone does not reliably force this
-   * row to respect the space .period-bar has, across nested flex containers. */
+   * row to respect the space .month-nav-bar has, across nested flex containers. */
   min-width: 0;
   flex: 1 1 auto;
   /* Twelve chips never fit at 390px: scroll, never wrap onto a second line, which
    * would defeat the point of a compact single-row month picker. */
   flex-wrap: nowrap;
+  scroll-snap-type: x proximity;
+  /* The row scrolls (see above) but used to hard-clip whatever chip landed on the edge —
+   * a month abbreviation sliced mid-letter against a straight border, which is what read
+   * as "ugly" in review. A mask fades the last ~18px to the bar's own background instead,
+   * so a partially-visible chip tapers off like a native scroller rather than getting cut.
+   * mask-image paints relative to .month-row's own box, not its scrolled content, so the
+   * fade stays fixed at the edges while chips scroll underneath it — no JS needed. Turned
+   * off under prefers-reduced-transparency below. */
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 18px,
+    #000 calc(100% - 18px),
+    transparent
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 18px,
+    #000 calc(100% - 18px),
+    transparent
+  );
 }
 .month-chip {
+  scroll-snap-align: center;
   flex-shrink: 0;
   min-height: 44px;
   min-width: 44px;
-  padding: 9px 13px;
-  border-radius: 9px;
+  padding: 10px 14px;
+  border-radius: 10px;
   background: transparent;
   color: var(--muted);
   font-size: 13px;
+  font-weight: 500;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease-out;
 }
+.month-chip:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+}
+.month-chip:active {
+  transform: scale(0.94);
+}
+/* Tinted with the app's blue-violet accent (identite-ui.md: "utiliser l'accent bleu-violet
+ * pour la sélection") instead of the flat neutral grey this used previously — the selected
+ * month now reads as a colored, branded choice at a glance instead of just "less dim than
+ * its siblings". Text/background contrast checked at ~11:1, well past AA. */
 .month-chip.active {
-  color: #e5eaff;
-  background: #262d41;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045);
+  color: #eef1ff;
+  background: linear-gradient(
+    120deg,
+    rgba(126, 148, 234, 0.32),
+    rgba(154, 115, 232, 0.24)
+  );
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 0 0 1px rgba(154, 137, 224, 0.28);
+  font-weight: 600;
 }
 .currency-picker {
   font-size: 12px;
@@ -2029,8 +2112,32 @@ input::file-selector-button {
     gap: 10px;
     margin-bottom: 17px;
   }
-  .month-row {
+  .month-nav-bar {
     padding: 3px;
+    border-radius: 13px;
+  }
+  .year-control {
+    padding-right: 6px;
+    margin-right: 4px;
+  }
+  .year-control strong {
+    min-width: 40px;
+  }
+  .month-row {
+    -webkit-mask-image: linear-gradient(
+      to right,
+      transparent,
+      #000 14px,
+      #000 calc(100% - 14px),
+      transparent
+    );
+    mask-image: linear-gradient(
+      to right,
+      transparent,
+      #000 14px,
+      #000 calc(100% - 14px),
+      transparent
+    );
   }
   .month-chip {
     padding: 8px 11px;
@@ -2381,6 +2488,12 @@ input::file-selector-button {
   .dialog::backdrop {
     backdrop-filter: none;
     background: #03050bed;
+  }
+  /* The edge fade is a transparency effect (fades chip content to see-through, not just
+   * to a solid color) — show the month row's full, hard edges instead of tapering them. */
+  .month-row {
+    -webkit-mask-image: none;
+    mask-image: none;
   }
 }
 @media (forced-colors: active) {

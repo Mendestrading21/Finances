@@ -195,10 +195,15 @@ function Auth({
     // explicitly confirms; cleared on cancel, on success, or if another error occurs.
     [olderBackup, setOlderBackup] = useState<{
       raw: string;
-      password: string;
       message: string;
     } | null>(null),
-    cancelOlderBackupRef = useRef<HTMLButtonElement>(null);
+    cancelOlderBackupRef = useRef<HTMLButtonElement>(null),
+    // The passphrase already authenticated successfully once (importVault decrypted the
+    // backup before refusing it for being older) — kept only long enough to retry with
+    // allowOlder, in a ref rather than React state so it never gets captured in a
+    // state-inspection snapshot. Cleared right after that retry settles, on cancel, or
+    // whenever a fresh restore attempt starts.
+    pendingOlderBackupPasswordRef = useRef("");
   useEffect(() => {
     // Default focus lands on the safer action so a stray Enter/Space never replaces
     // newer data by accident.
@@ -233,7 +238,8 @@ function Auth({
       if (backup && e instanceof Error && isOlderBackupError(e.message)) {
         // Nothing was written (importVault fails closed before touching the vault):
         // ask for an explicit, conscious confirmation instead of a dead-end error.
-        setOlderBackup({ raw: backup, password, message: e.message });
+        pendingOlderBackupPasswordRef.current = password;
+        setOlderBackup({ raw: backup, message: e.message });
       } else {
         setError(
           e instanceof Error ? e.message : "Impossible d’ouvrir le coffre.",
@@ -247,8 +253,9 @@ function Auth({
     if (!olderBackup) return;
     setBusy(true);
     setError("");
+    const password = pendingOlderBackupPasswordRef.current;
     try {
-      const r = await importVault(olderBackup.raw, olderBackup.password, true);
+      const r = await importVault(olderBackup.raw, password, true);
       setOlderBackup(null);
       onOpen(r.data, r.key);
     } catch (e) {
@@ -259,11 +266,13 @@ function Auth({
         e instanceof Error ? e.message : "Impossible d’ouvrir le coffre.",
       );
     } finally {
+      pendingOlderBackupPasswordRef.current = "";
       setBusy(false);
     }
   }
   function cancelOlderBackup() {
     // Nothing was ever written for this refusal, so canceling is a pure UI reset.
+    pendingOlderBackupPasswordRef.current = "";
     setOlderBackup(null);
     setError("");
   }
@@ -274,6 +283,7 @@ function Auth({
       setError("Sauvegarde trop volumineuse (25 Mo maximum).");
       return;
     }
+    pendingOlderBackupPasswordRef.current = "";
     setOlderBackup(null);
     setBackup(await file.text());
     setError("");
@@ -435,6 +445,7 @@ function Auth({
               <button
                 className="text-button"
                 onClick={() => {
+                  pendingOlderBackupPasswordRef.current = "";
                   setBackup(null);
                   setOlderBackup(null);
                   setExists(vaultExists());
@@ -1217,12 +1228,20 @@ export default function App() {
     // is the honest state here, matching the "Aucune échéance" text next to it.
     const amountMinor = cohortItem ? cohortItem.dueAmountMinor : null;
     const amountCurrency = cohortItem ? cohortItem.currency : r.currency;
+    // quickSettle is called with dueTxn (a virtual "r.id:dueDate" id — it isn't in
+    // data.transactions yet) and stamps that same id onto the real transaction it writes.
+    // Once persisted, cohortItem.settled picks that transaction back up by
+    // recurrenceId+occurrenceDate, so settledTxn.id equals the id quickSettle actually used —
+    // the same identity flash key across both the pre-settle and post-settle render, where
+    // dueTxn itself has already gone back to null. Falling back to r.id alone (as if this were
+    // still unsettled) would never match and the flash would never render.
+    const flashKey = settledTxn?.id ?? dueTxn?.id ?? r.id;
     return (
       <div
-        className={`row${justSettledId === (dueTxn?.id ?? r.id) ? " row-flash-positive" : ""}`}
+        className={`row${justSettledId === flashKey ? " row-flash-positive" : ""}`}
         key={r.id}
         onAnimationEnd={() => {
-          if (justSettledId === (dueTxn?.id ?? r.id)) setJustSettledId(null);
+          if (justSettledId === flashKey) setJustSettledId(null);
         }}
       >
         <span
@@ -1511,7 +1530,9 @@ export default function App() {
               ))}
             </select>
           </label>
-          <span className="meta" aria-live="polite">
+          {/* MonthPicker already shows the year and month visually; this stays for
+              screen readers only, so the month change is still announced. */}
+          <span className="sr-only" aria-live="polite">
             {monthLabel(month)}
           </span>
         </div>

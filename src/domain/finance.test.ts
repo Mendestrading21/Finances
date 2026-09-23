@@ -468,6 +468,46 @@ describe("mois et récurrences", () => {
     expect(recurrenceAmountAt(raisedAgain, "2026-09-20")).toBe(3000);
     expect(recurrenceAmountAt(raisedAgain, "2026-12-01")).toBe(4000);
   });
+  it("corrige un changement de montant encore en attente le même jour au lieu de l’archiver", () => {
+    // Bug réel : deux modifications le même jour (cas courant, l’éditeur date par défaut à
+    // aujourd’hui) créaient une entrée d’historique datée du jour même que le nouveau montant
+    // courant, ce que validateData rejette ensuite comme incohérent.
+    const rule = recurrence({ amountMinor: 2000, startDate: "2026-01-01" });
+    const first = withRecurrenceAmount(rule, 3000, "2026-09-23");
+    const corrected = withRecurrenceAmount(first, 3500, "2026-09-23");
+    expect(corrected.amountMinor).toBe(3500);
+    expect(corrected.amountEffectiveFrom).toBe("2026-09-23");
+    // Le montant intermédiaire (3000) n’a jamais été en vigueur pour une occurrence : il n’est
+    // pas archivé, l’historique garde uniquement le palier réellement passé (2000).
+    expect(corrected.amountHistory).toEqual([
+      { amountMinor: 2000, effectiveFrom: "2026-01-01" },
+    ]);
+    expect(recurrenceAmountAt(corrected, "2026-09-22")).toBe(2000);
+    expect(recurrenceAmountAt(corrected, "2026-09-23")).toBe(3500);
+  });
+  it("corrige la date d’effet du changement courant vers une date plus tôt sans inverser les montants", () => {
+    const rule = recurrence({ amountMinor: 2000, startDate: "2026-01-01" });
+    const first = withRecurrenceAmount(rule, 3000, "2026-06-01");
+    // La hausse devait en fait s’appliquer dès mars, pas juin : corriger la date d’effet du
+    // changement encore courant (pas encore archivé) reste cohérent, pas seulement le montant.
+    const corrected = withRecurrenceAmount(first, 4000, "2026-03-01");
+    expect(corrected.amountHistory).toEqual([
+      { amountMinor: 2000, effectiveFrom: "2026-01-01" },
+    ]);
+    // Avant le correctif, une date de juillet (après les deux dates d’effet) renvoyait à tort
+    // le montant intermédiaire (3000) tandis qu’une date d’avril (avant) renvoyait le nouveau
+    // montant (4000) — inversion chronologique. Les deux doivent maintenant renvoyer 4000.
+    expect(recurrenceAmountAt(corrected, "2026-04-01")).toBe(4000);
+    expect(recurrenceAmountAt(corrected, "2026-07-01")).toBe(4000);
+    expect(recurrenceAmountAt(corrected, "2026-02-01")).toBe(2000);
+  });
+  it("refuse de reculer la date d’effet au-delà d’un changement déjà archivé", () => {
+    const rule = recurrence({ amountMinor: 2000, startDate: "2026-01-01" });
+    const first = withRecurrenceAmount(rule, 3000, "2026-06-01"); // history: [{2000, 2026-01-01}]
+    const second = withRecurrenceAmount(first, 4000, "2026-09-01"); // archives {3000, 2026-06-01}
+    expect(() => withRecurrenceAmount(second, 5000, "2026-06-01")).toThrow();
+    expect(() => withRecurrenceAmount(second, 5000, "2026-01-01")).toThrow();
+  });
   it("distingue prévu/reçu et prévu/payé, les transferts sont neutres", () => {
     const d = data({
       transactions: [
