@@ -83,6 +83,16 @@ export function monthLabel(month: string): string {
     timeZone: "UTC",
   }).format(new Date(`${month}-01T12:00:00Z`));
 }
+/** "28 avr. 2026" — same locale/timezone convention as monthLabel, for a full YYYY-MM-DD. */
+export function dateLabel(date: string): string {
+  if (!isDate(date)) throw new Error("Date invalide.");
+  return new Intl.DateTimeFormat("fr-CH", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(`${date}T12:00:00Z`));
+}
 function daysInMonth(year: number, month: number): number {
   return month === 2
     ? year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0)
