@@ -1184,7 +1184,9 @@ export default function App() {
           );
         })()}
         <div className="row-end">
-          <span className={`row-value ${t.kind === "income" ? "positive" : ""}`}>
+          <span
+            className={`row-value ${t.kind === "income" ? "positive" : t.kind === "expense" ? "negative" : ""}`}
+          >
             {t.kind === "income" ? "+" : ""}
             {display(t.amountMinor, t.currency)}
           </span>
@@ -1328,7 +1330,7 @@ export default function App() {
           </span>
         </div>
         <div className="row-end">
-          <div className="row-value">
+          <div className={`row-value ${r.kind === "income" ? "positive" : "negative"}`}>
             {amountMinor !== null ? (
               display(amountMinor, amountCurrency)
             ) : (
@@ -1967,7 +1969,9 @@ export default function App() {
                         Le {r.day} · tous les {r.intervalMonths} mois
                       </span>
                     </div>
-                    <span className="row-value">
+                    <span
+                      className={`row-value ${r.kind === "income" ? "positive" : "negative"}`}
+                    >
                       {display(r.amountMinor, r.currency)}
                     </span>
                   </div>
