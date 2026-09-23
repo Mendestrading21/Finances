@@ -1118,6 +1118,17 @@ img.brand-mark {
   flex: 1;
   min-width: 0;
 }
+/* Mini sparkline (verre + bleu néon lot 3/3) — sits between the name/badge block and the
+   edit button, vertically centered against their own 42-44px height rather than pinned to
+   the row's own align-items: start. */
+.account-sparkline {
+  align-self: center;
+  flex-shrink: 0;
+  opacity: 0.85;
+}
+.account-share {
+  color: var(--accent-strong);
+}
 /* The account's OWN name (a.name) is the card's primary identity — identite-ui.md: "Le nom
    du compte est primaire. L'établissement devient une information secondaire." A previous
    version of this card had that inverted (institution rendered larger/brighter, the
@@ -1611,12 +1622,18 @@ img.brand-mark {
   background: #2b2e3c;
   margin-top: 17px;
 }
+/* Lit gradient instead of a flat fill (verre + bleu néon lot 3/3) — only the goal-card
+   progress bar reaches this rule with its CSS background; FlowChart's two bars set their
+   own inline `background` per bar (income/expense status colors) which overrides this.
+   Contrast is non-text (WCAG 1.4.11, 3:1 floor): both gradient stops measure well above
+   that against the track's #2b2e3c fill. */
 .progress-fill {
   height: 100%;
   min-width: 0;
   max-width: 100%;
   border-radius: inherit;
-  background: var(--accent);
+  background: linear-gradient(90deg, var(--accent-button-from), var(--accent));
+  box-shadow: 0 0 10px -1px var(--accent-glow);
 }
 .goal-card .progress {
   margin: 22px 0 13px;
