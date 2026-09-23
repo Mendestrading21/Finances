@@ -18,16 +18,27 @@
   --text: #f4f5fc;
   --muted: #a3a8bc;
   --subtle: #7f859b;
-  /* Single neutral accent, replacing the old --accent/--violet blue-violet duo. Chosen
-     from the --positive mint/sage family already in the palette (not a new hue) so the
-     app keeps one coherent green-leaning accent instead of two saturated neon hues —
-     see the design report for the exact contrast figures against --bg and --surface.
-     --violet is kept only as a compatibility alias (same value) so every existing
-     var(--violet) reference in this file still resolves to the one accent tone instead
-     of a second hue; no code should read --violet as a distinct color going forward. */
-  --accent: #7fcba8;
-  --accent-strong: #63b892;
-  --violet: #7fcba8;
+  /* Pivot from the mint/sage accent to a single deliberate blue (user reference, PR 1 of
+     the "verre + bleu néon" redesign) — still one hue, not the old blue-violet duo: every
+     accent, glow and glass tint in this file now derives from this one blue family instead
+     of pairing a second saturated hue against it. --accent-strong is a TEXT tone only
+     (a:hover, .card-action:hover — ~8-9:1 against --bg/--surface); the button gradient
+     stops (--accent-button-from/--accent-button-to) are FOND-only and are never used as
+     text color. --violet stays a compatibility alias resolving to --accent, unchanged in
+     kind from before, so no code should read --violet as a distinct hue. */
+  --accent: #4f8cff; /* 6.14:1 on --bg, 5.56:1 on --surface */
+  --accent-strong: #79b0ff; /* text only (a:hover, .card-action:hover) — 8.91:1 on --bg, 8.06:1 on --surface */
+  --accent-button-to: #2a52c8; /* primary button FOND only, never text — white text on it = 6.69:1 */
+  --violet: var(--accent);
+  --accent-button-from: #3a6bd8; /* button gradient start, white text on it = 4.91:1 — do not lighten further */
+  --accent-glow: rgba(79, 140, 255, 0.35);
+  --accent-glow-strong: rgba(79, 140, 255, 0.55);
+  --accent-glow-ambient: rgba(79, 140, 255, 0.14); /* verified ceiling: .16+ fails --subtle text at 4.48:1 */
+  --glass-bg: rgba(255, 255, 255, 0.055);
+  --glass-bg-raised: rgba(255, 255, 255, 0.085);
+  --glass-bg-row: rgba(255, 255, 255, 0.04);
+  --glass-blur: 22px;
+  --radius-pill: 999px;
   --positive: #8adebc;
   --negative: #ffa0ac;
   --warning: #e5c186;
@@ -51,6 +62,29 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  background:
+    radial-gradient(1100px 620px at 12% -8%, var(--accent-glow-ambient), transparent 60%),
+    radial-gradient(800px 520px at 105% 8%, rgba(79, 140, 255, 0.09), transparent 55%),
+    var(--bg);
+  background-attachment: fixed;
+}
+/* "Verre" utility pair — PR 1 defines these, PR 2 applies them (identite-ui.md: reserve
+   glass for a page's few command/container surfaces, e.g. cards/dialogs/nav, never for a
+   dense list of rows). Not used anywhere yet in this pass; nothing in this file references
+   them until PR 2's card-by-card pass opts specific components in. */
+.glass-card {
+  border: 1px solid transparent;
+  background:
+    linear-gradient(var(--glass-bg), var(--glass-bg)) padding-box,
+    linear-gradient(135deg, rgba(79, 140, 255, 0.35), rgba(255, 255, 255, 0.07)) border-box;
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+}
+.glass-row {
+  border: 1px solid transparent;
+  background:
+    linear-gradient(var(--glass-bg-row), var(--glass-bg-row)) padding-box,
+    linear-gradient(135deg, rgba(79, 140, 255, 0.22), rgba(255, 255, 255, 0.05)) border-box;
 }
 button,
 input,
@@ -203,9 +237,12 @@ img.brand-mark {
   background: #1d2030;
 }
 .nav-item.active {
-  color: #eaf6f0;
-  background: rgba(127, 203, 168, 0.14);
-  border-color: rgba(127, 203, 168, 0.22);
+  color: #eaf1ff;
+  background: linear-gradient(135deg, rgba(79, 140, 255, 0.2), rgba(79, 140, 255, 0.07));
+  border-color: rgba(79, 140, 255, 0.35);
+  box-shadow:
+    inset 0 0 18px -6px var(--accent-glow),
+    0 2px 14px -4px var(--accent-glow);
 }
 .nav-item.active svg {
   color: var(--accent);
@@ -352,7 +389,7 @@ img.brand-mark {
   justify-content: center;
   gap: 9px;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: var(--radius-pill);
   background: var(--surface-raised);
   color: var(--text);
   padding: 11px 17px;
@@ -377,23 +414,41 @@ img.brand-mark {
 .button:active {
   transform: scale(0.97);
 }
-/* Flat accent fill instead of the old blue-violet gradient, matching the reference's
-   plain filled action buttons (a flat color disk, nothing glowing/gradient behind it).
-   Dark text on the light mint fill rather than white-on-blue: #0a0f0c on --accent
-   (#7fcba8) measures ~10.8:1, comfortably clear of WCAG AA's 4.5:1 for normal text. */
+/* Blue gradient fill with white text (PR 1 of the "verre + bleu néon" pass), replacing the
+   previous flat mint fill with dark text. White on --accent-button-from (the lighter,
+   top-left stop) measures 4.91:1, white on --accent-button-to (the darker, bottom-right
+   stop) measures 6.69:1 — both clear WCAG AA's 4.5:1 floor for normal text at every point
+   of the gradient, so no need to test intermediate stops. */
 .button.primary {
-  color: #0a0f0c;
-  border-color: var(--accent);
-  background: var(--accent);
-  box-shadow: none;
+  color: #fff;
+  border-color: transparent;
+  background: linear-gradient(135deg, var(--accent-button-from), var(--accent-button-to));
+  box-shadow:
+    0 6px 24px -6px var(--accent-glow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
+/* Hover needs a FOND (background) that reads as "pressed further", not --accent-strong —
+   that token is a ~8:1 TEXT color calibrated for light text on dark surfaces; used as a
+   button fill under white text it collapses to ~2.2:1, failing AA outright. --accent-button-to
+   is already the darker of the two rest-state gradient stops, so reusing it as a flat hover
+   fill is strictly darker than the rest-state gradient at every point while staying a
+   verified 6.69:1 for the white label. */
 .button.primary:hover {
-  background: var(--accent-strong);
-  border-color: var(--accent-strong);
+  background: var(--accent-button-to);
+  border-color: transparent;
+  box-shadow:
+    0 8px 30px -6px var(--accent-glow-strong),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
+/* Verre without blur: the button already sits on the page's own glass surfaces, so a second
+   blur here would double up for no benefit — same border technique as .glass-row (gradient
+   border via padding-box/border-box layering) at low opacity, tonally between the flat
+   --surface-raised default button and the .primary gradient fill. */
 .button.secondary {
-  background: rgba(225, 230, 255, 0.04);
-  border-color: #303441;
+  border: 1px solid transparent;
+  background:
+    linear-gradient(rgba(225, 230, 255, 0.04), rgba(225, 230, 255, 0.04)) padding-box,
+    linear-gradient(135deg, rgba(79, 140, 255, 0.22), rgba(255, 255, 255, 0.05)) border-box;
   box-shadow: none;
 }
 /* Quick-settle action, colored by what it does rather than a neutral grey like every other
@@ -475,9 +530,13 @@ img.brand-mark {
   min-height: 44px;
   max-width: 100%;
   padding: 9px 14px 9px 12px;
-  border: 1px solid var(--line);
-  border-radius: 11px;
-  background: #11141e;
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  /* Same gradient-border technique as .glass-row: an opaque padding-box fill plus a
+     border-box gradient standing in for the border color. */
+  background:
+    linear-gradient(#11141e, #11141e) padding-box,
+    linear-gradient(135deg, rgba(79, 140, 255, 0.22), rgba(255, 255, 255, 0.05)) border-box;
   color: var(--text);
   font-size: 14px;
   font-weight: 550;
@@ -488,8 +547,9 @@ img.brand-mark {
     transform 0.1s ease-out;
 }
 .month-picker-trigger:hover {
-  background: #1a1e2c;
-  border-color: #3a4055;
+  background:
+    linear-gradient(#1a1e2c, #1a1e2c) padding-box,
+    linear-gradient(135deg, rgba(79, 140, 255, 0.32), rgba(255, 255, 255, 0.08)) border-box;
 }
 .month-picker-trigger:active {
   transform: scale(0.97);
@@ -529,9 +589,11 @@ img.brand-mark {
   width: 288px;
   max-width: min(320px, calc(100vw - 32px));
   padding: 14px;
-  border: 1px solid #363b50;
+  border: 1px solid rgba(79, 140, 255, 0.28);
   border-radius: 14px;
-  background: rgba(20, 23, 34, 0.92);
+  background:
+    linear-gradient(var(--glass-bg-raised), var(--glass-bg-raised)),
+    rgba(14, 17, 30, 0.92);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
@@ -602,12 +664,14 @@ img.brand-mark {
 }
 /* Tinted with the app's single accent (identite-ui.md: "utiliser l'accent ... pour la
  * sélection") instead of a flat neutral grey, so the selected month reads as a colored,
- * branded choice at a glance. Flat wash, not a two-stop gradient: built from var(--accent)
- * rather than a fixed hex so it tracks whichever tone that token lands on. Text/background
- * contrast checked at ~11:1. */
+ * branded choice at a glance. A flat fill of var(--accent) itself, not the previous
+ * color-mix() wash — a 78%-opacity mix over this panel's own translucent background no
+ * longer clears AA at the new blue accent (measured 3.88-4.16:1 depending on panel/backdrop
+ * compositing), where the dark text on a fully solid var(--accent) is a verified 5.83:1
+ * (same pairing as .tab-button.active). */
 .month-picker-cell.active {
   color: #0e130f;
-  background: color-mix(in srgb, var(--accent) 78%, transparent);
+  background: var(--accent);
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
   font-weight: 600;
 }
@@ -1609,8 +1673,7 @@ img.brand-mark {
 }
 .field input,
 .field select,
-.field textarea,
-.auth-card input {
+.field textarea {
   width: 100%;
   min-height: 48px;
   border: 1px solid #363d51;
@@ -1624,15 +1687,38 @@ img.brand-mark {
   min-height: 92px;
   resize: vertical;
 }
+/* Deliberately not .glass-row here: .glass-row's white-based translucent fill, over the
+   auth card's own glass, lightens enough to wash out the placeholder color below. A
+   dedicated near-opaque dark fill instead, with the same gradient-border technique
+   (padding-box/border-box layering) — no blur of its own, the card around it already
+   supplies that. */
+.auth-card input {
+  width: 100%;
+  min-height: 48px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background:
+    linear-gradient(rgba(6, 7, 13, 0.4), rgba(6, 7, 13, 0.4)) padding-box,
+    linear-gradient(135deg, rgba(79, 140, 255, 0.22), rgba(255, 255, 255, 0.05)) border-box;
+  padding: 12px 13px;
+  color: var(--text);
+  font-size: 14px;
+}
 .field input::placeholder,
 .auth-card input::placeholder {
   color: #798297;
 }
 .field input:focus,
 .field select:focus,
-.field textarea:focus,
-.auth-card input:focus {
+.field textarea:focus {
   border-color: var(--accent);
+}
+/* Out of scope for .field input:focus (dialog forms) in this pass — a glow ring reads well
+   here because .auth-card input already sits on a transparent gradient-border technique
+   (no real border to swap the color of the way .field input's solid #363d51 border does). */
+.auth-card input:focus {
+  border-color: transparent;
+  box-shadow: 0 0 0 3px var(--accent-glow);
 }
 .field small {
   font-size: 12px;
@@ -1691,6 +1777,9 @@ input::file-selector-button {
   padding-top: 22px;
   border-top: 1px solid var(--line);
 }
+/* No opaque background of its own any more — this is one of the first screens the person
+   sees, so it's one of the first to carry the page-wide radial glow (see `body`) rather than
+   masking it behind a flat fill. */
 .auth-screen {
   min-height: 100dvh;
   display: grid;
@@ -1699,13 +1788,18 @@ input::file-selector-button {
   justify-content: center;
   gap: 70px;
   padding: 55px 40px;
-  background: var(--bg);
 }
+/* Full .glass-card pattern (see utility definition near the top of this file): one real
+   glass container, blur included, for a screen that only ever shows a single card. */
 .auth-card {
   width: min(430px, 100%);
   padding: 33px;
-  background: var(--surface);
-  border: 1px solid #30374b;
+  border: 1px solid transparent;
+  background:
+    linear-gradient(var(--glass-bg), var(--glass-bg)) padding-box,
+    linear-gradient(135deg, rgba(79, 140, 255, 0.35), rgba(255, 255, 255, 0.07)) border-box;
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
   border-radius: var(--radius);
   box-shadow: var(--shadow);
 }
@@ -1766,6 +1860,9 @@ input::file-selector-button {
   line-height: 1.3;
   margin: 8px 0 13px;
 }
+/* Was hardcoded mint (rgba(127,203,168,…)) independent of the --accent token — the one
+   badge on the auth screen that would otherwise stay green in the middle of an otherwise
+   all-blue glass card. Retinted to the same blue family as everything else here. */
 .vault-mark {
   display: flex;
   align-items: center;
@@ -1774,8 +1871,8 @@ input::file-selector-button {
   height: 62px;
   border-radius: 16px;
   color: var(--accent);
-  border: 1px solid rgba(127, 203, 168, 0.28);
-  background: rgba(127, 203, 168, 0.12);
+  border: 1px solid rgba(79, 140, 255, 0.28);
+  background: rgba(79, 140, 255, 0.12);
   box-shadow: none;
 }
 .auth-links {
@@ -2000,10 +2097,19 @@ input::file-selector-button {
   font-size: 14px;
   line-height: 1.7;
 }
+/* First real "verre" treatment for the sidebar: the previous rule here was a flat, almost
+ * opaque rgba with no hue of its own — this retints it to the app's blue-glass vocabulary
+ * (same --glass-bg-raised sheen the mobile nav/month picker panel use) so it reads as glass,
+ * not just "slightly less than opaque". Kept behind @supports with a solid #0d0e15 base
+ * rule above (unchanged) and a solid prefers-reduced-transparency fallback below
+ * (unchanged) — both already existed and keep working exactly as before. */
 @supports (backdrop-filter: blur(10px)) {
   .sidebar {
-    background: rgba(13, 14, 21, 0.95);
+    background:
+      linear-gradient(var(--glass-bg-raised), var(--glass-bg-raised)),
+      rgba(10, 13, 24, 0.82);
     backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
   }
 }
 @media (min-width: 1630px) {
@@ -2349,8 +2455,13 @@ input::file-selector-button {
     min-height: 70px;
     padding: 7px 5px;
     border-radius: 16px;
-    border: 1px solid #454957;
-    background: rgba(31, 35, 49, 0.95);
+    /* Retinted to the app's blue-glass vocabulary (was a hue-neutral slate rgba) — same
+       --glass-bg-raised sheen the sidebar/month picker panel now use, opacity/blur kept
+       exactly as before. */
+    border: 1px solid rgba(79, 140, 255, 0.22);
+    background:
+      linear-gradient(var(--glass-bg-raised), var(--glass-bg-raised)),
+      rgba(24, 27, 40, 0.95);
     box-shadow:
       0 12px 40px #0008,
       inset 0 1px 0 rgba(255, 255, 255, 0.07);
@@ -2366,6 +2477,9 @@ input::file-selector-button {
     min-height: 54px;
     padding: 5px 1px;
     gap: 6px;
+    /* Transparent 1px base so .active below can swap in a visible border-color — matches
+       .nav-item's own transparent-border-then-active-color pattern. */
+    border: 1px solid transparent;
     border-radius: 11px;
     background: transparent;
     color: #a3aec5;
@@ -2375,9 +2489,20 @@ input::file-selector-button {
     text-decoration: none;
     font-weight: 450;
   }
+  /* Unlike .nav-item.active (near-white label text over this same tint), the mobile label
+     text here is itself accent-colored, so it sits on a background tinted with its own hue
+     — a self-similar pairing that separates far less in luminance than a light-vs-blue one
+     does. Measured against .nav-item.active's literal .20/.07 wash with var(--accent) as the
+     label color: only ~3.15-3.8:1 at 9px, failing AA. Two changes bring it back to a safe
+     margin: var(--accent-strong) (the text-calibrated ~8:1 tone) instead of --accent, and a
+     lighter .14/.05 wash instead of .20/.07 — together ~5.0-5.7:1 at both gradient stops. */
   .mobile-nav .active {
-    color: var(--accent);
-    background: rgba(127, 203, 168, 0.14);
+    color: var(--accent-strong);
+    background: linear-gradient(135deg, rgba(79, 140, 255, 0.14), rgba(79, 140, 255, 0.05));
+    border-color: rgba(79, 140, 255, 0.35);
+    box-shadow:
+      inset 0 0 18px -6px var(--accent-glow),
+      0 2px 14px -4px var(--accent-glow);
   }
   .mobile-nav button svg,
   .mobile-nav a svg {
