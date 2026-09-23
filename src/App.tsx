@@ -98,8 +98,10 @@ function monogramInitials(name: string): string {
   ).toUpperCase();
 }
 const MONOGRAM_PALETTE = [
-  { bg: "rgba(138, 169, 255, 0.16)", fg: "#8aa9ff" },
-  { bg: "rgba(170, 150, 255, 0.16)", fg: "#aa96ff" },
+  // First two entries mirror --accent/--violet (index.css) exactly, kept in sync by hand
+  // since this array is plain TS, not CSS custom properties.
+  { bg: "rgba(10, 132, 255, 0.16)", fg: "#0a84ff" },
+  { bg: "rgba(143, 107, 255, 0.16)", fg: "#8f6bff" },
   { bg: "rgba(111, 151, 224, 0.16)", fg: "#6f97e0" },
   { bg: "rgba(124, 140, 255, 0.16)", fg: "#7c8cff" },
   { bg: "rgba(200, 150, 230, 0.16)", fg: "#c896e6" },
@@ -1146,13 +1148,12 @@ export default function App() {
           </span>
           <div className="row-actions">
             {t.status === "planned" ? (
-              <button className="button small secondary" onClick={() => quickSettle(t)}>
+              <button
+                className={`button small ${t.kind === "income" ? "receive" : t.kind === "transfer" ? "secondary" : "pay"}`}
+                onClick={() => quickSettle(t)}
+              >
                 <Icon name="check" size={16} />
-                {t.kind === "income"
-                  ? "Marquer reçu"
-                  : t.kind === "transfer"
-                    ? "Marquer réglé"
-                    : "Marquer payé"}
+                {t.kind === "income" ? "Reçu" : t.kind === "transfer" ? "Régler" : "Payer"}
               </button>
             ) : null}
             {
@@ -1238,7 +1239,7 @@ export default function App() {
     const flashKey = settledTxn?.id ?? dueTxn?.id ?? r.id;
     return (
       <div
-        className={`row${justSettledId === flashKey ? " row-flash-positive" : ""}`}
+        className={`row item-card${justSettledId === flashKey ? " row-flash-positive" : ""}`}
         key={r.id}
         onAnimationEnd={() => {
           if (justSettledId === flashKey) setJustSettledId(null);
@@ -1284,9 +1285,12 @@ export default function App() {
           </div>
           <div className="row-actions">
             {dueTxn && (
-              <button className="button small secondary" onClick={() => quickSettle(dueTxn)}>
+              <button
+                className={`button small ${r.kind === "income" ? "receive" : "pay"}`}
+                onClick={() => quickSettle(dueTxn)}
+              >
                 <Icon name="check" size={16} />
-                {r.kind === "income" ? "Marquer reçu" : "Marquer payé"}
+                {r.kind === "income" ? "Reçu" : "Payer"}
               </button>
             )}
             {settledTxn && (
@@ -2161,7 +2165,7 @@ export default function App() {
               {data.positions
                 .filter((p) => filter === "all" || p.assetType === filter)
                 .map((p) => (
-                  <div className="row" key={p.id}>
+                  <div className="row item-card" key={p.id}>
                     <span
                       className="institution-icon"
                       style={{

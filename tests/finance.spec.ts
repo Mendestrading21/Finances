@@ -349,12 +349,12 @@ test("daily entries: income, currency-synced transfer, recurrence, investment-on
     .filter({ hasNotText: "tous les" });
   await expect(occurrenceRow).toContainText("Pas encore payé");
   await occurrenceRow
-    .getByRole("button", { name: "Marquer payé", exact: true })
+    .getByRole("button", { name: "Payer", exact: true })
     .click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   // Instant write still gives visible feedback: a brief green flash (row-flash-positive,
   // self-clearing via the row's own onAnimationEnd, not a timer) is the only confirmation a
-  // dialog-less "Marquer payé" click actually did something.
+  // dialog-less "Payer" click actually did something.
   await expect(occurrenceRow).toHaveClass(/row-flash-positive/);
   await expect(occurrenceRow).toContainText("Payé");
   await expect(occurrenceRow).not.toContainText("Pas encore payé");
@@ -375,16 +375,16 @@ test("daily entries: income, currency-synced transfer, recurrence, investment-on
     .click();
   await expect(occurrenceRow).toContainText("Pas encore payé");
   // Regression: the occurrence is now a persisted transaction (status "planned"), not a
-  // virtual one anymore. Clicking "Marquer payé" a second time must still work directly.
+  // virtual one anymore. Clicking "Payer" a second time must still work directly.
   await occurrenceRow
-    .getByRole("button", { name: "Marquer payé", exact: true })
+    .getByRole("button", { name: "Payer", exact: true })
     .click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(occurrenceRow).toContainText("Payé");
   await expect(occurrenceRow).not.toContainText("Pas encore payé");
 
   // 2ter) Même comportement pour une opération ponctuelle déjà persistée dès sa création
-  // (pas liée à une récurrence) : "Marquer payé" écrit aussi directement, sans dialogue.
+  // (pas liée à une récurrence) : "Payer" écrit aussi directement, sans dialogue.
   await page.getByRole("button", { name: "Ajouter", exact: true }).click();
   dialog = page.getByRole("dialog");
   await dialog.getByLabel("Libellé").fill("Café test");
@@ -399,7 +399,7 @@ test("daily entries: income, currency-synced transfer, recurrence, investment-on
   const oneOffRow = page.locator(".row", { hasText: "Café test" });
   await expect(oneOffRow).toContainText("Pas encore payé");
   await oneOffRow
-    .getByRole("button", { name: "Marquer payé", exact: true })
+    .getByRole("button", { name: "Payer", exact: true })
     .click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(oneOffRow).toContainText("Payé");
@@ -679,46 +679,80 @@ test("month picker: French Janvier–Décembre row, year navigation, Ce mois-ci 
   await page.getByLabel("Confirmer la phrase secrète").fill(monthPassphrase);
   await page.getByRole("button", { name: "Créer mon coffre" }).click();
 
-  const currentChip = page.getByRole("button", { name: currentMonthName, exact: true });
-  await expect(currentChip).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByText(String(currentYear), { exact: true })).toBeVisible();
+  // Compact trigger ("Septembre 2026"), not a visible 12-chip strip: the accessible name
+  // carries the full "changer de mois" intent since the visible label alone doesn't. Held by
+  // its stable class, not by that name — the name itself changes once a month is picked, and
+  // a getByRole(name:) locator re-resolves against the CURRENT accessible name on every use.
+  const trigger = page.locator(".month-picker-trigger");
+  await expect(trigger).toHaveAttribute(
+    "aria-label",
+    `Changer de mois, actuellement ${currentMonthName} ${currentYear}`,
+  );
+  await expect(trigger).toHaveAttribute("aria-expanded", "false");
   // The current month is selected by default: no "back to this month" shortcut needed yet.
   await expect(page.getByRole("button", { name: "Ce mois-ci" })).toHaveCount(0);
-  // A plain <div> with just aria-label has no accessible name (generic role strips it) —
-  // role="group" is what actually exposes "Choisir un mois" to assistive tech.
+  // Closed by default: the grid isn't in the tree until the trigger opens it.
   await expect(
     page.getByRole("group", { name: "Choisir un mois", exact: true }),
-  ).toBeVisible();
+  ).toHaveCount(0);
+
+  await trigger.click();
+  await expect(trigger).toHaveAttribute("aria-expanded", "true");
+  const monthGroup = page.getByRole("group", { name: "Choisir un mois", exact: true });
+  await expect(monthGroup).toBeVisible();
+  const currentCell = page.getByRole("button", {
+    name: `${currentMonthName} ${currentYear}`,
+    exact: true,
+  });
+  await expect(currentCell).toHaveAttribute("aria-pressed", "true");
+  await expect(currentCell).toHaveAttribute("aria-current", "date");
 
   // Distinct, disambiguated short labels: a naive slice(0, 3) would show "Jui" for both.
   await expect(
-    page.getByRole("button", { name: "Juin", exact: true }),
+    page.getByRole("button", { name: `Juin ${currentYear}`, exact: true }),
   ).toHaveText("Jun");
   await expect(
-    page.getByRole("button", { name: "Juillet", exact: true }),
+    page.getByRole("button", { name: `Juillet ${currentYear}`, exact: true }),
   ).toHaveText("Jul");
 
-  // Selecting another month updates the pressed chip and reveals the "back to today" shortcut.
-  await page.getByRole("button", { name: otherMonthName, exact: true }).click();
-  await expect(currentChip).toHaveAttribute("aria-pressed", "false");
-  await expect(
-    page.getByRole("button", { name: otherMonthName, exact: true }),
-  ).toHaveAttribute("aria-pressed", "true");
+  // Year navigation only browses (local to the open panel) — it must NOT commit a new month
+  // by itself, unlike the old always-visible year stepper.
+  await page.getByRole("button", { name: "Année suivante" }).click();
+  await expect(page.locator(".month-picker-year-label")).toHaveText(String(currentYear + 1));
+  await expect(trigger).toHaveAttribute(
+    "aria-label",
+    `Changer de mois, actuellement ${currentMonthName} ${currentYear}`,
+  );
+  await page.getByRole("button", { name: "Année précédente" }).click();
+  await expect(page.locator(".month-picker-year-label")).toHaveText(String(currentYear));
+
+  // Selecting another month commits it, closes the panel, updates the trigger label, and
+  // reveals the "back to today" shortcut.
+  await page
+    .getByRole("button", { name: `${otherMonthName} ${currentYear}`, exact: true })
+    .click();
+  await expect(monthGroup).toHaveCount(0);
+  await expect(trigger).toHaveAttribute("aria-expanded", "false");
+  await expect(trigger).toHaveAttribute(
+    "aria-label",
+    `Changer de mois, actuellement ${otherMonthName} ${currentYear}`,
+  );
   const backToToday = page.getByRole("button", { name: "Ce mois-ci" });
   await expect(backToToday).toBeVisible();
 
-  // Year navigation keeps the same month number and stays reachable from any month.
-  await page.getByRole("button", { name: "Année suivante" }).click();
-  await expect(page.getByText(String(currentYear + 1), { exact: true })).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: otherMonthName, exact: true }),
-  ).toHaveAttribute("aria-pressed", "true");
-  await page.getByRole("button", { name: "Année précédente" }).click();
-  await expect(page.getByText(String(currentYear), { exact: true })).toBeVisible();
+  // Escape closes the panel and returns focus to the trigger without committing anything.
+  await trigger.click();
+  await expect(monthGroup).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(monthGroup).toHaveCount(0);
+  await expect(trigger).toBeFocused();
 
   // The shortcut returns exactly to today's month and then disappears.
   await backToToday.click();
-  await expect(currentChip).toHaveAttribute("aria-pressed", "true");
+  await expect(trigger).toHaveAttribute(
+    "aria-label",
+    `Changer de mois, actuellement ${currentMonthName} ${currentYear}`,
+  );
   await expect(page.getByRole("button", { name: "Ce mois-ci" })).toHaveCount(0);
 });
 
@@ -786,7 +820,7 @@ test("subscriptions: a status change made on Abonnements updates Mon mois and Ac
 
   // Mark it paid from Abonnements itself, not from Mon mois — writes directly, no dialog.
   await subsRow
-    .getByRole("button", { name: "Marquer payé", exact: true })
+    .getByRole("button", { name: "Payer", exact: true })
     .click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   // Same instant-write green flash as Mon mois' rows (row-flash-positive), exercised here on
