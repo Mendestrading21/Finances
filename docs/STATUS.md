@@ -325,6 +325,23 @@ Preuves : `pnpm run typecheck` (0 erreur), `pnpm run test` (**142/142**, en haus
 
 Fusionné dans `main` (commit `04ad766`, PR #18). CI (`Finance verification`) et déploiement (`Deploy Finance to GitHub Pages`) vérifiés verts sur ce commit.
 
+## Dates lisibles sur le graphique de patrimoine + accent sur les onglets de filtre (développé et testé le 23 septembre 2026)
+
+L'utilisateur a envoyé trois captures annotées (entourées en rouge) demandant d'améliorer le visuel de la barre mois/devise et de la carte « Patrimoine observé » sur l'Accueil, des statistiques sur Abonnements, et des onglets de filtre + liste des opérations sur Mon mois.
+
+Deux de ces captures montraient en réalité l'**ancienne version en cache** : le sélecteur de mois en gris plat (déjà remplacé par l'accent bleu-violet dans le lot précédent) et le texte technique « Cohorte d'échéances » sur Abonnements (déjà simplifié). Vérifié directement dans le code courant avant tout changement plutôt que de re-développer à l'aveugle ; signalé à l'utilisateur que la bannière « Recharger » du service worker doit être acceptée pour voir la version courante.
+
+Deux défauts visuels réels sont restés, une fois la confusion de cache écartée :
+
+1. **Dates brutes sur le graphique** (`src/components/Charts.tsx`) : le pied du graphique « Patrimoine observé » et le détail « Voir les valeurs exactes » affichaient les dates au format ISO brut (`2026-04-28`), repérable sur la capture Accueil. Nouvelle fonction `dateLabel(date)` (`src/domain/finance.ts`), même convention que `monthLabel` déjà en place (locale `fr-CH`, `timeZone: "UTC"` pour éviter tout décalage de jour) — affiche désormais « 28 avr. 2026 ».
+2. **Onglets de filtre en gris plat** (`src/index.css`) : les onglets Tout/Revenus/Dépenses/Virements sur Mon mois (entourés sur la capture) utilisaient encore `.tab-button.active { background: #262d41 }` — exactement le même gris plat que le sélecteur de mois avait déjà remplacé par l'accent bleu-violet dans le lot précédent (le commentaire de code de ce correctif signalait déjà explicitement ce gris comme « réutilisé par les groupes d'onglets génériques »). `.tab-button.active` reprend maintenant le dégradé exact de `.month-chip.active`, pour une sélection cohérente dans toute l'app (tous les groupes d'onglets partagent cette classe).
+
+Vérifié visuellement (pas seulement lu dans le code) : preview isolé sur un port dédié, capture Playwright réelle confirmant « 28 avr. 2026 »/« 23 sept. 2026 » sous le graphique et le nouvel accent sur l'onglet « Tout » actif.
+
+Preuves : `pnpm run typecheck` (0 erreur), `pnpm run test` (**142/142**), `pnpm run build` (réussi), les 9 scénarios `test:e2e` rejoués individuellement, tous verts (le run groupé reste le flake connu déjà documenté, pas une régression).
+
+Fusionné dans `main` (commit `b47b1e3`, PR #20). CI (`Finance verification`) et déploiement (`Deploy Finance to GitHub Pages`) vérifiés verts sur ce commit.
+
 ## État réel
 
 | Élément                           | État                                                                                                                                                                   | Résultat et limite                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
@@ -397,7 +414,7 @@ Toutes les captures utilisent la démonstration fictive. Elles ne prouvent ni Sa
 
 ## Prochaine action
 
-V2.1 à V2.8, les correctifs PWA/actions de ligne, la carte « Le mouvement du mois », la section « Aperçu du mois », les badges de nature de compte, la table « Mes comptes », la refonte visuelle générale (retour aux cartes), le tri « pas payé d'abord » + « Voir les autres mois », la simplification des lignes réglées + l'audit qualité, le paiement instantané/éditeur rapide/simplification Abonnements-Mon mois et l'audit à sept agents (sécurité, calculs, patrimoine, design, import/migration, éditeur, couverture e2e) sont livrés, fusionnés dans `main` (commits `12f1d1d`, `a466623`, `de04fb4`, `525ee77`, `e51f39a`, `45c59c8`, `696018d`, `4fb4e3c`, `91ad711`, `5b9bf29`, `249c009`, `04ad766`) et déployés sur le site public. Un élément vu sur une capture Notion de référence (table mensuelle « Impôt ») reste hors périmètre : aucune donnée fiscale ni modèle correspondant n'existe dans Finance, et en ajouter un exigerait d'inventer une structure sans demande explicite ni source. Reste à faire :
+V2.1 à V2.8, les correctifs PWA/actions de ligne, la carte « Le mouvement du mois », la section « Aperçu du mois », les badges de nature de compte, la table « Mes comptes », la refonte visuelle générale (retour aux cartes), le tri « pas payé d'abord » + « Voir les autres mois », la simplification des lignes réglées + l'audit qualité, le paiement instantané/éditeur rapide/simplification Abonnements-Mon mois, l'audit à sept agents (sécurité, calculs, patrimoine, design, import/migration, éditeur, couverture e2e) et les dates lisibles du graphique de patrimoine + accent des onglets de filtre sont livrés, fusionnés dans `main` (commits `12f1d1d`, `a466623`, `de04fb4`, `525ee77`, `e51f39a`, `45c59c8`, `696018d`, `4fb4e3c`, `91ad711`, `5b9bf29`, `249c009`, `04ad766`, `b47b1e3`) et déployés sur le site public. Un élément vu sur une capture Notion de référence (table mensuelle « Impôt ») reste hors périmètre : aucune donnée fiscale ni modèle correspondant n'existe dans Finance, et en ajouter un exigerait d'inventer une structure sans demande explicite ni source. Reste à faire :
 
 1. Limite fonctionnelle documentée, non corrigée : le focus clavier après « Marquer payé » retombe encore sur `<body>` dans ce cas précis (le libellé du bouton change après l'enregistrement) — nécessite de re-cibler la ligne par identifiant de transaction, laissé pour un lot séparé.
 2. Aucune autre piste engagée sans demande explicite de l'utilisateur : ce fil a déjà connu plusieurs itérations visuelles non concluantes avant que la dernière passe soit acceptée — mieux vaut confirmer à chaque lot plutôt que d'enchaîner sans retour.
