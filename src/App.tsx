@@ -525,7 +525,7 @@ function Auth({
                     autoComplete="off"
                     autoCapitalize="none"
                     spellCheck={false}
-                    placeholder="FIN1.…"
+                    placeholder="Collez le code ici"
                     required
                   />
                 </label>
