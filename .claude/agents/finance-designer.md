@@ -1,6 +1,6 @@
 ---
 name: finance-designer
-description: Définir et contrôler l’interface Finance noire, bleu-violet et vitrée à partir des références fournies, sur téléphone, tablette et ordinateur.
+description: Définir et contrôler l’interface Finance selon le thème « Midnight Glass » (noir graphite, verre fumé, accent unique bleu glacier), sur téléphone, tablette et ordinateur.
 ---
 
 Lire le skill Finance, `references/design.md`, `references/amelioration-v2.md` et `references/identite-ui.md`, puis regarder les captures et le rendu actuel.
@@ -15,9 +15,10 @@ Posséder règles de design, tokens et décisions de parcours. Convenir avec le 
 
 ## Livrable et critères
 
-- Fond noir/graphite, bleu-violet maîtrisé, verre sur les commandes, lisibilité stable des chiffres.
+- Palette « Midnight Glass » exacte (`#070A10`, `#10151E`, `#1B202A`, accent unique `#A8BCE8`, textes `#F0F2F7` et `#929BAB`), cartes en verre fumé de 12 à 16 px sans flou sur textes ni icônes, lisibilité stable des chiffres.
+- Contrastes calculés par la formule WCAG sur la pile réellement composée (fond + halo → carte verre → ligne) ; survol légèrement plus clair seulement, sans changement de teinte.
 - Navigation adaptée à chaque largeur ; tous les parcours quotidiens restent accessibles.
-- Police système cohérente iOS/Windows, une seule famille d’icônes, établissements sobres et logo original lisible de 16 à 512 px.
+- Police système légèrement arrondie cohérente iOS/Windows, une seule famille d’icônes de même épaisseur de trait, établissements sobres et logo original lisible de 16 à 512 px.
 - Graphiques sourcés et accessibles ; période/devise et état incomplet visibles.
 - États vide, erreur, attente et enregistré conçus avec le même soin que la démonstration.
 - Capture réelle examinée sur trois formats, avec problèmes concrets et corrections proposées.

@@ -20,6 +20,7 @@ import {
   availableSummary,
   cohortSummary,
   convertMinor,
+  isDate,
   latestBalance,
   money,
   monthLabel,
@@ -46,7 +47,13 @@ import {
 import { demoData } from "./demo";
 import { parseTransactionCsv, CSV_TEMPLATE } from "./importCsv";
 import { Icon, type IconName } from "./components/Icon";
-import { Allocation, FlowChart, WealthChart } from "./components/Charts";
+import {
+  Allocation,
+  FlowChart,
+  SPARKLINE_MIN_POINTS,
+  Sparkline,
+  WealthChart,
+} from "./components/Charts";
 import Editor, { type EditorSpec } from "./components/Editor";
 import { MonthPicker } from "./components/MonthPicker";
 import { UPDATE_READY_EVENT } from "./swUpdateEvent";
@@ -83,43 +90,25 @@ function download(raw: string, name: string, type = "application/json") {
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
-// Local, deterministic identity for an establishment or a security, wherever the app shows a
-// short monogram instead of a real logo: identite-ui.md rules out fetching a real bank logo at
-// render time (it would reveal which establishments are consulted and depend on a third party)
-// and there is no verified-rights logo/pictogram registry to draw from here — so the fallback
-// is a locally generated monogram, with initials that reflect a multi-word name instead of a
-// naive slice(0, 2) ("Banque Fictive" → "BF", not "BA"), and a stable color from a small
-// palette within the app's own neutral mint accent family (never an arbitrary hue) so entries
-// read as visually distinct in a list, per docs/AUDIT_UI_V2.md.
+// Local monogram instead of a fetched logo (identite-ui.md): "Banque Fictive" → "BF".
 function monogramInitials(name: string): string {
   const words = name.trim().split(/\s+/).filter(Boolean);
   return (
     words.length > 1 ? words[0][0] + words[1][0] : name.replace(/\s+/g, "").slice(0, 2)
   ).toUpperCase();
 }
-// Standalone palette for unassociated investment positions (identified by hash, not by
-// account kind) — deliberately NOT a live mirror of index.css's --accent/kind-badge-* hues:
-// an earlier version of this comment claimed exactly that "kept in sync by hand" sync, and
-// it silently drifted every time the "verre + bleu néon" redesign retuned those CSS tokens
-// (the mint fg below was the original --accent from before that redesign even started).
-// Each fg is verified by the WCAG relative-luminance formula against this exact composite:
-// the badge's own semi-transparent bg over .institution-icon inside `.item-card.row` nested
-// inside `.card`, itself under body's ambient glow at its peak (reachable while scrolling,
-// since that glow layer is `position: fixed`) — the worst case this component actually
-// renders in (Investissements' unassociated-position rows). All six clear 4.5:1 there.
-const MONOGRAM_PALETTE = [
-  { bg: "rgba(57, 123, 247, 0.16)", fg: "#98c0f9" }, // 4.71:1 — blue family, echoes --accent
-  { bg: "rgba(171, 159, 219, 0.14)", fg: "#c5bde6" }, // 4.61:1
-  { bg: "rgba(143, 171, 201, 0.14)", fg: "#b1c5da" }, // 4.62:1
-  { bg: "rgba(201, 168, 108, 0.16)", fg: "#d9c299" }, // 4.58:1
-  { bg: "rgba(195, 168, 217, 0.14)", fg: "#d2bde2" }, // 4.63:1
-  { bg: "rgba(160, 180, 200, 0.16)", fg: "#c0ceef" }, // 4.90:1 — already safe, unchanged
-];
-function monogramColors(name: string): { bg: string; fg: string } {
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
-  return MONOGRAM_PALETTE[hash % MONOGRAM_PALETTE.length];
-}
+// Espace insécable avant le point : jamais de « · » seul en début de ligne.
+const SEP = "\u00a0· ";
+const assetTypeLabels: Record<
+  FinanceData["positions"][number]["assetType"],
+  string
+> = {
+  stock: "Action",
+  etf: "ETF",
+  option: "Option",
+  crypto: "Crypto",
+  other: "Autre",
+};
 function SourceLink({ source }: { source: Source }) {
   return source.url && /^https:\/\/(www\.)?notion\.so\//.test(source.url) ? (
     <a
@@ -169,7 +158,7 @@ function Card({
         <div className="card-heading">
           {icon && (
             <span className="card-icon">
-              <Icon name={icon} size={15} />
+              <Icon name={icon} size={18} />
             </span>
           )}
           <h2 className="card-title">{title}</h2>
@@ -483,9 +472,7 @@ export default function App() {
     [error, setError] = useState(""),
     [updateReady, setUpdateReady] = useState(false),
     [filter, setFilter] = useState("all"),
-    // Transient id of the transaction quickSettle just wrote (or null) — drives a brief
-    // green flash on that row as instant confirmation now that marking paid no longer opens
-    // a dialog to confirm through. Self-clears via the row's own onAnimationEnd.
+    // Id de la dernière opération réglée : bref voile bleu glacier, effacé par onAnimationEnd.
     [justSettledId, setJustSettledId] = useState<string | null>(null),
     // Off by default: rendering every other month's operations unconditionally would let a
     // recurring item's row match by text (".row" + hasText) in more than one month at once,
@@ -500,6 +487,7 @@ export default function App() {
     [receiptTxn, setReceiptTxn] = useState("");
   const session = useRef(0);
   const fileInput = useRef<HTMLInputElement>(null);
+  const moreButton = useRef<HTMLButtonElement>(null);
   const mutating = useRef(false);
   const [preview, setPreview] = useState<{
     url: string;
@@ -578,6 +566,17 @@ export default function App() {
     });
     return () => cancelAnimationFrame(raf);
   }, [justSettledId]);
+  useEffect(() => {
+    if (!more) return;
+    const onKey = (e: KeyboardEvent) => {
+      // Un dialogue ouvert traite son propre Échap : le menu attend le suivant.
+      if (e.key !== "Escape" || document.querySelector("dialog[open]")) return;
+      setMore(false);
+      moreButton.current?.focus();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [more]);
   const renderSession = session.current;
   function navigate(p: Page) {
     setPage(p);
@@ -736,13 +735,7 @@ export default function App() {
     summary = monthSummary(data, month, currency),
     transactions = transactionsForMonth(data, month),
     currentPage = pages.find((p) => p.id === page)!;
-  // Per-account share of total wealth (verre + bleu néon lot 3/3, Mes comptes card) —
-  // composes accountRanking's own valueMinor (already in `currency`, same as wealth.totalMinor
-  // below since both calls share that currency) against wealth.totalMinor: no new domain
-  // function, no re-derivation of either value. Only built when totalMinor is a real positive
-  // number — against a zero or unknown total, a percentage isn't a fact, it's a divide-by-zero
-  // or a meaningless ratio. A debt's share can come out negative, which is accurate (it
-  // subtracts from the total), not hidden or clamped to zero.
+  // Share only against a known positive total; a debt's share stays negative, never clamped.
   const accountWealthShare =
     wealth.totalMinor && wealth.totalMinor > 0
       ? new Map(
@@ -817,22 +810,6 @@ export default function App() {
     saving: "vault",
     other: "alert",
   };
-  // Colors an account's kind-badge already commits to one nature, reused for a
-  // recurrence's own .row-icon instead of the single flat grey every row used before —
-  // in a real multi-row list (not the demo fixture's lone entry) that grey read as one
-  // undifferentiated column of near-identical squares, the icon glyph the only thing to
-  // scan. Not new colors: exactly kind-badge-investment/bank/savings' hues, plus the same
-  // "income" ⇒ .positive green a transaction row already uses — one meaning per color
-  // across the whole app, not a second palette invented for this list. "other" (à
-  // vérifier) is deliberately left uncolored: it is the one nature that is not really a
-  // settled category, and it already reads distinctly via its "alert" glyph.
-  const recurrenceTypeRowClass: Record<Recurrence["recurrenceType"], string> = {
-    subscription: "row-icon-subscription",
-    bill: "row-icon-bill",
-    income: "positive",
-    saving: "row-icon-saving",
-    other: "",
-  };
   // The cohort is keyed by recurrenceId: `occurrenceCohort` only ever produces at most one
   // entry per active recurrence for a given month (see finance.ts), so this lookup is safe.
   const subsCohortItems = occurrenceCohort(data, month);
@@ -840,10 +817,7 @@ export default function App() {
     subsCohortItems.map((i) => [i.recurrenceId, i]),
   );
   const subsCohort = cohortSummary(data, month, currency);
-  // Settled-progress widget (verre + bleu néon lot 3/3) — same settledMinor/dueMinor pair
-  // cohortSummary already computes for the stat-cards above it, just as a ratio. Null when
-  // either side is unknown, or when nothing is due this month (a 0/0 bar would read as
-  // "fully settled" for a month with nothing to settle, which isn't the same fact).
+  // Null when a side is unknown or nothing is due: a 0/0 bar would falsely read "fully settled".
   const subsSettledPct =
     subsCohort.dueMinor !== null &&
     subsCohort.settledMinor !== null &&
@@ -972,106 +946,97 @@ export default function App() {
     investment: "chart",
     debt: "debt",
   };
-  // One card, reused everywhere an account appears (Accueil preview, full "Mes comptes"
-  // grid, Investissements) — "Mes comptes" briefly shipped as a real <table> (merged, then
-  // this session's own explicit user feedback called it too dense and asked for cards
-  // again instead); this is not that pre-table card restored unchanged either, see the
-  // redesign notes below.
-  //
-  // The account's own name (a.name, e.g. "Portefeuille long terme") is the card's primary
-  // identity per identite-ui.md ("Le nom du compte est primaire. L'établissement devient une
-  // information secondaire") — the previous version of this card had that inverted (the
-  // institution rendered larger, the account name demoted into a small muted line), a real
-  // hierarchy bug this redesign also fixes, not just a restyle. The institution keeps its
-  // monogram and now sits directly below the name with its kind-badge (identite-ui.md: "une
-  // identité locale"), unchanged pill colors/logic from the earlier badge lot.
-  function accountCard(a: Account) {
+  // Solde affiché (daté, sinon dernier saisi) et sa date, communs à la carte et à la ligne.
+  function accountBalance(a: Account) {
     const b = latestBalance(a),
-      unverified = a.balances.at(-1),
-      show = b || unverified;
-    // Mini sparkline (verre + bleu néon lot 3/3) — from the account's own real dated
-    // balance history (a.balances, the same array latestBalance() already reads above),
-    // never a page without one: only rendered once at least two points both have an
-    // amount AND a date, so a single opening balance or an undated entry draws nothing
-    // rather than a fabricated trend line.
-    const sparkPoints = a.balances
-      .filter(
-        (bal): bal is typeof bal & { amountMinor: number; asOf: string } =>
-          bal.amountMinor !== null && bal.asOf !== null,
-      )
-      .sort((x, y) => x.asOf.localeCompare(y.asOf));
-    const sparkline =
-      sparkPoints.length >= 2
-        ? (() => {
-            const values = sparkPoints.map((p) => p.amountMinor);
-            const low = Math.min(...values),
-              high = Math.max(...values),
-              range = high - low || 1;
-            const coords = sparkPoints.map((p, i) => ({
-              x: (i * 64) / (sparkPoints.length - 1),
-              y: 20 - ((p.amountMinor - low) / range) * 18 - 1,
-            }));
-            return coords.map((c) => `${c.x},${c.y}`).join(" ");
-          })()
-        : null;
+      show = b || a.balances.at(-1);
+    return { show, asOf: b?.asOf || null };
+  }
+  // Ligne compacte de l'Accueil : le détail (actualiser, historique) reste dans Mes comptes.
+  function accountRow(a: Account) {
+    const { show, asOf } = accountBalance(a);
+    // Mention courte : sur iPhone, une plus longue ferait passer le montant à la ligne.
+    const note = asOf ? `au ${asOf}` : show ? "Non daté" : "À renseigner";
+    return (
+      <div className="row" key={a.id}>
+        <span
+          className="institution-icon"
+          role="img"
+          aria-label={kinds[a.kind]}
+        >
+          <Icon name={kindIcons[a.kind]} size={18} />
+        </span>
+        <div className="row-main">
+          <span className="row-title">{a.name}</span>
+          <span className="row-detail">{a.institution}</span>
+        </div>
+        <span className="row-value">
+          {display(show?.amountMinor ?? null, a.currency)}
+          <span className="row-detail nowrap">{note}</span>
+        </span>
+      </div>
+    );
+  }
+  // Le nom du compte est primaire ; l'établissement et la nature restent secondaires.
+  function accountCard(a: Account) {
+    const { show, asOf } = accountBalance(a);
+    const note = asOf
+      ? `Solde au ${asOf}`
+      : show
+        ? "Non daté · à vérifier"
+        : "Solde à renseigner";
+    // Un point par date connue et déjà passée, le dernier saisi l'emportant comme dans latestBalance.
+    const trendByDate = new Map<string, number>();
+    for (const bal of a.balances)
+      if (bal.amountMinor !== null && isDate(bal.asOf) && bal.asOf <= today())
+        trendByDate.set(bal.asOf, bal.amountMinor);
+    const trendPoints = [...trendByDate]
+      .sort(([x], [y]) => x.localeCompare(y))
+      .map(([asOf, amountMinor]) => ({ asOf, amountMinor }));
+    const trend =
+      !hidden && trendPoints.length >= SPARKLINE_MIN_POINTS ? (
+        <Sparkline id={a.id} points={trendPoints} />
+      ) : null;
     const share = accountWealthShare?.get(a.id);
     return (
       <article className="account-card" key={a.id}>
         <div className="account-head">
-          <span className={`institution-icon institution-icon-${a.kind}`}>
+          <span className="institution-icon">
             <Icon name={kindIcons[a.kind]} size={20} />
           </span>
           <div className="account-id">
             <h3>{a.name}</h3>
             <p className="account-sub">
               <span className="institution">{a.institution}</span>
-              <span className={`kind-badge kind-badge-${a.kind}`}>
-                {kinds[a.kind]}
-              </span>
+              <span className="kind-badge">{kinds[a.kind]}</span>
             </p>
           </div>
-          {sparkline && !hidden && (
-            <svg
-              className="account-sparkline"
-              viewBox="0 0 64 20"
-              width="52"
-              height="18"
-              role="img"
-              aria-label="Tendance du solde daté"
-            >
-              <polyline
-                points={sparkline}
-                fill="none"
-                stroke="#4f8cff"
-                strokeWidth="1.6"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          )}
           <button
             className="icon-button"
             onClick={() => edit({ type: "account", id: a.id })}
             aria-label={`Modifier ${a.name}`}
           >
-            <Icon name="edit" size={17} />
+            <Icon name="edit" size={18} />
           </button>
         </div>
-        <div className="balance">
-          {display(show?.amountMinor ?? null, a.currency)}
+        <div className={trend ? "balance balance-line" : "balance"}>
+          <span className="balance-amount">
+            {display(show?.amountMinor ?? null, a.currency)}
+          </span>
+          {trend}
         </div>
-        {share !== undefined && !hidden && (
-          <p className="meta account-share">
-            {share >= 0 ? "" : "−"}
-            {Math.abs(share).toFixed(1)} % du patrimoine
-          </p>
-        )}
+        {/* Une seule ligne secondaire ; le CSS repère encore .account-share par :has(). */}
         <p className="meta">
-          {b?.asOf
-            ? `Solde au ${b.asOf}`
-            : show
-              ? "Non daté · à vérifier"
-              : "Solde à renseigner"}
+          {share !== undefined && !hidden && (
+            <>
+              <span className="account-share nowrap">
+                {share >= 0 ? "" : "−"}
+                {Math.abs(share).toFixed(1)} % du patrimoine
+              </span>
+              {SEP}
+            </>
+          )}
+          <span className="nowrap">{note}</span>
         </p>
         {/* Actualiser is the one action worth keeping always visible on this card
             (identite-ui.md: "Ajouter un compte, actualiser un solde" is a priority action
@@ -1086,7 +1051,7 @@ export default function App() {
             className="button small secondary"
             onClick={() => edit({ type: "balance", id: a.id })}
           >
-            <Icon name="refresh" size={16} />
+            <Icon name="refresh" size={18} />
             Actualiser
           </button>
         </div>
@@ -1210,7 +1175,7 @@ export default function App() {
         }}
       >
         <span
-          className={`row-icon ${t.kind === "income" ? "positive" : t.kind === "transfer" ? "neutral" : "negative"}`}
+          className="row-icon"
         >
           <Icon
             name={
@@ -1256,13 +1221,22 @@ export default function App() {
             >
               <span className="row-title">{t.label}</span>
               <span className="row-detail">
-                {t.date ||
-                  (t.budgetMonth
-                    ? monthLabel(t.budgetMonth) + " · jour à vérifier"
-                    : "Date à vérifier")}{" "}
-                · {accountName(t.accountId)} · {statusWord(t)}
+                {t.date ? (
+                  <span className="nowrap">{t.date}</span>
+                ) : t.budgetMonth ? (
+                  <>
+                    <span className="nowrap">{monthLabel(t.budgetMonth)}</span>
+                    {`${SEP}jour à vérifier`}
+                  </>
+                ) : (
+                  "Date à vérifier"
+                )}
+                {SEP}
+                {accountName(t.accountId)}
+                {SEP}
+                <span className="nowrap">{statusWord(t)}</span>
                 {data?.documents.some((d) => d.transactionId === t.id) &&
-                  " · Justificatif joint"}
+                  `${SEP}Justificatif joint`}
               </span>
             </div>
           );
@@ -1286,7 +1260,7 @@ export default function App() {
                     className="icon-button"
                     aria-label={`Joindre un document à ${t.label}`}
                   >
-                    <Icon name="document" size={17} />
+                    <Icon name="document" size={18} />
                     <input
                       className="sr-only"
                       type="file"
@@ -1311,7 +1285,7 @@ export default function App() {
                     edit({ type: "transaction", id: t.id, kind: t.kind, quick: true })
                   }
                 >
-                  <Icon name="edit" size={17} />
+                  <Icon name="edit" size={18} />
                 </button>
               )
             }
@@ -1328,7 +1302,7 @@ export default function App() {
                 } ${t.label}`}
                 onClick={() => revertToPlanned(t)}
               >
-                <Icon name="refresh" size={17} />
+                <Icon name="refresh" size={18} />
               </button>
             )}
             {t.status === "planned" ? (
@@ -1336,7 +1310,7 @@ export default function App() {
                 className={`button small ${t.kind === "income" ? "receive" : t.kind === "transfer" ? "secondary" : "pay"}`}
                 onClick={() => quickSettle(t)}
               >
-                <Icon name="check" size={16} />
+                <Icon name="check" size={18} />
                 {t.kind === "income" ? "Reçu" : t.kind === "transfer" ? "Régler" : "Payer"}
               </button>
             ) : null}
@@ -1384,50 +1358,66 @@ export default function App() {
         }}
       >
         <span
-          className={`row-icon ${recurrenceTypeRowClass[r.recurrenceType]}`}
+          className="row-icon"
         >
           <Icon name={recurrenceTypeIcons[r.recurrenceType]} />
         </span>
         <div className="row-main">
           <span className="row-title">{r.label}</span>
-          {/* Same signal a transaction row already gives (green once settled) — the text
-              itself ("Payé"/"Pas encore payé") stays the actual source of truth, this only
-              reinforces it (design.md: "Ne pas utiliser la couleur seule"). */}
-          <span
-            className={`row-detail${cohortItem?.settled ? " positive" : ""}`}
-          >
-            {!r.active
-              ? r.endDate
-                ? `Terminé le ${r.endDate}`
-                : "En pause"
-              : cohortItem
-                ? `${monthLabel(month)} · ${
-                    cohortItem.settled
+          <span className="row-detail">
+            {!r.active ? (
+              r.endDate ? (
+                <>
+                  Terminé le <span className="nowrap">{r.endDate}</span>
+                </>
+              ) : (
+                "En pause"
+              )
+            ) : (
+              <>
+                <span className="nowrap">{monthLabel(month)}</span>
+                {SEP}
+                <span className="nowrap">
+                  {!cohortItem
+                    ? "Aucune échéance"
+                    : cohortItem.settled
                       ? r.kind === "income"
                         ? "Reçu"
                         : "Payé"
                       : r.kind === "income"
                         ? "Pas encore reçu"
-                        : "Pas encore payé"
-                  }`
-                : `${monthLabel(month)} · Aucune échéance`}
+                        : "Pas encore payé"}
+                </span>
+              </>
+            )}
           </span>
         </div>
         <div className="row-end">
           <div className={`row-value ${r.kind === "income" ? "positive" : "negative"}`}>
             {amountMinor !== null ? (
-              display(amountMinor, amountCurrency)
+              <>
+                {r.kind === "income" ? "+" : ""}
+                {display(amountMinor, amountCurrency)}
+              </>
             ) : (
               <span className="row-detail">Aucune échéance</span>
             )}
           </div>
           <div className="row-actions">
+            {/* Comme dans Mon mois : l'action principale reste au bord droit. */}
+            <button
+              className="icon-button"
+              aria-label={`Modifier ${r.label}`}
+              onClick={() => edit({ type: "recurrence", id: r.id })}
+            >
+              <Icon name="edit" size={18} />
+            </button>
             {dueTxn && (
               <button
                 className={`button small ${r.kind === "income" ? "receive" : "pay"}`}
                 onClick={() => quickSettle(dueTxn)}
               >
-                <Icon name="check" size={16} />
+                <Icon name="check" size={18} />
                 {r.kind === "income" ? "Reçu" : "Payer"}
               </button>
             )}
@@ -1440,16 +1430,9 @@ export default function App() {
                 } ${r.label}`}
                 onClick={() => revertToPlanned(settledTxn)}
               >
-                <Icon name="refresh" size={17} />
+                <Icon name="refresh" size={18} />
               </button>
             )}
-            <button
-              className="icon-button"
-              aria-label={`Modifier ${r.label}`}
-              onClick={() => edit({ type: "recurrence", id: r.id })}
-            >
-              <Icon name="edit" size={17} />
-            </button>
           </div>
         </div>
       </div>
@@ -1463,22 +1446,28 @@ export default function App() {
     return (
       <article className="card goal-card" key={g.id}>
         <div className="card-header">
-          <div className="row-icon">
-            <Icon name="target" />
+          <div className="card-heading">
+            <span className="card-icon">
+              <Icon name="target" size={18} />
+            </span>
+            <h3 className="card-title">{g.name}</h3>
           </div>
           <button
             className="icon-button"
             onClick={() => edit({ type: "goal", id: g.id })}
             aria-label={`Modifier ${g.name}`}
           >
-            <Icon name="edit" size={17} />
+            <Icon name="edit" size={18} />
           </button>
         </div>
-        <h3>{g.name}</h3>
         <div className="balance">{display(g.reservedMinor, g.currency)}</div>
         <p className="meta">
           sur {display(g.targetMinor, g.currency)}
-          {g.dueDate ? ` · échéance ${g.dueDate}` : ""}
+          {g.dueDate && (
+            <>
+              {SEP}échéance <span className="nowrap">{g.dueDate}</span>
+            </>
+          )}
         </p>
         {!hidden && (
           <div className="progress">
@@ -1501,7 +1490,8 @@ export default function App() {
           </span>
         </div>
         <p className="footer-note">
-          {accountName(g.accountId)} · inclus dans ce compte
+          {accountName(g.accountId)}
+          {SEP}inclus dans ce compte
         </p>
         <SourceLink source={g.source} />
       </article>
@@ -1530,7 +1520,7 @@ export default function App() {
         </nav>
         <div className="sidebar-footer">
           <div className="pill">
-            <Icon name="shield" size={15} />
+            <Icon name="shield" size={18} />
             {demo ? "Espace de démonstration" : "Coffre privé"}
           </div>
           <p className="footer-note">
@@ -1555,13 +1545,16 @@ export default function App() {
               {demo ? "Démo fictive" : "Privé"}
             </span>
             <button
-              className="toggle"
+              className="icon-button"
               onClick={() => setHidden(!hidden)}
               aria-pressed={hidden}
               aria-label={
                 hidden ? "Afficher les montants" : "Masquer les montants"
               }
-            />
+              title={hidden ? "Afficher les montants" : "Masquer les montants"}
+            >
+              <Icon name={hidden ? "eye-off" : "eye"} />
+            </button>
             <button
               className="icon-button"
               onClick={lock}
@@ -1573,31 +1566,18 @@ export default function App() {
           </div>
         </header>
         <div className="page-header">
-          <div>
-            <p className="eyebrow">VOTRE FINANCE, EN CLAIR</p>
+          <div className="page-heading">
+            {page === "overview" && (
+              <p className="eyebrow">VOTRE FINANCE, EN CLAIR</p>
+            )}
             <h1 className="page-title">
               {page === "overview"
                 ? "Une vue sur l’essentiel."
                 : currentPage.name}
             </h1>
-            <p className="subtitle">
-              {page === "overview"
-                ? "Vos comptes, votre mois, vos prochains projets."
-                : page === "month"
-                  ? "Ce qui entre, ce qui sort et ce qui reste à prévoir."
-                  : page === "accounts"
-                    ? "Chaque compte, avec sa devise et la date de son solde."
-                    : page === "subscriptions"
-                      ? "Abonnements, factures et charges récurrentes : ce qui est dû ce mois-ci, ce qui est réglé et ce qui reste."
-                      : page === "goals"
-                        ? "Donnez une place à ce qui compte pour vous."
-                        : page === "investments"
-                        ? "Vos positions, rattachées à leurs comptes."
-                        : "Vos pièces et vos données, à portée de main."}
-            </p>
           </div>
           <button
-            className="button primary"
+            className="button primary small"
             onClick={() =>
               edit({
                 type:
@@ -1616,10 +1596,26 @@ export default function App() {
             <Icon name="plus" />
             Ajouter
           </button>
+          <p className="subtitle">
+            {page === "overview"
+              ? "Vos comptes, votre mois, vos prochains projets."
+              : page === "month"
+                ? "Ce qui entre, ce qui sort et ce qui reste à prévoir."
+                : page === "accounts"
+                  ? "Chaque compte, sa devise et son solde daté."
+                  : page === "subscriptions"
+                    ? "Abonnements, factures et charges du mois."
+                    : page === "goals"
+                      ? "Donnez une place à ce qui compte pour vous."
+                      : page === "investments"
+                      ? "Vos positions, rattachées à leurs comptes."
+                      : "Vos pièces et vos données, à portée de main."}
+          </p>
         </div>
         {demo && (
+          // Une ligne : la mention complète figure dans le pied de page.
           <div className="notice demo-notice">
-            Démonstration · Tous les montants et établissements sont fictifs.{" "}
+            Démonstration fictive
             <button className="text-button" onClick={lock}>
               Ouvrir mon coffre
             </button>
@@ -1687,7 +1683,7 @@ export default function App() {
                     {wealth.partial && <span className="tag">Partiel</span>}
                   </p>
                   <span className="card-icon">
-                    <Icon name="chart" size={15} />
+                    <Icon name="chart" size={18} />
                   </span>
                 </div>
                 <div className="hero-value">{display(wealth.totalMinor)}</div>
@@ -1710,7 +1706,7 @@ export default function App() {
                     className="card-action"
                     onClick={() => navigate("month")}
                   >
-                    Détail <Icon name="chevron-right" size={16} />
+                    Détail <Icon name="chevron-right" size={18} />
                   </button>
                 }
               >
@@ -1790,17 +1786,19 @@ export default function App() {
                 </div>
               ))}
             </div>
-            <div className="section-heading">
-              <h2>Vos comptes</h2>
-              <button
-                className="card-action"
-                onClick={() => navigate("accounts")}
-              >
-                Tous les comptes <Icon name="chevron-right" size={16} />
-              </button>
-            </div>
-            <div className="account-grid">
-              {sortedAccounts.slice(0, 3).map(accountCard)}
+            <Card
+              title="Vos comptes"
+              icon="wallet"
+              action={
+                <button
+                  className="card-action"
+                  onClick={() => navigate("accounts")}
+                >
+                  Tous les comptes <Icon name="chevron-right" size={18} />
+                </button>
+              }
+            >
+              {sortedAccounts.slice(0, 3).map(accountRow)}
               {!data.accounts.length && (
                 <div className="empty-state">
                   <Icon name="wallet" size={30} />
@@ -1814,7 +1812,7 @@ export default function App() {
                   </button>
                 </div>
               )}
-            </div>
+            </Card>
             <div className="three-columns">
               <Card title="Répartition du patrimoine" icon="chart">
                 <Allocation
@@ -1837,24 +1835,71 @@ export default function App() {
                   total.
                 </p>
               </Card>
-              <Card title="Le mouvement du mois" icon="transfer">
-                <FlowChart
-                  income={
-                    summary.incomePlanned === null ||
-                    summary.incomeSettled === null
-                      ? null
-                      : summary.incomePlanned + summary.incomeSettled
-                  }
-                  expense={
-                    summary.expensePlanned === null ||
-                    summary.expenseSettled === null
-                      ? null
-                      : summary.expensePlanned + summary.expenseSettled
-                  }
-                  currency={currency}
-                  hidden={hidden}
-                />
-              </Card>
+              <div className="card-stack">
+                <Card title="Le mouvement du mois" icon="transfer">
+                  <FlowChart
+                    income={
+                      summary.incomePlanned === null ||
+                      summary.incomeSettled === null
+                        ? null
+                        : summary.incomePlanned + summary.incomeSettled
+                    }
+                    expense={
+                      summary.expensePlanned === null ||
+                      summary.expenseSettled === null
+                        ? null
+                        : summary.expensePlanned + summary.expenseSettled
+                    }
+                    currency={currency}
+                    hidden={hidden}
+                  />
+                </Card>
+                <Card
+                  title="À votre attention"
+                  icon="alert"
+                  action={<span className="tag">{attention}</span>}
+                >
+                  {unknownAccounts > 0 && (
+                    <div className="row">
+                      <Icon name="alert" />
+                      <div className="row-main">
+                        <span className="row-title">
+                          {unknownAccounts} compte(s) sans solde daté
+                        </span>
+                        <span className="row-detail">
+                          Ils ne sont pas inclus dans le total.
+                        </span>
+                      </div>
+                      <button
+                        className="card-action"
+                        onClick={() => navigate("accounts")}
+                      >
+                        Vérifier
+                      </button>
+                    </div>
+                  )}
+                  {staleAccounts > 0 && (
+                    <p className="warning">
+                      {staleAccounts} solde(s) datent de plus de 31 jours.
+                    </p>
+                  )}
+                  {data.reviewItems.length > 0 && (
+                    <button
+                      className="nav-item"
+                      onClick={() => navigate("documents")}
+                    >
+                      <Icon name="document" />
+                      {data.reviewItems.length} informations importées à rapprocher
+                      <Icon name="chevron-right" />
+                    </button>
+                  )}
+                  {!attention && (
+                    <p className="meta">
+                      Aucune information à rapprocher dans les données présentes.
+                    </p>
+                  )}
+                </Card>
+              </div>
               <Card
                 title="Prochaines échéances"
                 icon="clock"
@@ -1863,7 +1908,7 @@ export default function App() {
                     className="card-action"
                     onClick={() => navigate("month")}
                   >
-                    Voir tout
+                    Voir tout <Icon name="chevron-right" size={18} />
                   </button>
                 }
               >
@@ -1885,51 +1930,6 @@ export default function App() {
                 )}
               </Card>
             </div>
-            <Card
-              title="À votre attention"
-              icon="alert"
-              action={<span className="tag">{attention}</span>}
-            >
-              {unknownAccounts > 0 && (
-                <div className="row">
-                  <Icon name="alert" />
-                  <div className="row-main">
-                    <span className="row-title">
-                      {unknownAccounts} compte(s) sans solde daté
-                    </span>
-                    <span className="row-detail">
-                      Ils ne sont pas inclus dans le total.
-                    </span>
-                  </div>
-                  <button
-                    className="card-action"
-                    onClick={() => navigate("accounts")}
-                  >
-                    Vérifier
-                  </button>
-                </div>
-              )}
-              {staleAccounts > 0 && (
-                <p className="warning">
-                  {staleAccounts} solde(s) datent de plus de 31 jours.
-                </p>
-              )}
-              {data.reviewItems.length > 0 && (
-                <button
-                  className="nav-item"
-                  onClick={() => navigate("documents")}
-                >
-                  <Icon name="document" />
-                  {data.reviewItems.length} informations importées à rapprocher
-                  <Icon name="chevron-right" />
-                </button>
-              )}
-              {!attention && (
-                <p className="meta">
-                  Aucune information à rapprocher dans les données présentes.
-                </p>
-              )}
-            </Card>
           </>
         )}
         {page === "month" && (
@@ -2032,7 +2032,7 @@ export default function App() {
                   className="card-action"
                   onClick={() => navigate("subscriptions")}
                 >
-                  Voir tout <Icon name="chevron-right" size={16} />
+                  Voir tout <Icon name="chevron-right" size={18} />
                 </button>
               }
             >
@@ -2042,19 +2042,24 @@ export default function App() {
                 .map((r) => (
                   <div className="row" key={r.id}>
                     <span
-                      className={`row-icon ${recurrenceTypeRowClass[r.recurrenceType]}`}
+                      className="row-icon"
                     >
                       <Icon name={recurrenceTypeIcons[r.recurrenceType]} />
                     </span>
                     <div className="row-main">
                       <span className="row-title">{r.label}</span>
                       <span className="row-detail">
-                        Le {r.day} · tous les {r.intervalMonths} mois
+                        Le {r.day}
+                        {SEP}
+                        {r.intervalMonths === 1
+                          ? "tous les mois"
+                          : `tous les ${r.intervalMonths} mois`}
                       </span>
                     </div>
                     <span
                       className={`row-value ${r.kind === "income" ? "positive" : "negative"}`}
                     >
+                      {r.kind === "income" ? "+" : ""}
                       {display(r.amountMinor, r.currency)}
                     </span>
                   </div>
@@ -2069,21 +2074,13 @@ export default function App() {
         )}
         {page === "accounts" && (
           <>
-            <div className="notice">
-              Les soldes conservent leur date d’observation. Les opérations du
-              mois ne les modifient pas automatiquement.
-            </div>
             {data.accounts.length ? (
               <>
-                {/* Kept from the briefly-shipped table (see accountCard's comment above) — the
-                    total itself was a genuinely useful at-a-glance figure, just not worth a
-                    whole dense table for. Same wealthSummary() total the hero card already
-                    shows on Accueil, not a second calculation; same "Partiel"/excluded wording
-                    too. */}
+                {/* Même total wealthSummary() que l'Accueil, pas un second calcul. */}
                 <div className="stat-card accounts-total-card">
                   <span className="accounts-total-label">
                     <span className="card-icon">
-                      <Icon name="wallet" size={15} />
+                      <Icon name="wallet" size={18} />
                     </span>
                     Total
                     {wealth.partial && <span className="tag">Partiel</span>}
@@ -2107,13 +2104,14 @@ export default function App() {
                 Ajoutez votre premier compte ou importez un fichier Finance.
               </div>
             )}
+            <p className="footer-note">
+              Les soldes conservent leur date d’observation. Les opérations du
+              mois ne les modifient pas automatiquement.
+            </p>
           </>
         )}
         {page === "subscriptions" && (
           <>
-            <div className="notice">
-              Vos abonnements et charges pour {monthLabel(month)}.
-            </div>
             <div className="stat-grid">
               {[
                 {
@@ -2129,6 +2127,7 @@ export default function App() {
                     subsCohort.settledMinor !== null
                       ? display(subsCohort.settledMinor)
                       : "—",
+                  settledPct: subsSettledPct,
                 },
                 {
                   label: "Reste dû",
@@ -2148,6 +2147,21 @@ export default function App() {
                 <div className="stat-card" key={s.label}>
                   <p className="metric-label">{s.label}</p>
                   <div className="metric-value">{s.value}</div>
+                  {s.settledPct != null && (
+                    <div
+                      className="progress"
+                      role="progressbar"
+                      aria-label="Part réglée"
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-valuenow={Math.round(s.settledPct)}
+                    >
+                      <div
+                        className="progress-fill"
+                        style={{ width: `${s.settledPct}%` }}
+                      />
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -2156,23 +2170,6 @@ export default function App() {
                 {subsCohort.excluded} occurrence(s) exclue(s) du total : taux
                 de change manquant.
               </p>
-            )}
-            {/* Settled-progress bar (verre + bleu néon lot 3/3) — subsSettledPct is the
-                exact settledMinor/dueMinor pair above, already shown as stat-cards, as a
-                ratio; no new domain calculation. */}
-            {subsSettledPct !== null && (
-              <>
-                <div className="hero-foot" style={{ marginTop: 4 }}>
-                  <span>Réglé ce mois</span>
-                  <span>{Math.round(subsSettledPct)} %</span>
-                </div>
-                <div className="progress">
-                  <div
-                    className="progress-fill"
-                    style={{ width: `${subsSettledPct}%` }}
-                  />
-                </div>
-              </>
             )}
             <div className="stat-grid">
               {[
@@ -2235,7 +2232,7 @@ export default function App() {
                   </button>
                 ))}
               </div>
-              <label className="currency-picker">
+              <label className="currency-picker sort-picker">
                 <span className="sr-only">Trier les abonnements par</span>
                 <select
                   aria-label="Trier les abonnements par"
@@ -2266,14 +2263,14 @@ export default function App() {
                 </p>
               )}
             </details>
+            <p className="footer-note">
+              « Ce mois » désigne {monthLabel(month)}, le mois choisi en haut
+              de la page.
+            </p>
           </>
         )}
         {page === "goals" && (
           <>
-            <div className="notice">
-              Vos réserves font déjà partie de vos comptes. Elles sont suivies
-              ici sans augmenter le patrimoine.
-            </div>
             <div className="three-columns">{goals}</div>
             {!goals.length && (
               <div className="empty-state">
@@ -2291,15 +2288,14 @@ export default function App() {
                 </button>
               </div>
             )}
+            <p className="footer-note">
+              Vos réserves font déjà partie de vos comptes. Elles sont suivies
+              ici sans augmenter le patrimoine.
+            </p>
           </>
         )}
         {page === "investments" && (
           <>
-            <div className="notice">
-              La valeur des positions est datée. Pour chaque compte, Finance
-              utilise soit sa valeur totale, soit ses liquidités et ses
-              positions.
-            </div>
             <Card title="Vos positions" icon="chart">
               <div className="tab-bar">
                 {[
@@ -2322,36 +2318,38 @@ export default function App() {
                 .filter((p) => filter === "all" || p.assetType === filter)
                 .map((p) => (
                   <div className="row item-card" key={p.id}>
-                    <span
-                      className="institution-icon"
-                      style={{
-                        background: monogramColors(p.symbol || p.name).bg,
-                        color: monogramColors(p.symbol || p.name).fg,
-                      }}
-                    >
+                    <span className="institution-icon">
                       {monogramInitials(p.symbol || p.name)}
                     </span>
                     <div className="row-main">
                       <span className="row-title">
                         {p.name}{" "}
-                        <span className="tag">{p.assetType.toUpperCase()}</span>
+                        <span className="tag">
+                          {assetTypeLabels[p.assetType]}
+                        </span>
                       </span>
                       <span className="row-detail">
-                        {accountName(p.accountId)} ·{" "}
-                        {hidden ? "•••" : p.quantity || "Quantité inconnue"} ·{" "}
-                        {p.asOf || "Non daté"}
+                        {accountName(p.accountId)}
+                        {SEP}
+                        {hidden ? "•••" : p.quantity || "Quantité inconnue"}
+                        {SEP}
+                        <span className="nowrap">{p.asOf || "Non daté"}</span>
                       </span>
                     </div>
-                    <span className="row-value">
-                      {display(p.valueMinor, p.currency)}
-                    </span>
-                    <button
-                      className="icon-button"
-                      aria-label={`Modifier ${p.name}`}
-                      onClick={() => edit({ type: "position", id: p.id })}
-                    >
-                      <Icon name="edit" />
-                    </button>
+                    <div className="row-end">
+                      <span className="row-value">
+                        {display(p.valueMinor, p.currency)}
+                      </span>
+                      <div className="row-actions">
+                        <button
+                          className="icon-button"
+                          aria-label={`Modifier ${p.name}`}
+                          onClick={() => edit({ type: "position", id: p.id })}
+                        >
+                          <Icon name="edit" size={18} />
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 ))}
               {!data.positions.length && (
@@ -2371,6 +2369,11 @@ export default function App() {
                 </div>
               </>
             )}
+            <p className="footer-note">
+              La valeur des positions est datée. Pour chaque compte, Finance
+              utilise soit sa valeur totale, soit ses liquidités et ses
+              positions.
+            </p>
           </>
         )}
         {page === "documents" && (
@@ -2413,6 +2416,7 @@ export default function App() {
                   <button
                     className="button secondary"
                     disabled={demo}
+                    aria-describedby={demo ? "backup-demo-note" : undefined}
                     onClick={() => {
                       try {
                         download(
@@ -2440,6 +2444,12 @@ export default function App() {
                     Exporter les données JSON (non chiffrées)
                   </button>
                 </div>
+                {demo && (
+                  <p className="meta" id="backup-demo-note">
+                    La sauvegarde chiffrée est disponible une fois votre coffre
+                    ouvert.
+                  </p>
+                )}
                 <p className="footer-note">
                   L’export JSON contient vos données privées. Conservez-le dans
                   un emplacement protégé.
@@ -2483,7 +2493,8 @@ export default function App() {
                 <div className="rates">
                   {data.fxRates.map((r, i) => (
                     <p className="meta" key={i}>
-                      {hidden ? "•••" : `1 ${r.from} = ${r.rate} ${r.to}`} ·{" "}
+                      {hidden ? "•••" : `1 ${r.from} = ${r.rate} ${r.to}`}
+                      {SEP}
                       {r.asOf}
                     </p>
                   ))}
@@ -2556,7 +2567,8 @@ export default function App() {
                   <div className="row-main">
                     <span className="row-title">{d.name}</span>
                     <span className="row-detail">
-                      {d.addedAt.slice(0, 10)} ·{" "}
+                      {d.addedAt.slice(0, 10)}
+                      {SEP}
                       {d.transactionId
                         ? data.transactions.find(
                             (t) => t.id === d.transactionId,
@@ -2619,9 +2631,9 @@ export default function App() {
         <footer className="footer-note page-footer">
           Finance ·{" "}
           {demo
-            ? "Espace de démonstration · exemples fictifs"
-            : "Espace privé sur cet appareil"}{" "}
-          · Soldes observés, sources conservées.
+            ? "Démonstration · Tous les montants et établissements sont fictifs."
+            : "Espace privé sur cet appareil ·"}{" "}
+          Soldes observés, sources conservées.
         </footer>
       </main>
       <nav className="mobile-nav" aria-label="Navigation mobile">
@@ -2637,9 +2649,10 @@ export default function App() {
           </button>
         ))}
         <button
+          ref={moreButton}
           onClick={() => setMore(!more)}
           className={
-            more || !["overview", "month", "accounts"].includes(page)
+            !["overview", "month", "accounts"].includes(page)
               ? "active"
               : ""
           }
@@ -2650,12 +2663,24 @@ export default function App() {
         </button>
       </nav>
       {more && (
+        <button
+          className="mobile-more-backdrop"
+          aria-label="Fermer le menu"
+          onClick={(e) => {
+            setMore(false);
+            // detail 0 : activé au clavier, le focus ne doit pas tomber sur <body>.
+            if (e.detail === 0) moreButton.current?.focus();
+          }}
+        />
+      )}
+      {more && (
         <div className="mobile-more">
           {pages.slice(3).map((p) => (
             <button
-              className="nav-item"
+              className={`nav-item${page === p.id ? " active" : ""}`}
               key={p.id}
               onClick={() => navigate(p.id)}
+              aria-current={page === p.id ? "page" : undefined}
             >
               <Icon name={p.icon} />
               {p.name}
@@ -2701,11 +2726,7 @@ export default function App() {
               </a>
             </>
           ) : (
-            <img
-              src={preview.url}
-              alt={preview.name}
-              style={{ maxWidth: "100%" }}
-            />
+            <img src={preview.url} alt={preview.name} />
           )}
         </dialog>
       )}

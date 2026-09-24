@@ -1,6 +1,6 @@
 # Finance
 
-Budget et patrimoine personnels, en français, avec interface noire bleu-violet adaptée à l’iPhone, à l’iPad et à l’ordinateur.
+Budget et patrimoine personnels, en français, avec interface « Midnight Glass » (noir graphite, verre fumé, bleu glacier) adaptée à l’iPhone, à l’iPad et à l’ordinateur.
 
 **Reprise Claude / Codex : [DEMARRER_CLAUDE.md](DEMARRER_CLAUDE.md).** Le skill maître est [.claude/skills/finance/SKILL.md](.claude/skills/finance/SKILL.md), accompagné de onze missions spécialisées. L’état de livraison vérifié est dans [docs/STATUS.md](docs/STATUS.md). La tranche compacte avec page Abonnements, tri, icônes et nouveau logo est définie dans [docs/PLAN_AMELIORATION_V2.md](docs/PLAN_AMELIORATION_V2.md).
 

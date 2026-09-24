@@ -107,11 +107,11 @@ export function MonthPicker({
           aria-label={`Changer de mois, actuellement ${MONTHS[monthNumber - 1].name} ${year}`}
           onClick={() => (open ? setOpen(false) : openPanel())}
         >
-          <Icon name="calendar" size={17} className="month-picker-trigger-icon" />
+          <Icon name="calendar" size={18} className="month-picker-trigger-icon" />
           <span className="month-picker-trigger-label">
             {MONTHS[monthNumber - 1].name} {year}
           </span>
-          <Icon name="chevron-right" size={15} className="month-picker-caret" />
+          <Icon name="chevron-right" size={18} className="month-picker-caret" />
         </button>
         {open && (
           <div id={panelId} className="month-picker-panel">
@@ -122,7 +122,7 @@ export function MonthPicker({
                 aria-label="Année précédente"
                 onClick={() => setPanelYear((y) => y - 1)}
               >
-                <Icon name="chevron-left" size={16} />
+                <Icon name="chevron-left" size={18} />
               </button>
               <strong className="month-picker-year-label">{panelYear}</strong>
               <button
@@ -131,7 +131,7 @@ export function MonthPicker({
                 aria-label="Année suivante"
                 onClick={() => setPanelYear((y) => y + 1)}
               >
-                <Icon name="chevron-right" size={16} />
+                <Icon name="chevron-right" size={18} />
               </button>
             </div>
             <div className="month-picker-grid" role="group" aria-label="Choisir un mois">

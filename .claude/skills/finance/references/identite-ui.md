@@ -2,7 +2,7 @@
 
 ## Famille d’icônes
 
-Utiliser une seule famille de tracés dans l’interface. Le candidat retenu pour élargir le composant actuel est `lucide-react` : imports statiques nommés, taille courante 18–20 px, `strokeWidth` cohérent et couleur héritée. Mesurer le bundle avant/après et conserver les notices de licence. Si le composant SVG interne suffit, l’étendre avec la même grille 24 × 24 au lieu d’ajouter une dépendance.
+Utiliser une seule famille de tracés dans l’interface. Le candidat retenu pour élargir le composant actuel est `lucide-react` : imports statiques nommés, taille courante 18–20 px, tracé fin de même épaisseur apparente à toutes les tailles et couleur héritée. Mesurer le bundle avant/après et conserver les notices de licence. Si le composant SVG interne suffit, l’étendre avec la même grille 24 × 24 au lieu d’ajouter une dépendance.
 
 Éviter d’installer Lucide, Tabler, Fluent et une collection de logos ensemble. Une icône décorative est masquée aux technologies d’assistance ; un bouton composé uniquement d’une icône garde un nom accessible et une infobulle utile.
 
@@ -42,13 +42,13 @@ Le registre versionné ne contient que des métadonnées et actifs génériques.
 - Ajouter une icône dans l’en-tête des cartes principales et des lignes de comptes/abonnements.
 - Garder le titre court, le montant immédiatement lisible et une seule ligne secondaire par défaut.
 - Déplacer source, historique, méthode de valorisation et aide longue dans un volet de détails.
-- Utiliser l’accent bleu-violet pour la sélection ou une information positive, pas comme bordure lumineuse permanente.
-- Conserver des rayons cohérents : environ 18–20 px pour les grandes cartes, 14–16 px pour les lignes compactes, 10–12 px pour les boutons.
-- Préférer un fond de surface opaque à 85–95 % pour les données ; réserver le verre à la navigation et aux commandes.
+- Utiliser l’accent unique bleu glacier `#A8BCE8` pour la sélection, la progression et les graphiques, pas comme bordure lumineuse permanente.
+- Conserver des rayons cohérents (thème « Midnight Glass ») : 16 px pour les cartes, 12 px pour les lignes compactes et champs, 10 px pour les boutons.
+- Les cartes sont en verre fumé : graphite `#1B202A` translucide à transparence modérée, léger dégradé, bordure fine très discrète et léger reflet supérieur. Elles sont translucides mais pas floutées, car seul le halo fixe se trouve derrière elles. Le flou (`backdrop-filter`) est réservé aux barres et aux panneaux flottants, et ne s’applique jamais aux textes ni aux icônes. Les lignes internes s’éclaircissent à peine, sans flou. Contraste calculé sur la pile réellement composée ; repli opaque si la transparence est réduite.
 
 ## Nouveau logo Finance
 
-Créer un signe original, distinct des logos bancaires et des bibliothèques d’icônes. Direction recommandée : un `F` simple formé par deux plans ou une ligne ascendante discrète, avec un accent bleu-violet limité. Le logo doit fonctionner sans halo et sans texte.
+Créer un signe original, distinct des logos bancaires et des bibliothèques d’icônes. Direction recommandée : un `F` simple formé par deux plans ou une ligne ascendante discrète, en bleu glacier `#A8BCE8` sur fond graphite, sans autre couleur d’accent. Le logo doit fonctionner sans halo et sans texte.
 
 Livrables :
 

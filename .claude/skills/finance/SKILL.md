@@ -21,7 +21,7 @@ Faire progresser **Finance** depuis l’état réel du dépôt `Mendestrading21/
 | ---------------------------------------------------- | ------------------------------------------------------------------------ |
 | Montants, mois, récurrences, devises, patrimoine     | [Calculs](references/calculs.md)                                         |
 | Notion, import, rapprochement, provenance, documents | [Données](references/donnees.md)                                         |
-| Direction visuelle générale et responsive            | [Design](references/design.md)                                           |
+| Thème Midnight Glass, direction visuelle, responsive | [Design](references/design.md)                                           |
 | Refonte compacte V2, tri, sélecteur de mois et lots  | [Amélioration V2](references/amelioration-v2.md)                         |
 | Page Abonnements et états mensuels                   | [Abonnements](references/abonnements.md)                                 |
 | Cartes, icônes, établissements et logo               | [Identité et interface](references/identite-ui.md)                       |
@@ -76,7 +76,7 @@ Chaque mission rend les fichiers touchés, décisions, commandes réellement ex�
 
 ## Garder l’interface simple
 
-Conserver le fond noir/graphite, les accents bleu-violet, le verre limité aux commandes, la police système et les chiffres tabulaires. Une carte répond à une question ; son icône aide à la reconnaître. Ne pas ajouter une icône à chaque ligne décorative, un halo derrière un montant ou une carte dans une carte.
+Appliquer le thème « Midnight Glass » décrit dans [Design](references/design.md) : fond noir graphite, cartes en verre fumé, accent unique bleu glacier `#A8BCE8`, police système légèrement arrondie et chiffres tabulaires. Le noir structure, le verre apporte la profondeur et le bleu guide le regard. Une carte répond à une question ; son icône aide à la reconnaître. Ne pas ajouter une icône à chaque ligne décorative, un halo derrière un montant ou une carte dans une carte.
 
 Réutiliser l’architecture CSS et SVG actuelle. Lucide React est le candidat principal pour élargir le vocabulaire sémantique ; l’intégrer seulement après vérification du lockfile, de la licence, du poids construit et de l’accessibilité. Ne pas mélanger plusieurs familles d’icônes. Radix, Recharts, shadcn/ui ou Tremor exigent chacun un besoin concret ; une refonte visuelle seule ne justifie pas une migration vers Tailwind ou un nouveau design system.
 

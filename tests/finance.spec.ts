@@ -90,10 +90,26 @@ test("real rendered demo screenshots at desktop, tablet and mobile; pages, priva
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/");
+  await expect(
+    page.getByRole("button", { name: "Voir la démonstration" }),
+  ).toBeVisible();
   await page.screenshot({
     path: "docs/captures/01-coffre-desktop.png",
     fullPage: true,
   });
+  // Écran du coffre : aucun débordement horizontal sur ordinateur ni sur tablette.
+  for (const viewport of [
+    { width: 1440, height: 1000 },
+    { width: 834, height: 1112 },
+  ]) {
+    await page.setViewportSize(viewport);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+  }
+  await page.setViewportSize({ width: 1440, height: 1000 });
   await page.getByRole("button", { name: "Voir la démonstration" }).click();
   await expect(
     page.getByText(
@@ -172,6 +188,45 @@ test("real rendered demo screenshots at desktop, tablet and mobile; pages, priva
     .getByRole("dialog")
     .getByRole("button", { name: "Fermer", exact: true })
     .click();
+  // Abonnements à 390 px : chaque onglet reste entier dans sa barre, elle-même dans l'écran.
+  await page
+    .getByRole("navigation", { name: "Navigation mobile" })
+    .getByRole("button", { name: "Plus" })
+    .click();
+  await page
+    .locator(".mobile-more")
+    .getByRole("button", { name: "Abonnements", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Abonnements", exact: true }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  const subscriptionTabBars = await page.locator(".tab-bar").all();
+  expect(subscriptionTabBars.length).toBeGreaterThan(0);
+  for (const bar of subscriptionTabBars) {
+    const barBox = await bar.boundingBox();
+    expect(barBox).not.toBeNull();
+    expect(barBox!.x).toBeGreaterThanOrEqual(0);
+    expect(barBox!.x + barBox!.width).toBeLessThanOrEqual(390);
+    const tabs = await bar.locator(".tab-button").all();
+    expect(tabs.length).toBeGreaterThan(0);
+    for (const tab of tabs) {
+      const box = await tab.boundingBox();
+      expect(box).not.toBeNull();
+      expect(box!.x).toBeGreaterThanOrEqual(barBox!.x - 0.5);
+      expect(box!.x + box!.width).toBeLessThanOrEqual(
+        barBox!.x + barBox!.width + 0.5,
+      );
+      // Libellé entier : rien n'est rogné à l'intérieur du bouton.
+      expect(
+        await tab.evaluate((el) => el.scrollWidth <= el.clientWidth),
+      ).toBe(true);
+    }
+  }
   // Exercise the actual CSV input, preview and merge with fictitious data.
   await page.setViewportSize({ width: 1440, height: 1000 });
   const navigation = page.getByRole("navigation", {
@@ -352,7 +407,7 @@ test("daily entries: income, currency-synced transfer, recurrence, investment-on
     .getByRole("button", { name: "Payer", exact: true })
     .click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  // Instant write still gives visible feedback: a brief green flash (row-flash-positive,
+  // Instant write still gives visible feedback: a brief glacier-blue flash (row-flash-positive,
   // self-clearing via the row's own onAnimationEnd, not a timer) is the only confirmation a
   // dialog-less "Payer" click actually did something.
   await expect(occurrenceRow).toHaveClass(/row-flash-positive/);
@@ -828,13 +883,17 @@ test("subscriptions: a status change made on Abonnements updates Mon mois and Ac
   // "Charge test abo" is the only (active, expense) recurrence, due but not yet settled.
   await expect(statValue("Dû ce mois")).toContainText("77.70");
   await expect(statValue("Abonnements actifs")).toContainText("1");
+  // The settled share is a progress bar under the "Réglé ce mois" figure (same subsSettledPct).
+  const settledShare = page.getByRole("progressbar", { name: "Part réglée" });
+  await expect(settledShare).toHaveCount(1);
+  await expect(settledShare).toHaveAttribute("aria-valuenow", "0");
 
   // Mark it paid from Abonnements itself, not from Mon mois — writes directly, no dialog.
   await subsRow
     .getByRole("button", { name: "Payer", exact: true })
     .click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  // Same instant-write green flash as Mon mois' rows (row-flash-positive), exercised here on
+  // Same instant-write flash as Mon mois' rows (row-flash-positive), exercised here on
   // an Abonnements row specifically, per its own self-clearing onAnimationEnd.
   await expect(subsRow).toHaveClass(/row-flash-positive/);
   await expect(subsRow).toContainText("Payé");
@@ -844,6 +903,7 @@ test("subscriptions: a status change made on Abonnements updates Mon mois and Ac
   // the realized-flow "Payé ce mois" / "Reçu ce mois" trio (recurringFlowSummary) — a distinct
   // calculation from cohortSummary above, also independently checked here.
   await expect(statValue("Réglé ce mois")).toContainText("77.70");
+  await expect(settledShare).toHaveAttribute("aria-valuenow", "100");
   await expect(statValue("Payé ce mois")).toContainText("77.70");
   await expect(statValue("Reçu ce mois")).toContainText("0.00");
   await expect(subsRow).not.toHaveClass(/row-flash-positive/);
@@ -1020,9 +1080,8 @@ test("Mon mois: reçu, facture, abonnement, virement — montant décroissant da
     0,
   );
 
-  // Amount color follows kind, not status — an expense reads red whether it's still due or
-  // already paid (a real gap found in review: only income ever got a color, expense amounts
-  // stayed plain white even though .row-icon already colored the same row's icon red).
+  // The amount's class follows kind, not status. In Midnight Glass, income reads glacier blue
+  // with "+" and expenses soft white, whether still due or already paid.
   await expect(
     operationsCard.locator(".row", { hasText: "Revenu test tri" }).locator(".row-value"),
   ).toHaveClass(/positive/);
