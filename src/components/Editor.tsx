@@ -16,6 +16,7 @@ import {
 import {
   applySimpleEdit,
   monthLabel,
+  nextOccurrenceDate,
   parseMoney,
   rhythmLabel,
   simpleEditOptions,
@@ -151,7 +152,39 @@ export default function Editor({
       ? existingRecurrence.recurrenceType === "bill" ||
         existingRecurrence.recurrenceType === "income"
       : !!spec.simple);
-  const simpleOptions = simpleEditOptions(existingRecurrence, month);
+  const simpleOptions = simpleEditOptions(
+    existingRecurrence,
+    month,
+    data.recurrences,
+  );
+  // Ce que « Tous les mois » donnerait vraiment : premier mois (après l'échéance déjà prévue
+  // de ce mois-ci, le cas échéant) et fin éventuelle (une suite déjà créée).
+  const monthlyPreview = (() => {
+    if (!existingRecurrence || !simpleOptions.choices.includes("monthly")) return null;
+    try {
+      const next = applySimpleEdit(
+        data,
+        existingRecurrence,
+        "monthly",
+        month,
+        simpleOptions.amountMinor,
+        "apercu",
+      );
+      const carrier =
+        next.recurrences.find((r) => r.id === "apercu") ??
+        next.recurrences.find((r) => r.id === existingRecurrence.id)!;
+      const firstDue = nextOccurrenceDate(
+        { ...carrier, active: true },
+        `${month}-01`,
+      );
+      return {
+        start: firstDue ? firstDue.slice(0, 7) : month,
+        end: carrier.endDate ? carrier.endDate.slice(0, 7) : null,
+      };
+    } catch {
+      return null;
+    }
+  })();
   const [repeatChoice, setRepeatChoice] = useState<SimpleChoice>(
     simpleOptions.initial,
   );
@@ -946,9 +979,20 @@ export default function Editor({
                       ? `Dernier mois : ${monthName}. Les mois d’avant ne changent pas.`
                       : repeatChoice === "keep"
                         ? `Garde son rythme : ${rhythmLabel(existingRecurrence, month).toLowerCase()}.`
-                        : simpleOptions.initial === "monthly"
+                        : simpleOptions.initial === "monthly" &&
+                            !monthlyPreview?.end
                           ? `Revient chaque mois. Un nouveau montant s’applique dès ${monthName} ; les mois d’avant gardent le leur.`
-                          : `Chaque mois à partir d’ici ; les mois d’avant ne changent pas.`}
+                          : monthlyPreview
+                            ? `Tous les mois dès ${monthLabel(monthlyPreview.start)}${
+                                monthlyPreview.end
+                                  ? ` jusqu’en ${monthLabel(monthlyPreview.end)} (la suite existe déjà)`
+                                  : ""
+                              }${
+                                monthlyPreview.start > month
+                                  ? ` ; ${monthName} garde son échéance actuelle`
+                                  : ""
+                              }. Les mois d’avant ne changent pas.`
+                            : "Les mois d’avant ne changent pas."}
               </p>
               <button
                 type="button"

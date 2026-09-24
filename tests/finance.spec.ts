@@ -2065,6 +2065,92 @@ test("bills: a monthly bill shows on Factures and Mon mois; a small change appli
   expect(errors).toEqual([]);
 });
 
+test("bills: a yearly bill made monthly from this month never brings back past months as unpaid", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  const monthNames = [
+    "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
+    "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre",
+  ];
+  const now = new Date();
+  const goToMonth = async (offset: number) => {
+    const target = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+    await page.locator(".month-picker-trigger").click();
+    const panelYear = Number(
+      (await page.locator(".month-picker-panel").innerText()).match(/\b(20\d\d)\b/)![1],
+    );
+    for (let y = panelYear; y < target.getFullYear(); y++)
+      await page.getByRole("button", { name: "Année suivante" }).click();
+    for (let y = panelYear; y > target.getFullYear(); y--)
+      await page.getByRole("button", { name: "Année précédente" }).click();
+    await page
+      .getByRole("button", {
+        name: `${monthNames[target.getMonth()]} ${target.getFullYear()}`,
+        exact: true,
+      })
+      .click();
+  };
+  const nav = page.getByRole("navigation", { name: "Navigation principale", exact: true });
+  await page.goto("/");
+  await page.getByLabel("Phrase secrète", { exact: true }).fill("Exemple-test-Finance-annuel");
+  await page.getByLabel("Confirmer la phrase secrète").fill("Exemple-test-Finance-annuel");
+  await page.getByRole("button", { name: "Créer mon coffre" }).click();
+
+  // A yearly bill due three months ago (full form, from Abonnements).
+  const due = new Date(now.getFullYear(), now.getMonth() - 3, 15);
+  const iso = `${due.getFullYear()}-${String(due.getMonth() + 1).padStart(2, "0")}-15`;
+  await nav.getByRole("button", { name: "Abonnements", exact: true }).click();
+  await page.getByRole("button", { name: "Ajouter", exact: true }).click();
+  let dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Libellé", { exact: true }).fill("Impôts annuels test");
+  await dialog.getByLabel("Nature", { exact: true }).selectOption("bill");
+  await dialog.getByLabel("Montant", { exact: true }).fill("1200");
+  await dialog.getByLabel("Catégorie", { exact: true }).fill("Impôts");
+  await dialog.getByLabel("Jour du mois", { exact: true }).fill("15");
+  await dialog.getByLabel("Tous les… mois", { exact: true }).selectOption("12");
+  await dialog.getByLabel("Début", { exact: true }).fill(iso);
+  await dialog.getByRole("button", { name: "Enregistrer", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+
+  // On Factures this month: not due, folded aside, with its real rhythm.
+  await nav.getByRole("button", { name: "Factures", exact: true }).click();
+  const billsCard = page.locator(".card", {
+    has: page.locator(".card-title", { hasText: "Mes factures" }),
+  });
+  const row = page.locator(".row", { hasText: "Impôts annuels test" });
+  await expect(billsCard.locator(".row", { hasText: "Impôts annuels test" })).toHaveCount(0);
+  await page.getByText(/^Factures d’autres mois \(1\)$/).click();
+  await expect(row).toContainText("Tous les ans");
+  await row.getByRole("button", { name: "Modifier Impôts annuels test", exact: true }).click();
+  dialog = page.getByRole("dialog", { name: "Une facture" });
+  await expect(dialog.getByRole("button", { name: "Comme maintenant", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(dialog.getByLabel("Montant", { exact: true })).toHaveValue("1200");
+  await dialog.getByRole("button", { name: "Tous les mois", exact: true }).click();
+  await expect(dialog).toContainText("Les mois d’avant ne changent pas.");
+  await dialog.getByLabel("Montant", { exact: true }).fill("100");
+  await dialog.getByRole("button", { name: "Enregistrer", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  const dueRow = billsCard.locator(".row", { hasText: "Impôts annuels test" });
+  await expect(dueRow).toContainText("100.00");
+  await expect(dueRow).toContainText("Tous les mois");
+  await goToMonth(1);
+  await expect(dueRow).toContainText("100.00");
+
+  // The months before stay as they were: nothing due in between, the yearly one where it was.
+  const leftToPay = page.locator(".stat-card", { hasText: "Reste à payer" }).locator(".metric-value");
+  for (const offset of [-1, -2]) {
+    await goToMonth(offset);
+    await expect(dueRow).toHaveCount(0);
+    await expect(leftToPay).toHaveText(/^0\.00\s*CHF$/);
+  }
+  await goToMonth(-3);
+  await expect(dueRow).toContainText("1 200.00");
+  expect(errors).toEqual([]);
+});
+
 test("bills page also lists recurring income: received, left to receive, changed for one month", async ({
   page,
 }) => {

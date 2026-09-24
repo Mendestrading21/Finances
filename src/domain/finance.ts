@@ -680,6 +680,35 @@ function shiftMonth(month: string, delta: number): string {
   return `${String(Math.floor(absolute / 12)).padStart(4, "0")}-${String((absolute % 12) + 1).padStart(2, "0")}`;
 }
 
+function dayAfter(date: string): string {
+  const next = new Date(`${date}T12:00:00Z`);
+  next.setUTCDate(next.getUTCDate() + 1);
+  return next.toISOString().slice(0, 10);
+}
+
+/** Same bill or income under another rule: same kind, nature and currency, and either the
+ * same name or starting the day after this one ends (the rule a « Tous les mois » split handed
+ * over to, even if renamed then). */
+function continuations(
+  recurrences: readonly Recurrence[],
+  recurrence: Recurrence,
+  label = recurrence.label,
+): Recurrence[] {
+  const name = (value: string) => value.trim().toLocaleLowerCase("fr");
+  const handover = recurrence.endDate ? dayAfter(recurrence.endDate) : null;
+  return recurrences.filter(
+    (other) =>
+      other.id !== recurrence.id &&
+      other.kind === recurrence.kind &&
+      other.recurrenceType === recurrence.recurrenceType &&
+      other.currency === recurrence.currency &&
+      other.startDate > recurrence.startDate &&
+      (other.startDate === handover ||
+        name(other.label) === name(recurrence.label) ||
+        name(other.label) === name(label)),
+  );
+}
+
 /** The schedule alone, whether or not the recurrence is paused. */
 function scheduleOnly(recurrence: Recurrence): Recurrence {
   return recurrence.active ? recurrence : { ...recurrence, active: true };
@@ -747,6 +776,7 @@ export type SimpleEditOptions = {
 export function simpleEditOptions(
   recurrence: Recurrence | undefined,
   month: string,
+  recurrences: readonly Recurrence[] = [],
 ): SimpleEditOptions {
   if (!recurrence)
     return {
@@ -770,13 +800,22 @@ export function simpleEditOptions(
       : repeat === "single" && due !== null
         ? "single"
         : "keep";
-  const choices: SimpleChoice[] = ["monthly"];
-  if (!hasPast) choices.push("single");
-  else if (!recurrence.endDate || recurrence.endDate > last) choices.push("until");
-  if (initial === "keep") choices.push("keep");
+  // Déjà suivie par une autre règle dès le lendemain de sa fin (une scission) : la
+  // prolonger ferait deux fois la même facture ; seuls « Comme maintenant » et une fin plus tôt.
+  const handedOver =
+    !!recurrence.endDate &&
+    continuations(recurrences, recurrence).some(
+      (other) => other.startDate === dayAfter(recurrence.endDate!),
+    );
+  const choices: SimpleChoice[] = handedOver ? [] : ["monthly"];
+  if (!hasPast && !handedOver) choices.push("single");
+  else if (hasPast && (!recurrence.endDate || recurrence.endDate > last))
+    choices.push("until");
+  const start = handedOver ? "keep" : initial;
+  if (start === "keep") choices.push("keep");
   return {
     choices,
-    initial,
+    initial: start,
     referenceDate,
     amountMinor:
       referenceDate === null
@@ -822,20 +861,32 @@ export function applySimpleEdit(
   if (!Number.isSafeInteger(amountMinor) || amountMinor < 0)
     throw new Error("Montant de récurrence invalide.");
   const { first, last } = monthBounds(month);
+  const {
+    amountEffectiveFrom: _from,
+    amountHistory: _history,
+    ...plain
+  } = base as Omit<Recurrence, ScheduleFields> & Partial<Recurrence>;
   const fresh = (
     id: string,
     day: number,
     startDate: string,
     endDate: string | null,
-  ): Recurrence => ({
-    ...base,
-    id,
-    amountMinor,
-    day,
-    intervalMonths: 1,
-    startDate,
-    endDate,
-  });
+  ): Recurrence => {
+    // A new rule is a new record: it never reuses the imported identity of the one it
+    // continues (validation rejects two records sharing a sourceId; a later Notion import
+    // still finds the original by it).
+    const { sourceId: _sourceId, ...source } = plain.source;
+    return {
+      ...plain,
+      ...(id === base.id ? {} : { source }),
+      id,
+      amountMinor,
+      day,
+      intervalMonths: 1,
+      startDate,
+      endDate,
+    };
+  };
   const existing = data.recurrences.find((r) => r.id === base.id);
   if (!existing)
     return {
@@ -845,23 +896,26 @@ export function applySimpleEdit(
         fresh(base.id, 1, first, choice === "single" ? last : null),
       ],
     };
-  const options = simpleEditOptions(existing, month);
+  const options = simpleEditOptions(existing, month, data.recurrences);
   if (!options.choices.includes(choice))
     throw new Error("Cette répétition n’est pas possible depuis ce mois-ci.");
-  const kept = (endDate: string | null | undefined): Recurrence => {
-    const next: Recurrence = { ...existing, ...base };
+  // « Comme maintenant » : a new amount starts from its reference occurrence (it may be an
+  // older single month). « Tous les mois » / « Jusqu'en » never reach before `month`.
+  const kept = (endDate: string | null | undefined, fromMonth = false): Recurrence => {
+    const next: Recurrence = { ...existing, ...plain };
     if (endDate !== existing.endDate) next.endDate = endDate;
     if (amountMinor === options.amountMinor) return next;
     if (options.referenceDate === null) {
       // Never due: no dated amount to keep.
-      const { amountEffectiveFrom: _from, amountHistory: _history, ...rest } = next;
+      const { amountEffectiveFrom: _f, amountHistory: _h, ...rest } = next;
       return { ...rest, amountMinor };
     }
+    const reference = `${options.referenceDate.slice(0, 7)}-01`;
     try {
       return withRecurrenceAmount(
         next,
         amountMinor,
-        `${options.referenceDate.slice(0, 7)}-01`,
+        fromMonth && reference < first ? first : reference,
       );
     } catch {
       throw new Error(LATER_AMOUNT_ERROR);
@@ -883,7 +937,7 @@ export function applySimpleEdit(
   const previousLast = monthBounds(shiftMonth(month, -1)).last;
   let changed: Recurrence[];
   if (choice === "keep") changed = [kept(existing.endDate)];
-  else if (choice === "until") changed = [kept(last)];
+  else if (choice === "until") changed = [kept(last, true)];
   else if (choice === "single") changed = [fresh(existing.id, existing.day, first, last)];
   else if (
     existing.intervalMonths === 1 &&
@@ -891,7 +945,7 @@ export function applySimpleEdit(
     firstDue <= last &&
     (!existing.endDate || existing.endDate >= previousLast)
   )
-    changed = [kept(null)];
+    changed = [kept(null, true)];
   else if (!hasPast) changed = [fresh(existing.id, existing.day, first, null)];
   else {
     const holds = [
@@ -918,6 +972,20 @@ export function applySimpleEdit(
       },
       fresh(newId, existing.day, splitFirst, null),
     ];
+  }
+  if (choice === "monthly") {
+    // Never two rules for the same bill at once: the monthly one stops where a later rule
+    // for it (e.g. the part a previous « Tous les mois » split off) starts.
+    const carrier = changed[changed.length - 1];
+    const later = continuations(data.recurrences, existing, plain.label)
+      .map((other) => other.startDate)
+      .filter((start) => start > carrier.startDate)
+      .sort()[0];
+    if (later) {
+      const end = new Date(`${later}T12:00:00Z`);
+      end.setUTCDate(end.getUTCDate() - 1);
+      changed[changed.length - 1] = { ...carrier, endDate: end.toISOString().slice(0, 10) };
+    }
   }
   const owner = changed[0];
   const recurrences = [
