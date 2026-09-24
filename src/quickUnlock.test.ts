@@ -699,6 +699,87 @@ describe("déverrouillage rapide par Face ID ou empreinte (WebAuthn PRF)", () =>
     expect(exportVault()).toBe(otherBackup);
   });
 
+  it("refuse un clair au remplissage non canonique, même authentifié, sans rien retirer", async () => {
+    await createVault(PASSPHRASE, sample());
+    await enableQuickUnlock(PASSPHRASE);
+    const config = stored();
+    // What only the holder of the PRF output could produce: HMAC(secret, prfSalt) -> HKDF -> AES-GCM.
+    const hmac = await crypto.subtle.importKey(
+      "raw",
+      auth.secret,
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"],
+    );
+    const prf = await crypto.subtle.sign(
+      "HMAC",
+      hmac,
+      Uint8Array.from(atob(config.prfSalt), (c) => c.charCodeAt(0)),
+    );
+    const material = await crypto.subtle.importKey("raw", prf, "HKDF", false, [
+      "deriveKey",
+    ]);
+    const key = await crypto.subtle.deriveKey(
+      {
+        name: "HKDF",
+        hash: "SHA-256",
+        salt: new Uint8Array(0),
+        info: new TextEncoder().encode("Finance/quick-unlock/v1"),
+      },
+      material,
+      { name: "AES-GCM", length: 256 },
+      false,
+      ["encrypt"],
+    );
+    const seal = async (plaintext: Uint8Array<ArrayBuffer>) => {
+      const iv = crypto.getRandomValues(new Uint8Array(12));
+      const ct = await crypto.subtle.encrypt(
+        {
+          name: "AES-GCM",
+          iv,
+          tagLength: 128,
+          additionalData: new TextEncoder().encode(
+            `Finance/quick-unlock/v1|${config.credentialId}|${config.vaultSalt}`,
+          ),
+        },
+        key,
+        plaintext,
+      );
+      return JSON.stringify({
+        ...config,
+        iv: b64(iv),
+        ct: b64(new Uint8Array(ct)),
+      });
+    };
+    const padded = (size: number, length: number, filler = 0) => {
+      const bytes = new Uint8Array(size).fill(filler);
+      const secret = new TextEncoder().encode(PASSPHRASE);
+      bytes[0] = length >>> 8;
+      bytes[1] = length & 0xff;
+      bytes.set(secret, 2);
+      return bytes;
+    };
+    const length = new TextEncoder().encode(PASSPHRASE).length;
+    // Control: the canonical form built here does open the vault.
+    local.setItem(QUICK_KEY, await seal(padded(256, length)));
+    expect((await quickUnlock()).data).toEqual(sample());
+    for (const plaintext of [
+      padded(320, length), // over-padded
+      (() => {
+        const bytes = padded(256, length);
+        bytes[255] = 1; // non-zero filling
+        return bytes;
+      })(),
+      new Uint8Array(256), // empty passphrase: length 0, zeros only
+      padded(256, 255), // length beyond the block
+    ]) {
+      const raw = await seal(plaintext);
+      local.setItem(QUICK_KEY, raw);
+      await expect(quickUnlock()).rejects.toThrow("n’a pas pu ouvrir Finance");
+      expect(local.getItem(QUICK_KEY)).toBe(raw);
+    }
+  });
+
   it("la longueur de la phrase secrète ne se voit pas dans le chiffré", async () => {
     const sizes: number[] = [];
     for (const passphrase of [
