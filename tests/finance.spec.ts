@@ -1960,8 +1960,11 @@ test("bills: a monthly bill shows on Factures and Mon mois; a small change appli
   // Paying this month's adjusted bill settles that same occurrence, nothing left to pay.
   await goToMonth(0);
   await billRow.getByRole("button", { name: "Payer", exact: true }).click();
+  await expect(billRow.getByRole("button", { name: "Payer", exact: true })).toHaveCount(0);
   await expect(billRow).toContainText("Payé");
-  await expect(page.locator(".stat-card", { hasText: "Reste à payer" })).toContainText("0.00");
+  await expect(
+    page.locator(".stat-card", { hasText: "Reste à payer" }).locator(".metric-value"),
+  ).toHaveText(/^0\.00\s*CHF$/);
   await nav.getByRole("button", { name: "Mon mois", exact: true }).click();
   await expect(monthRow).toHaveCount(1);
   await expect(monthRow).toContainText("85.00");
@@ -2022,7 +2025,24 @@ test("bills page also lists recurring income: received, left to receive, changed
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(incomeRow).toContainText("350.00");
   await incomeRow.getByRole("button", { name: "Reçu", exact: true }).click();
+  // The action is gone (the row itself now reads "Reçu"), and nothing is left to receive.
+  await expect(incomeRow.getByRole("button", { name: "Reçu", exact: true })).toHaveCount(0);
   await expect(incomeRow).toContainText("Reçu");
-  await expect(page.locator(".stat-card", { hasText: "Reste à recevoir" })).toContainText("0.00");
+  await expect(
+    page.locator(".stat-card", { hasText: "Reste à recevoir" }).locator(".metric-value"),
+  ).toHaveText(/^0\.00\s*CHF$/);
+  // Same single income, received at 350, in Mon mois; still there after reload and unlock.
+  await nav.getByRole("button", { name: "Mon mois", exact: true }).click();
+  const monthRow = page
+    .locator(".card", { has: page.locator(".card-title", { hasText: "Les opérations" }) })
+    .locator(".row", { hasText: "Prime test" });
+  await expect(monthRow).toHaveCount(1);
+  await expect(monthRow).toContainText("350.00");
+  await page.reload();
+  await page.getByLabel("Phrase secrète", { exact: true }).fill("Exemple-test-Finance-revenus");
+  await page.getByRole("button", { name: "Déverrouiller", exact: true }).click();
+  await nav.getByRole("button", { name: "Factures", exact: true }).click();
+  await expect(incomeRow).toContainText("350.00");
+  await expect(incomeRow.getByRole("button", { name: "Reçu", exact: true })).toHaveCount(0);
   expect(errors).toEqual([]);
 });

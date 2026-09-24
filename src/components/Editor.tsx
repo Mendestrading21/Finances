@@ -493,7 +493,7 @@ export default function Editor({
         <div>
           <p className="eyebrow">FINANCE · SAISIE RAPIDE</p>
           <h2 id="editor-title">
-            {spec.type === "recurrence" && !spec.id && spec.kind === "income"
+            {spec.type === "recurrence" && !spec.id && recurrenceKind === "income"
               ? "Un revenu"
               : spec.type === "recurrence" && !spec.id && spec.recurrenceType === "bill"
                 ? "Une facture"
@@ -853,7 +853,14 @@ export default function Editor({
               {currency()}
               {accounts("Compte", "accountId", false, true)}
               {field("Catégorie", "category", {
-                defaultValue: val("category", "Abonnements"),
+                defaultValue: val(
+                  "category",
+                  spec.kind === "income"
+                    ? "Revenus"
+                    : spec.recurrenceType === "bill"
+                      ? "Factures"
+                      : "Abonnements",
+                ),
                 required: true,
               })}
               {field("Jour du mois", "day", {

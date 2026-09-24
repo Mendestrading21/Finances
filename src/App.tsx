@@ -1369,18 +1369,22 @@ export default function App() {
     billsCohort.dueMinor > 0
       ? Math.min(100, (billsCohort.settledMinor / billsCohort.dueMinor) * 100)
       : null;
+  // Échéances du mois d'abord, par date ; à date égale, par devise puis montant décroissant
+  // (aucune conversion implicite, ordre total et stable), puis par libellé.
+  const byDueDate = (a: Recurrence, b: Recurrence) => {
+    const ia = subsCohortByRecurrence.get(a.id),
+      ib = subsCohortByRecurrence.get(b.id);
+    if (!ia || !ib) return ia ? -1 : ib ? 1 : a.label.localeCompare(b.label);
+    return (
+      ia.occurrenceDate.localeCompare(ib.occurrenceDate) ||
+      ia.currency.localeCompare(ib.currency) ||
+      ib.dueAmountMinor - ia.dueAmountMinor ||
+      a.label.localeCompare(b.label)
+    );
+  };
   const billsActive = data.recurrences
     .filter((r) => r.active && r.recurrenceType === "bill")
-    .sort((a, b) => {
-      const ia = subsCohortByRecurrence.get(a.id),
-        ib = subsCohortByRecurrence.get(b.id);
-      if (!ia || !ib) return ia ? -1 : ib ? 1 : a.label.localeCompare(b.label);
-      return (
-        ia.occurrenceDate.localeCompare(ib.occurrenceDate) ||
-        (ia.currency === ib.currency ? ib.dueAmountMinor - ia.dueAmountMinor : 0) ||
-        a.label.localeCompare(b.label)
-      );
-    });
+    .sort(byDueDate);
   const billsInactive = data.recurrences
     .filter((r) => !r.active && r.recurrenceType === "bill")
     .sort((a, b) => a.label.localeCompare(b.label));
@@ -1394,16 +1398,10 @@ export default function App() {
       : null;
   const incomeActive = data.recurrences
     .filter((r) => r.active && r.recurrenceType === "income")
-    .sort((a, b) => {
-      const ia = subsCohortByRecurrence.get(a.id),
-        ib = subsCohortByRecurrence.get(b.id);
-      if (!ia || !ib) return ia ? -1 : ib ? 1 : a.label.localeCompare(b.label);
-      return (
-        ia.occurrenceDate.localeCompare(ib.occurrenceDate) ||
-        (ia.currency === ib.currency ? ib.dueAmountMinor - ia.dueAmountMinor : 0) ||
-        a.label.localeCompare(b.label)
-      );
-    });
+    .sort(byDueDate);
+  const incomeInactive = data.recurrences
+    .filter((r) => !r.active && r.recurrenceType === "income")
+    .sort((a, b) => a.label.localeCompare(b.label));
   // Prefills "Marquer payé/reçu" from a not-yet-persisted occurrence, mirroring
   // `transactionsForMonth`'s own virtual-transaction shape and id (`recurrenceId:date`) so a
   // settlement made here and one made from Mon mois never create two different transactions
@@ -2799,7 +2797,8 @@ export default function App() {
                   label: `Factures de ${monthLabel(month)}`,
                   value:
                     billsCohort.dueMinor !== null ? display(billsCohort.dueMinor) : "—",
-                  pct: billsSettledPct,
+                  // Montants masqués : la part payée/reçue en dirait trop.
+                  pct: hidden ? null : billsSettledPct,
                   pctLabel: "Part des factures payée",
                 },
                 {
@@ -2814,7 +2813,7 @@ export default function App() {
                   label: `Revenus de ${monthLabel(month)}`,
                   value:
                     incomeCohort.dueMinor !== null ? display(incomeCohort.dueMinor) : "—",
-                  pct: incomeReceivedPct,
+                  pct: hidden ? null : incomeReceivedPct,
                   pctLabel: "Part des revenus reçue",
                 },
                 {
@@ -2870,6 +2869,12 @@ export default function App() {
                 </p>
               )}
             </Card>
+            {billsInactive.length > 0 && (
+              <details className="account-history">
+                <summary>Factures arrêtées ({billsInactive.length})</summary>
+                {billsInactive.map((r) => subscriptionRow(r, "bills"))}
+              </details>
+            )}
             <Card
               title="Mes revenus"
               icon="arrow-down"
@@ -2890,10 +2895,10 @@ export default function App() {
                 </p>
               )}
             </Card>
-            {billsInactive.length > 0 && (
+            {incomeInactive.length > 0 && (
               <details className="account-history">
-                <summary>Factures arrêtées ({billsInactive.length})</summary>
-                {billsInactive.map((r) => subscriptionRow(r, "bills"))}
+                <summary>Revenus arrêtés ({incomeInactive.length})</summary>
+                {incomeInactive.map((r) => subscriptionRow(r, "bills"))}
               </details>
             )}
             <p className="footer-note">

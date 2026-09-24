@@ -415,8 +415,8 @@ export type CohortSummary = {
   excluded: number;
 };
 /** amelioration-v2.md's résumé compact for expense-kind recurring occurrences: "Dû en <mois>",
- * "Réglé pour <mois>" and "Reste dû", each converted to `currency`. Income recurrences don't
- * fit "due" framing and are excluded from this aggregate — their own settlement still shows
+ * "Réglé pour <mois>" and "Reste dû", each converted to `currency`. Without `types`, income
+ * recurrences don't fit "due" framing and are excluded from this aggregate — their own settlement still shows
  * per-occurrence (`occurrenceCohort`) and in the realized flow (`monthSummary`). A `saving`
  * recurrence (mise de côté) is excluded too, per abonnements.md "les transferts et mises de
  * côté ne gonflent pas dépenses et revenus" — it still shows per-occurrence in `occurrenceCohort`
