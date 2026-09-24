@@ -380,10 +380,18 @@ export function FlowChart({
   const max = Math.max(income || 0, expense || 0, 1);
   return (
     <div className="flow-chart">
-      {/* Same glacier family, told apart by luminance and by the text label above each bar. */}
+      {/* Entrées en vert, dépenses en rouge (jetons CSS, assombris à l’impression), libellé au-dessus. */}
       {[
-        { label: "Entrées prévues et reçues", n: income, color: ACCENT },
-        { label: "Dépenses prévues et payées", n: expense, color: "#7083AE" },
+        {
+          label: "Entrées prévues et reçues",
+          n: income,
+          color: "var(--positive)",
+        },
+        {
+          label: "Dépenses prévues et payées",
+          n: expense,
+          color: "var(--negative)",
+        },
       ].map((i) => (
         <div key={i.label}>
           <div className="hero-foot">

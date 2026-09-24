@@ -538,6 +538,12 @@ Après la publication de « Midnight Glass », l'utilisateur voyait encore l'anc
 
 Preuves : `typecheck` (0 erreur), `test` (**142/142**), `build`, les **11** scénarios `test:e2e` rejoués individuellement, tous verts, dont un nouveau test « PWA update: on the lock screen… » qui échoue sans la correction (vérifié en la neutralisant) et passe avec. Pour cette fois seulement, l'iPhone doit encore fermer et rouvrir l'app deux fois (l'ancienne version installée n'a pas ce correctif) ; ensuite, les versions suivantes arrivent d'elles-mêmes.
 
+Fusionné dans `main` (commit `d36580d`, PR #45). CI et déploiement Pages vérifiés verts.
+
+## Entrées en vert, sorties en rouge (développé et testé le 24 septembre 2026)
+
+Demande de l'utilisateur, captures iPhone à l'appui, sur « Midnight Glass » en service : distinguer d'un coup d'œil ce qui entre (vert) de ce qui sort (rouge). Nouveau jeton `--positive` `#8FD1B5` à côté de `--negative` `#E8A3AE`, tous deux adoucis pour rester dans le thème (jamais d'aplat ni de halo). Appliqués aux montants des lignes (Mon mois, Accueil, Abonnements), à leurs flèches, aux indicateurs d'entrées/sorties (« Votre mois », les quatre indicateurs de Mon mois, « Aperçu du mois », « Payé/Reçu ce mois ») et aux barres Entrées/Dépenses ; virements, épargne et totaux mixtes restent neutres. `design.md` consigne ce choix. Contrastes calculés par formule : vert ≥ 6,73:1 et rouge ≥ 5,79:1 au pire (ligne survolée pendant le flash de règlement), 6,43:1 et 7,29:1 à l'impression.
+
 ## État réel
 
 | Élément                           | État                                                                                                                                                                   | Résultat et limite                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
