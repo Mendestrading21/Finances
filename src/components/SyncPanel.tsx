@@ -289,9 +289,9 @@ export function SyncCard({
           {link && (
             <div className="device-link">
               <p className="meta">
-                Sur l’autre appareil : ouvrez ce lien (ou touchez « J’ai déjà
-                un compte sur un autre appareil » et collez-le), puis tapez
-                votre phrase secrète.
+                Sur l’autre appareil, dans Finance (l’app installée de
+                préférence) : touchez « J’ai déjà un compte sur un autre
+                appareil », collez ce lien, puis tapez votre phrase secrète.
               </p>
               <input
                 readOnly

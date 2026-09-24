@@ -434,14 +434,30 @@ export function quickUnlockEnabled(): boolean {
   }
 }
 
+/** Rethrows the vault's own error when the passphrase did not open this device's vault. */
+async function passphraseRefused(
+  check: Promise<{ error: unknown } | undefined>,
+): Promise<void> {
+  const failure = await check;
+  if (failure) throw failure.error;
+}
+
 /** Checks the passphrase against this device's vault, registers a passkey with PRF, then stores
  * only the passphrase encrypted under the PRF-derived key. Nothing is stored on any failure. */
 export async function enableQuickUnlock(passphrase: string): Promise<void> {
-  // 1. The passphrase must open this device's vault (the vault's own error otherwise).
-  await unlockVault(passphrase);
+  // Everything before `create` is synchronous, so the browser still sees the person's tap.
+  if (!vaultExists()) throw new Error(NO_VAULT_ERROR);
   const container = credentialsApi();
   const rp = relyingPartyId();
   if (!container || !rp) throw new Error(UNSUPPORTED_ERROR);
+  // 1. The passphrase must open this device's vault (the vault's own error otherwise). The check
+  // (PBKDF2, up to a second on a phone) runs during the prompt: awaiting it first could let Safari
+  // treat the tap as expired and refuse Face ID. A wrong passphrase stores nothing and the new
+  // passkey is signalled as unknown.
+  const check = unlockVault(passphrase).then(
+    () => undefined,
+    (error: unknown) => ({ error }),
+  );
 
   // 2. Register a passkey (or resume one whose PRF output could not be read yet).
   let credentialId: Uint8Array<ArrayBuffer>;
@@ -479,6 +495,7 @@ export async function enableQuickUnlock(passphrase: string): Promise<void> {
         },
       });
     } catch (error) {
+      await passphraseRefused(check);
       throw new Error(
         cancelled(error) ? ENABLE_CANCELLED_ERROR : UNSUPPORTED_ERROR,
       );
@@ -489,6 +506,7 @@ export async function enableQuickUnlock(passphrase: string): Promise<void> {
       credential.rawId.byteLength < 1 ||
       credential.rawId.byteLength > MAX_CREDENTIAL_ID_BYTES
     ) {
+      await passphraseRefused(check);
       throw new Error(UNSUPPORTED_ERROR);
     }
     credentialId = new Uint8Array(credential.rawId.slice(0));
@@ -496,11 +514,19 @@ export async function enableQuickUnlock(passphrase: string): Promise<void> {
     const results = extensionResults(credential);
     if (results?.prf?.enabled !== true) {
       forgetCredential(toBase64Url(credentialId));
+      await passphraseRefused(check);
       throw new Error(UNSUPPORTED_ERROR);
     }
     prfOutput = takePrfOutput(results);
   }
   const credentialIdText = toBase64Url(credentialId);
+  try {
+    await passphraseRefused(check);
+  } catch (error) {
+    prfOutput?.fill(0);
+    forgetCredential(credentialIdText);
+    throw error;
+  }
   if (prfOutput === null) {
     try {
       prfOutput = await evaluatePrf(

@@ -280,7 +280,10 @@ describe("déverrouillage rapide par Face ID ou empreinte (WebAuthn PRF)", () =>
     const vaultBefore = exportVault();
     expect(quickUnlockEnabled()).toBe(false);
 
-    await enableQuickUnlock(PASSPHRASE);
+    // Face ID est demandé dans le même geste : aucune attente (PBKDF2) avant `create`.
+    const enabling = enableQuickUnlock(PASSPHRASE);
+    expect(auth.creates).toHaveLength(1);
+    await enabling;
     expect(quickUnlockEnabled()).toBe(true);
     expect(auth.creates).toHaveLength(1);
     expect(auth.gets).toHaveLength(0);
@@ -387,7 +390,7 @@ describe("déverrouillage rapide par Face ID ou empreinte (WebAuthn PRF)", () =>
     expect((await quickUnlock()).data).toEqual(sample());
   });
 
-  it("mauvaise phrase à l’activation : aucune création de passkey, rien de stocké", async () => {
+  it("mauvaise phrase à l’activation : passkey abandonné, rien de stocké", async () => {
     await createVault(PASSPHRASE, sample());
     const before = snapshot();
     const failure = await rejection(
@@ -395,9 +398,37 @@ describe("déverrouillage rapide par Face ID ou empreinte (WebAuthn PRF)", () =>
     );
     expect(failure.message).toBe(OPEN_ERROR);
     expect(failure.message).not.toContain("mauvaise");
-    expect(auth.creates).toHaveLength(0);
+    // Face ID a été demandé pendant la vérification ; le passkey créé est signalé inutile.
+    expect(auth.creates).toHaveLength(1);
+    expect(auth.gets).toHaveLength(0);
+    expect(auth.forgotten.map((entry) => entry.credentialId)).toEqual([
+      ...auth.known,
+    ]);
     expect(snapshot()).toEqual(before);
     expect(quickUnlockEnabled()).toBe(false);
+
+    // Annulé et phrase fausse : c'est la phrase qu'il faut corriger.
+    auth.failCreate = "NotAllowedError";
+    expect(
+      (await rejection(enableQuickUnlock("Une mauvaise phrase secrète"))).message,
+    ).toBe(OPEN_ERROR);
+    auth.failCreate = undefined;
+    // Sortie PRF à obtenir par `get` : la phrase fausse l'arrête avant toute demande.
+    auth.prf = "enabled-only";
+    expect(
+      (await rejection(enableQuickUnlock("Une mauvaise phrase secrète"))).message,
+    ).toBe(OPEN_ERROR);
+    expect(auth.gets).toHaveLength(0);
+    expect(snapshot()).toEqual(before);
+    auth.prf = "full";
+    auth.forgotten.length = 0;
+    auth.creates.length = 0;
+    await enableQuickUnlock(PASSPHRASE);
+    expect(quickUnlockEnabled()).toBe(true);
+    expect(auth.forgotten).toHaveLength(0);
+    disableQuickUnlock();
+    auth.forgotten.length = 0;
+    auth.creates.length = 0;
 
     local.clear();
     await expect(enableQuickUnlock(PASSPHRASE)).rejects.toThrow(

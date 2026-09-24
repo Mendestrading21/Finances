@@ -38,8 +38,14 @@ export function QuickUnlockCard({ demo }: { demo: boolean }) {
     }
   }
   function disable() {
-    disableQuickUnlock();
-    setEnabled(false);
+    setError("");
+    try {
+      disableQuickUnlock();
+      setEnabled(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Désactivation impossible.");
+      setEnabled(quickUnlockEnabled());
+    }
   }
   if (demo)
     return (
@@ -65,6 +71,11 @@ export function QuickUnlockCard({ demo }: { demo: boolean }) {
             l’empreinte.
           </span>
         </p>
+        {error && (
+          <p className="error" role="alert">
+            {error}
+          </p>
+        )}
         <div className="action-row">
           <button className="button secondary" onClick={disable}>
             <Icon name="close" />
