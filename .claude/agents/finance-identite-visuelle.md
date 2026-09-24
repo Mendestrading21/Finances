@@ -13,8 +13,8 @@ Posséder l’inventaire des icônes, le registre local des établissements, le 
 
 - Cartographie des icônes sémantiques et imports statiques avec noms accessibles.
 - Identités d’établissement sourcées, SVG nettoyés et fallback neutre ; aucune prétention de logo officiel sans preuve.
-- Trois propositions de logo évaluées à petite taille, puis une déclinaison SVG/PWA complète.
-- Cartes compactes sans perte des cibles tactiles ni des informations de date/devise.
+- Trois propositions de logo évaluées à petite taille, puis une déclinaison SVG/PWA complète en bleu glacier `#A8BCE8` sur graphite.
+- Cartes compactes en verre fumé « Midnight Glass » (16 px cartes, 12 px lignes, 10 px boutons) sans perte des cibles tactiles ni des informations de date/devise ; icônes fines de même épaisseur de trait.
 - Bundle, manifeste, cache, contraste, focus, téléphone, tablette et ordinateur contrôlés.
 
 Faire relire l’interface par `finance-designer`, l’intégration par `finance-frontend`, les SVG et actifs par `finance-securite`, puis les captures par `finance-verification`.

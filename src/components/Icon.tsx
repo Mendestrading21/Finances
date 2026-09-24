@@ -22,7 +22,7 @@ const paths: Record<string, ReactNode> = {
     <>
       <circle cx="12" cy="12" r="9" />
       <circle cx="12" cy="12" r="5" />
-      <circle cx="12" cy="12" r="1" />
+      <circle cx="12" cy="12" r="1.25" fill="currentColor" stroke="none" />
     </>
   ),
   chart: (
@@ -34,9 +34,7 @@ const paths: Record<string, ReactNode> = {
   folder: (
     <path d="M3 7V5a2 2 0 0 1 2-2h5l3 4h6a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" />
   ),
-  // 14-unit span both ways (5↔19), matching `close` below — the two are visual opposites
-  // (add/remove) shown side by side in places like a dialog header, so they need the same
-  // optical weight, not just the same stroke width.
+  // Same 5↔19 span as `close`: the two sit side by side and must weigh the same.
   plus: <path d="M12 5v14M5 12h14" />,
   "arrow-up": <path d="M12 20V4m-6 6 6-6 6 6" />,
   "arrow-down": <path d="M12 4v16m-6-6 6 6 6-6" />,
@@ -58,14 +56,8 @@ const paths: Record<string, ReactNode> = {
   ),
   "chevron-right": <path d="m9 5 7 7-7 7" />,
   "chevron-left": <path d="m15 5-7 7 7 7" />,
-  // Was a smaller 12-unit diagonal span (6↔18) — visibly lighter than `plus`'s 14-unit
-  // reach (5↔19) although the two are meant to read as the same weight (see `plus` above).
-  // Widened to the same 5↔19 span so neither looks bigger next to the other.
   close: <path d="m5 5 14 14M5 19 19 5" />,
   check: <path d="m4 12 5 5L20 6" />,
-  // 6-unit arrowhead legs, matching arrow-up/arrow-down below — was a narrower 5-unit head,
-  // a slightly lighter mark than its plain-arrow counterparts for the same "up"/"down"
-  // meaning.
   upload: (
     <>
       <path d="M12 16V3m-6 6 6-6 6 6M4 16v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4" />
@@ -106,10 +98,7 @@ const paths: Record<string, ReactNode> = {
       <path d="m8 12 3 3 5-6" />
     </>
   ),
-  // Solid dots, not stroked rings: at r=1 the shared 1.65 strokeWidth (below) happened to
-  // nearly close the ring's own hole, but that read as a solid dot only by coincidence of
-  // those two numbers — explicit fill/no-stroke here makes it an actual filled dot,
-  // independent of the svg's global stroke settings.
+  // Tiny marks are filled dots, not stroked rings, so they stay solid at any stroke width.
   more: (
     <>
       <circle cx="5" cy="12" r="1.5" fill="currentColor" stroke="none" />
@@ -136,7 +125,8 @@ const paths: Record<string, ReactNode> = {
   alert: (
     <>
       <path d="m10.3 3.5-8 14A2 2 0 0 0 4 20h16a2 2 0 0 0 1.7-2.5l-8-14a2 2 0 0 0-3.4 0Z" />
-      <path d="M12 8v5m0 3v.5" />
+      <path d="M12 8v5" />
+      <circle cx="12" cy="16.5" r="1.15" fill="currentColor" stroke="none" />
     </>
   ),
   edit: (
@@ -144,19 +134,13 @@ const paths: Record<string, ReactNode> = {
       <path d="m14 5 5 5M4 20l5-1L21 7a2 2 0 0 0-4-4L5 15Z" />
     </>
   ),
-  // identite-ui.md suggests a clock/horloge for "à payer" — added for card headers about
-  // upcoming due dates ("Prochaines échéances"), same 24×24 stroke grid as the rest.
   clock: (
     <>
       <circle cx="12" cy="12" r="9" />
       <path d="M12 7v5l3.5 2" />
     </>
   ),
-  // Account.kind === "debt": same axis frame as `chart` (mirrors its meaning — investment
-  // trends up, debt trends down), with the trend line and corner marker flipped to the
-  // bottom-right instead of the top-right. No existing icon fit "debt" without forcing an
-  // unrelated metaphor, so this is the one new glyph this lot adds (identite-ui.md: add a
-  // new icon only when nothing already in the set fits).
+  // Mirror of `chart` for Account.kind "debt": the trend points down.
   debt: (
     <>
       <path d="M3 3v17a1 1 0 0 0 1 1h17M7 9l4 5 4-3 6 8" />
@@ -166,6 +150,7 @@ const paths: Record<string, ReactNode> = {
 };
 
 export type IconName = keyof typeof paths;
+// Trait rendu à 1,25 px quelle que soit la taille (1.5 unités à 20 px).
 export function Icon({
   name,
   size = 20,
@@ -182,7 +167,7 @@ export function Icon({
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth="1.65"
+      strokeWidth={30 / size}
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden="true"
