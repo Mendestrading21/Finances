@@ -690,9 +690,10 @@ function dayAfter(date: string): string {
  * continues: `{racine}:suite:{mois}`. The whole chain shares the root id, so the link is
  * explicit — never guessed from a name or a date (two bills may share both). */
 const SUITE = ":suite:";
+const SUITE_ID = /^(.+):suite:\d{4}-\d{2}(?:-\d+)?$/;
 function familyRoot(id: string): string {
-  const at = id.indexOf(SUITE);
-  return at < 0 ? id : id.slice(0, at);
+  // Only the exact shape the app writes; any other id containing « :suite: » is its own root.
+  return SUITE_ID.exec(id)?.[1] ?? id;
 }
 /** Other rules of the same chain, oldest first. */
 function family(recurrences: readonly Recurrence[], recurrence: Recurrence): Recurrence[] {

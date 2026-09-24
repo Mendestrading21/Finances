@@ -671,15 +671,21 @@ Vérification indépendante (`finance-verification`) : calculs justes pour une n
 - « Tous les mois » sur des impôts annuels payés en mars créait six faux impayés, d'avril à septembre ;
 - renommer une facture qui commence plus tard avançait son début.
 
-Corrigés aussi : échéance fantôme, montant prérempli après un changement prévu, nouveau montant d'un seul mois plus ancien, message d'erreur, fin propre, rythme des anciens enregistrements, tri, totaux mensuels, accès aux options complètes et textes. Contre-vérification par le même relecteur en cours.
+Corrigés aussi : échéance fantôme, montant prérempli après un changement prévu, nouveau montant d'un seul mois plus ancien, message d'erreur, fin propre, rythme des anciens enregistrements, tri, totaux mensuels, accès aux options complètes et textes.
 
-Preuves : `typecheck`, `test` (**252/252**, dont 11 tests « sans date » ; l'ancien défaut « début aujourd'hui = rien ce mois-ci » est reproduit dans un test ; quatre mutations — scission, choix par défaut, retrait des projections, montant prérempli — font échouer les tests), `build`, les **20** scénarios `test:e2e` rejoués individuellement. Ils couvrent notamment :
+Trois contre-vérifications par le même relecteur :
+- 1re : les onze constats tiennent. Un bloquant restait : la scission d'une facture importée de Notion était refusée (« source en doublon »), car la nouvelle règle reprenait son identifiant Notion. S'y ajoutaient la possibilité de doubler une facture en retouchant l'ancienne partie, un montant daté trop tôt et le texte du premier mois. Tout est corrigé.
+- 2e : la « suite » d'une facture était devinée par son nom ; deux factures homonymes (deux salaires, électricité et son décompte) pouvaient être coupées en silence. La suite est désormais liée par son identifiant (`{racine}:suite:{mois}`) ; les homonymes ne sont jamais touchés, et l'ancienne détection échoue au nouveau test.
+- 3e : **publiable côté calculs**, aucun bloquant, 36 sondes vertes (chaînes de deux scissions, trou comblé, import et sauvegarde d'une chaîne Notion). Sa note sur les identifiants importés contenant « :suite: » est corrigée (forme exacte seulement).
+
+Preuves : `typecheck`, `test` (**256/256**, dont 15 tests « sans date » ; l'ancien défaut « début aujourd'hui = rien ce mois-ci » est reproduit dans un test ; huit mutations — scission, choix par défaut, retrait des projections, montant prérempli, identifiant Notion, passation, arrêt à la suite, date du montant — font échouer les tests), `build`, les **21** scénarios `test:e2e` rejoués individuellement. Ils couvrent notamment :
 - « bills… » :
   - facture ajoutée sans date sur le mois précédent ;
   - facture « Seulement ce mois » présente ce mois, absente le mois suivant et repliée le mois d'avant ;
   - paiement des deux ;
   - passage d'un seul mois à « Tous les mois » depuis son formulaire ;
   - arrêt avec « Jusqu'en {mois} » (mois d'avant intacts, plus rien après).
+- « bills: a yearly bill made monthly from this month… » : facture annuelle créée depuis Abonnements, passée à « Tous les mois » depuis Factures ; mois intermédiaires vides, échéance annuelle intacte ;
 - « bills page also lists recurring income… » ;
 - « daily entries… » : une facture créée depuis Abonnements se rouvre en « Une facture » sans date.
 
@@ -688,6 +694,8 @@ Captures ordinateur et iPhone de la page, du formulaire et de Mon mois revues.
 Limites :
 - Les factures déjà créées avec l'ancien formulaire gardent leur jour et leurs dates internes, mais n'affichent plus de date. Une facture comme « Impôts », sans échéance ce mois-ci, apparaît dans « Factures d'autres mois », où le crayon permet de choisir « Tous les mois » ou « Seulement ce mois ».
 - Une échéance modifiée à la main (note, justificatif) dans un mois qui n'est plus dû est gardée : elle reste visible dans Mon mois.
+- Réimporter l'original Notion d'une facture scindée crée un élément « à rapprocher », comme pour tout import modifié sur l'appareil.
+- Une facture recréée à la main (sans lien) n'est pas reconnue comme la suite d'une ancienne : deux lignes du même nom restent possibles, et visibles.
 - La page Abonnements garde son formulaire complet pour les abonnements.
 
 ## État réel

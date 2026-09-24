@@ -2307,6 +2307,12 @@ describe("factures et revenus sans date : tous les mois, un seul mois, jusqu'à 
     const other = recurrence({ id: "other", label: "Taxe", day: 1, startDate: "2026-11-01", amountMinor: 20000 });
     const renamed = edit(withAccount({ recurrences: [dog, other] }), dog, "monthly", "2026-10", 10000, "Taxe");
     expect(renamed.recurrences.find((r) => r.id === "dog")!.endDate ?? null).toBeNull();
+    // Un identifiant importé qui contient « :suite: » sans la forme de l'app n'est pas une chaîne.
+    const importedA = recurrence({ id: "x:suite:a", label: "A", day: 1, startDate: "2026-01-01", amountMinor: 1000 });
+    const importedB = recurrence({ id: "x:suite:b", label: "B", day: 1, startDate: "2026-06-05", amountMinor: 2000 });
+    const imports = withAccount({ recurrences: [importedA, importedB] });
+    expect(edit(imports, importedA, "monthly", "2026-10", 1000).recurrences[0].endDate ?? null).toBeNull();
+    expect(simpleEditOptions(importedB, "2026-10", imports.recurrences).choices).toContain("monthly");
     // Une fin qui tombe la veille d'une autre facture sans lien ne la bloque pas.
     const insurance = recurrence({ id: "insurance", label: "Assurance", day: 1, startDate: "2026-01-01", endDate: "2026-09-30", amountMinor: 30000 });
     const internet = recurrence({ id: "internet", label: "Internet", day: 1, startDate: "2026-10-01", amountMinor: 6000 });
