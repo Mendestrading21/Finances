@@ -759,6 +759,66 @@ Preuves :
 - Les **22** scénarios `test:e2e` rejoués individuellement. Le scénario « account types… » crée deux comptes 3e pilier, « Léna » et « léna », un compte courant, une dette et un « trading » en épargne. Il vérifie l'ordre et les totaux des groupes, la part de 53 % (13 605 / 25 755, pas / 24 755), et que le compte « trading » reste en épargne après deux ré-enregistrements ; sans le correctif 1, il échoue (« Trading » au lieu de « Autre »).
 - Captures `02` à `04` régénérées (carte « Patrimoine par type », anneau à cinq types) et revues ; aucun débordement horizontal à 1 280 ni à 390 px.
 
+## Passe « carré, simple, logique » : un seul « Il me reste », comptes en lignes compactes (développé et testé le 24 septembre 2026)
+
+Fusion précédente : types de compte et patrimoine par type dans `main` (commit `e429a2f`, PR #55), CI verte.
+
+Demande de l'utilisateur, après avoir saisi à la maison ses comptes et ses factures mensuelles : « tout m'optimiser au maximum pour que ce soit carré, simple à suivre et logique ». Un audit de simplicité (`finance-designer`, 59 captures, démo et un coffre fictif de 17 comptes) a mesuré :
+- quatre « reste » différents pour le même mois ;
+- trois blocs de l'Accueil qui répétaient revenus et dépenses ;
+- le premier « Payer » à 3 119 px sur iPhone ;
+- Mes comptes à 4 049 px de haut, avec 17 comptes.
+
+Ce lot applique les deux premières priorités du plan.
+
+**Un seul « Il me reste »** (Accueil, Mon mois et Factures) :
+- le même chiffre sur les trois pages : revenus du mois moins dépenses payées et prévues, hors mises de côté ;
+- en dessous, une barre de la part des revenus déjà engagée, puis le détail « Revenus » et « Dépenses payées et prévues » ;
+- les mises de côté du mois apparaissent « à part », sans être déduites (`calculs.md` inchangé) ;
+- sans revenu saisi, « — » et une invitation, jamais un reste négatif inventé ;
+- retirés de l'Accueil, parce qu'ils répétaient ces chiffres sous d'autres noms : « Votre mois », « Aperçu du mois », « Le mouvement du mois », « Projection nette », « Disponible après réserves et charges », et l'anneau de répartition, doublon de « Patrimoine par type ». « Après mes factures » disparaît de Factures ;
+- nouvel ordre de l'Accueil : Il me reste → À régler (4 lignes, « Voir tout ») → Mon patrimoine → Patrimoine par type (une ligne par type, avec une barre de part) → « À votre attention », seulement s'il y a quelque chose à signaler ;
+- à 390 × 844 px, dans la démo, « Il me reste » se termine à 422 px et le premier « Payer » à 595 px, sans défiler (au lieu de 1 097 et 3 119). La page passe de 3 108 à 1 883 px.
+
+**Mes comptes en lignes compactes** :
+- une carte par type, avec son total ; chaque compte tient sur une ligne : nom, établissement, date courte (« au 20 août ») seulement si le solde n'est pas du mois, en ambre au-delà de 31 jours, puis le montant ;
+- le montant est celui du total du type : positions comprises pour un compte en mode positions, négatif pour une dette ;
+- un toucher ouvre le détail : mini-courbe, « Actualiser », « Modifier », historique du plus récent au plus ancien (à date égale, le dernier saisi d'abord ; 6 soldes au plus affichés) ;
+- « Solde actuel » dans le formulaire d'un nouveau compte : un seul dialogue au lieu de deux. « Établissement » passe après la devise et reste facultatif ;
+- « Actualiser » n'a plus qu'un champ, « Nouveau solde », daté d'aujourd'hui ; « Autre date » reste repliée ;
+- « Mettre à jour les soldes » : tous les comptes dans un seul dialogue. Seuls les champs remplis changent, chacun devient une observation datée d'aujourd'hui, et un montant invalide nomme son compte. Montants masqués : les soldes actuels n'y sont pas affichés ;
+- le sélecteur de mois n'apparaît plus sur Mes comptes, Projets, Investissements et Réglages, où il ne changeait rien ;
+- avec 17 comptes fictifs, Mes comptes passe de 4 049 à 2 093 px sur iPhone ; sur ordinateur (1 280 × 900), 12 comptes sont visibles sans défiler au lieu de 6 ;
+- les cartes de compte (`accountCard`), les graphiques `Allocation` et `FlowChart`, ainsi que leur CSS devenu inutile, sont retirés.
+
+Relecture indépendante (`finance-verification`, e2e complet et spec indépendante sur un jeu fictif) :
+- calculs, données (mise à jour groupée atomique, aucune écriture si un montant est invalide), confidentialité et accessibilité : conformes ;
+- **un défaut bloquant, corrigé** : un compte en mode positions dont une position n'a pas de valeur affichait ses seules liquidités, alors que le total de son type l'exclut. Sa ligne affiche maintenant « — » et « À valoriser : position ou taux manquant » ; le scénario échoue sans le correctif (« 300.00 CHF » au lieu de « — ») ;
+- défauts mineurs corrigés :
+  - titres coupés en plein mot à 320 px : l'action ou le total passe sous le titre ;
+  - marge haute des lignes de compte ;
+  - dette affichée en positif dans l'historique et dans la mise à jour groupée ;
+  - « Liquidités actuelles » pour un compte en mode positions ;
+  - comptes de la mise à jour groupée dans l'ordre de Mes comptes ;
+  - un nom propre à chaque bouton « Actualiser » ;
+  - une date future dans « Autre date » refusée avec un message, au lieu d'un blocage silencieux ;
+  - une mise de côté sans taux reste visible (« — ») ;
+  - note de valorisation réservée aux placements ;
+  - CSS orphelin retiré.
+
+Preuves :
+- `typecheck`, `test` (**259/259**, dont la date courte d'un solde), `build`.
+- Les **23** scénarios `test:e2e` rejoués individuellement, dont un nouveau, « accounts: compact rows… ». Il couvre :
+  - le solde saisi avec le compte ;
+  - aucune date pour un solde du mois ;
+  - la mise à jour groupée, avec un montant invalide qui nomme son compte ;
+  - « Actualiser » en un champ ;
+  - l'historique, le plus récent d'abord ;
+  - les soldes actuels cachés quand les montants sont masqués ;
+  - le sélecteur de mois absent de Mes comptes.
+- Les scénarios existants sont adaptés : « Il me reste » identique sur l'Accueil, Mon mois et Factures, « À régler », lignes de compte à ouvrir.
+- Captures `02` à `05` régénérées et revues à 1 280, 834 et 390 px, sans débordement horizontal.
+
 ## État réel
 
 | Élément                           | État                                                                                                                                                                   | Résultat et limite                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |

@@ -93,6 +93,16 @@ export function dateLabel(date: string): string {
     timeZone: "UTC",
   }).format(new Date(`${date}T12:00:00Z`));
 }
+/** « 20 août », avec l'année seulement si elle n'est pas celle de `reference`. */
+export function shortDateLabel(date: string, reference = today()): string {
+  if (!isDate(date)) throw new Error("Date invalide.");
+  if (date.slice(0, 4) !== reference.slice(0, 4)) return dateLabel(date);
+  return new Intl.DateTimeFormat("fr-CH", {
+    day: "numeric",
+    month: "short",
+    timeZone: "UTC",
+  }).format(new Date(`${date}T12:00:00Z`));
+}
 function daysInMonth(year: number, month: number): number {
   return month === 2
     ? year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0)
