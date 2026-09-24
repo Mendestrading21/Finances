@@ -123,6 +123,7 @@ test("real rendered demo screenshots at desktop, tablet and mobile; pages, priva
   });
   for (const name of [
     "Mon mois",
+    "Factures",
     "Mes comptes",
     "Épargne et projets",
     "Investissements",
@@ -1837,5 +1838,107 @@ test("sync: a separately created vault in the repository is never merged or over
   await expect(cardA.getByRole("status")).toContainText("autre coffre");
   expect(github.puts).toHaveLength(2);
   await pageB.close();
+  expect(errors).toEqual([]);
+});
+
+test("bills: a monthly bill shows on Factures and Mon mois; a small change applies to one month or from a month on", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  const monthNames = [
+    "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
+    "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre",
+  ];
+  const now = new Date();
+  const goToMonth = async (offset: number) => {
+    const target = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+    await page.locator(".month-picker-trigger").click();
+    // The panel opens on the selected year: step to the target year first.
+    const panelYear = Number(
+      (await page.locator(".month-picker-panel").innerText()).match(/\b(20\d\d)\b/)![1],
+    );
+    for (let y = panelYear; y < target.getFullYear(); y++)
+      await page.getByRole("button", { name: "Année suivante" }).click();
+    for (let y = panelYear; y > target.getFullYear(); y--)
+      await page.getByRole("button", { name: "Année précédente" }).click();
+    await page
+      .getByRole("button", {
+        name: `${monthNames[target.getMonth()]} ${target.getFullYear()}`,
+        exact: true,
+      })
+      .click();
+  };
+  const nav = page.getByRole("navigation", { name: "Navigation principale", exact: true });
+
+  await page.goto("/");
+  await page.getByLabel("Phrase secrète", { exact: true }).fill("Exemple-test-Finance-factures");
+  await page.getByLabel("Confirmer la phrase secrète").fill("Exemple-test-Finance-factures");
+  await page.getByRole("button", { name: "Créer mon coffre" }).click();
+  await nav.getByRole("button", { name: "Factures", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Factures", exact: true })).toBeVisible();
+
+  // Added from Factures: the editor is already set to a bill.
+  await page.getByRole("button", { name: "Ajouter", exact: true }).click();
+  let dialog = page.getByRole("dialog", { name: "Une facture" });
+  await expect(dialog.getByLabel("Nature", { exact: true })).toHaveValue("bill");
+  await dialog.getByLabel("Libellé", { exact: true }).fill("Électricité test");
+  await dialog.getByLabel("Montant", { exact: true }).fill("80");
+  await dialog.getByLabel("Jour du mois", { exact: true }).fill("5");
+  await dialog.getByLabel("Début", { exact: true }).fill(`${now.getFullYear() - 1}-01-01`);
+  await dialog.getByRole("button", { name: "Enregistrer", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  const billRow = page.locator(".row", { hasText: "Électricité test" });
+  await expect(billRow).toHaveCount(1);
+  await expect(billRow).toContainText("80.00");
+  await expect(billRow).toContainText("Pas encore payé");
+
+  // This month only: 85 here, the usual 80 elsewhere.
+  await page.getByRole("button", { name: "Modifier Électricité test", exact: true }).click();
+  dialog = page.getByRole("dialog", { name: "Modifier Électricité test" });
+  await expect(dialog.getByRole("button", { name: "Ce mois seulement", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await dialog.getByLabel(/^Montant/).fill("85");
+  await dialog.getByRole("button", { name: "Enregistrer", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(billRow).toContainText("85.00");
+  await expect(billRow).toContainText("montant modifié ce mois");
+  await expect(page.locator(".stat-card", { hasText: "Factures de" })).toContainText("85.00");
+
+  // Mon mois shows the same single occurrence at 85.
+  await nav.getByRole("button", { name: "Mon mois", exact: true }).click();
+  const operations = page.locator(".card", {
+    has: page.locator(".card-title", { hasText: "Les opérations" }),
+  });
+  const monthRow = operations.locator(".row", { hasText: "Électricité test" });
+  await expect(monthRow).toHaveCount(1);
+  await expect(monthRow).toContainText("85.00");
+
+  // Next month keeps the usual amount; from there on, 90.
+  await nav.getByRole("button", { name: "Factures", exact: true }).click();
+  await goToMonth(1);
+  await expect(billRow).toContainText("80.00");
+  await page.getByRole("button", { name: "Modifier Électricité test", exact: true }).click();
+  dialog = page.getByRole("dialog", { name: "Modifier Électricité test" });
+  await dialog.getByRole("button", { name: "Ce mois et les suivants", exact: true }).click();
+  await dialog.getByLabel(/^Montant/).fill("90");
+  await dialog.getByRole("button", { name: "Enregistrer", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(billRow).toContainText("90.00");
+  await goToMonth(2);
+  await expect(billRow).toContainText("90.00");
+  await goToMonth(0);
+  await expect(billRow).toContainText("85.00");
+  await goToMonth(-1);
+  await expect(billRow).toContainText("80.00");
+
+  // Paying this month's adjusted bill settles that same occurrence, nothing left to pay.
+  await goToMonth(0);
+  await billRow.getByRole("button", { name: "Payer", exact: true }).click();
+  await expect(billRow).toContainText("Payé");
+  await expect(page.locator(".stat-card", { hasText: "Reste à payer" })).toContainText("0.00");
+  await nav.getByRole("button", { name: "Mon mois", exact: true }).click();
+  await expect(monthRow).toHaveCount(1);
+  await expect(monthRow).toContainText("85.00");
   expect(errors).toEqual([]);
 });

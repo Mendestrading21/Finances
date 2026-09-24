@@ -51,6 +51,10 @@ La page contient :
 
 Pour une cadence trimestrielle ou annuelle, afficher le prochain débit réel et, si utile, un **équivalent mensuel** nommé comme tel. Ne pas remplacer le débit réel par une moyenne. Le total du mois n’inclut que les occurrences effectivement prévues dans ce mois.
 
+## Page Factures
+
+Vue ciblée des récurrences de nature `bill` (loyer, assurance, télécom, énergie) pour le mois choisi, sur le même moteur d'occurrences. Le crayon propose « Ce mois seulement » (`withOccurrenceAmount` : l'opération liée à l'échéance porte le montant de ce mois) ou « Ce mois et les suivants » (`withRecurrenceAmount` daté du 1er du mois). Une opération liée à une échéance remplace la projection partout, cohorte comprise.
+
 ## Calculs
 
 Séparer deux axes et les nommer dans l’interface :

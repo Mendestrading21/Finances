@@ -600,6 +600,19 @@ Preuves : `typecheck`, `test` (**178/178**, dont 64 tests de coffre et de synchr
 
 Limites : aucun essai contre le vrai GitHub (bloqué dans l'environnement de développement) ni sur appareil physique ; chaque envoi est un commit, l'historique du dépôt garde les anciennes versions chiffrées ; désactiver ne supprime ni le fichier ni le jeton (à révoquer sur GitHub).
 
+Fusionné dans `main` (commit `fb994ff`, PR #49). CI et déploiement Pages vérifiés verts.
+
+## Page Factures et « petit changement » d'un mois (développé et testé le 24 septembre 2026)
+
+Demande de l'utilisateur : une page Factures pour ses factures fixes de chaque mois, visibles sur le mois en cours, avec la possibilité de modifier en cas de petit changement.
+
+- Nouvelle page **Factures** (8ᵉ page, aussi dans la barre du bas sur téléphone : Accueil, Mon mois, Factures, Comptes, Plus) : récurrences de nature « Charge » du mois choisi, dans l'ordre des échéances (« le 5 »), avec total du mois, déjà payé, reste à payer, bouton « Payer » et « Ajouter » qui ouvre directement « Une facture ».
+- **Crayon « Modifier »** (page Factures, et désormais aussi sur les échéances pas encore enregistrées de Mon mois) : montant avec le choix **« Ce mois seulement »** (enregistre l'échéance de ce mois avec son montant, les autres mois gardent le montant habituel) ou **« Ce mois et les suivants »** (nouveau montant daté du 1er du mois, mois précédents intacts), plus un lien vers la modification complète (nom, jour, compte, arrêt).
+- Calcul (`finance-calculs`) : une opération liée à une échéance (montant ajusté ou règlement) remplace la projection dans la cohorte d'échéances comme dans Mon mois — mêmes montants sur toutes les pages ; `cohortSummary` accepte un filtre de nature ; `withOccurrenceAmount` enregistre le montant d'un seul mois sans doublon. Le modèle n'ayant pas de règlement partiel, une échéance réglée est close (reste dû 0).
+- Démonstration : le loyer (payé) et l'assurance santé (à payer) deviennent des factures mensuelles ; totaux du mois inchangés.
+
+Preuves : `typecheck`, `test` (**193/193**), `build`, les **17** scénarios `test:e2e` rejoués individuellement, dont « bills: … » (facture ajoutée depuis Factures, 85 ce mois seulement puis 80 le mois suivant, 90 à partir du mois suivant, mois précédent à 80, paiement du mois ajusté sans doublon dans Mon mois). Captures iPhone de la page et de la fenêtre « Modifier » revues.
+
 ## État réel
 
 | Élément                           | État                                                                                                                                                                   | Résultat et limite                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
