@@ -1097,6 +1097,13 @@ details[open] > summary::after {
   height: 4px;
   margin-top: 8px;
 }
+/* « Il me reste » : le chiffre du mois, au-dessus des détails. */
+.left-card {
+  margin-bottom: 16px;
+}
+.left-card .metric-value {
+  font-size: 32px;
+}
 .action-stack {
   display: grid;
   gap: 8px;

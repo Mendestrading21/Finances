@@ -16,8 +16,10 @@ Une opération possède un type (revenu, dépense, transfert), un statut explici
 
 | Indicateur | Règle |
 | --- | --- |
-| Revenus reçus du mois | Revenus confirmés encaissés, datés dans le mois sélectionné |
-| Dépenses payées du mois | Dépenses confirmées réglées, datées dans le mois sélectionné |
+| Revenus reçus du mois | Revenus confirmés encaissés, datés dans le mois sélectionné ; une échéance récurrente encaissée avant son mois compte dans son propre mois |
+| Dépenses payées du mois | Dépenses confirmées réglées, datées dans le mois sélectionné ; une échéance récurrente payée avant son mois (le loyer d’octobre payé en septembre) compte dans son propre mois, un paiement en retard dans le mois où il est fait |
+| Il me reste (Mon mois) | Revenus reçus et attendus moins dépenses payées et prévues du mois, transferts et mises de côté exclus ; « — » sans revenu saisi ou avec une inconnue |
+| Après mes factures (Factures) | Revenus fixes dus du mois moins factures dues du mois ; « — » sans revenu fixe |
 | Revenus à recevoir | Prévisions non réglées du mois ; ne pas les ajouter à l’argent disponible |
 | Dépenses à venir | Occurrences non réglées, distinctes des paiements rapprochés |
 | Solde budgétaire réalisé | Revenus reçus moins dépenses payées, transferts exclus |

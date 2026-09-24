@@ -372,12 +372,10 @@ test("daily entries: income, currency-synced transfer, recurrence, investment-on
   await expect(dialog.getByLabel("Devise", { exact: true })).toHaveValue(
     "CHF",
   );
-  await dialog.getByLabel("Catégorie", { exact: true }).fill("Assurances");
-  await dialog.getByLabel("Jour du mois", { exact: true }).fill("15");
-  // A start date safely before this month's day 15 guarantees this month's occurrence
-  // exists regardless of which day "today" actually is when the suite runs (defaulting
-  // to today would often push the start past the 15th and skip this month entirely).
-  await dialog.getByLabel("Début", { exact: true }).fill("2026-01-01");
+  // No date to choose: « Tous les mois » from the month on screen, so this month is due.
+  for (const gone of ["Catégorie", "Jour du mois", "Début", "Fin (facultative)"])
+    await expect(dialog.getByLabel(gone, { exact: true })).toHaveCount(0);
+  await expect(dialog.getByRole("button", { name: "Tous les mois", exact: true })).toHaveAttribute("aria-pressed", "true");
   await dialog
     .getByRole("button", { name: "Enregistrer", exact: true })
     .click();
@@ -856,7 +854,7 @@ test("subscriptions: a status change made on Abonnements updates Mon mois and Ac
     .click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
 
-  // Day 1, monthly, started well in the past: due every month regardless of run date.
+  // Monthly from the month on screen, no date to choose: due this month.
   await nav.getByRole("button", { name: "Abonnements", exact: true }).click();
   await page.getByRole("button", { name: "Ajouter", exact: true }).click();
   dialog = page.getByRole("dialog");
@@ -866,9 +864,6 @@ test("subscriptions: a status change made on Abonnements updates Mon mois and Ac
   await dialog
     .getByLabel("Compte", { exact: true })
     .selectOption({ label: "Compte abonnements test · CHF" });
-  await dialog.getByLabel("Catégorie", { exact: true }).fill("Test");
-  await dialog.getByLabel("Jour du mois", { exact: true }).fill("1");
-  await dialog.getByLabel("Début", { exact: true }).fill("2020-01-01");
   await dialog
     .getByRole("button", { name: "Enregistrer", exact: true })
     .click();
@@ -1043,9 +1038,6 @@ test("Mon mois: reçu, facture, abonnement, virement — montant décroissant da
     await dialog
       .getByLabel("Compte", { exact: true })
       .selectOption({ label: "Compte tri test · CHF" });
-    await dialog.getByLabel("Catégorie", { exact: true }).fill("Test tri");
-    await dialog.getByLabel("Jour du mois", { exact: true }).fill("1");
-    await dialog.getByLabel("Début", { exact: true }).fill("2020-01-01");
     await dialog
       .getByRole("button", { name: "Enregistrer", exact: true })
       .click();
@@ -2065,7 +2057,7 @@ test("bills: a monthly bill shows on Factures and Mon mois; a small change appli
   expect(errors).toEqual([]);
 });
 
-test("bills: a yearly bill made monthly from this month never brings back past months as unpaid", async ({
+test("what is left this month: a bill paid ahead counts in its own month, on Mon mois and Factures", async ({
   page,
 }) => {
   test.setTimeout(120_000);
@@ -2095,59 +2087,68 @@ test("bills: a yearly bill made monthly from this month never brings back past m
   };
   const nav = page.getByRole("navigation", { name: "Navigation principale", exact: true });
   await page.goto("/");
-  await page.getByLabel("Phrase secrète", { exact: true }).fill("Exemple-test-Finance-annuel");
-  await page.getByLabel("Confirmer la phrase secrète").fill("Exemple-test-Finance-annuel");
+  await page.getByLabel("Phrase secrète", { exact: true }).fill("Exemple-test-Finance-reste");
+  await page.getByLabel("Confirmer la phrase secrète").fill("Exemple-test-Finance-reste");
   await page.getByRole("button", { name: "Créer mon coffre" }).click();
-
-  // A yearly bill due three months ago (full form, from Abonnements).
-  const due = new Date(now.getFullYear(), now.getMonth() - 3, 15);
-  const iso = `${due.getFullYear()}-${String(due.getMonth() + 1).padStart(2, "0")}-15`;
-  await nav.getByRole("button", { name: "Abonnements", exact: true }).click();
-  await page.getByRole("button", { name: "Ajouter", exact: true }).click();
-  let dialog = page.getByRole("dialog");
-  await dialog.getByLabel("Libellé", { exact: true }).fill("Impôts annuels test");
-  await dialog.getByLabel("Nature", { exact: true }).selectOption("bill");
-  await dialog.getByLabel("Montant", { exact: true }).fill("1200");
-  await dialog.getByLabel("Catégorie", { exact: true }).fill("Impôts");
-  await dialog.getByLabel("Jour du mois", { exact: true }).fill("15");
-  await dialog.getByLabel("Tous les… mois", { exact: true }).selectOption("12");
-  await dialog.getByLabel("Début", { exact: true }).fill(iso);
-  await dialog.getByRole("button", { name: "Enregistrer", exact: true }).click();
-  await expect(page.getByRole("dialog")).toHaveCount(0);
-
-  // On Factures this month: not due, folded aside, with its real rhythm.
   await nav.getByRole("button", { name: "Factures", exact: true }).click();
-  const billsCard = page.locator(".card", {
-    has: page.locator(".card-title", { hasText: "Mes factures" }),
-  });
-  const row = page.locator(".row", { hasText: "Impôts annuels test" });
-  await expect(billsCard.locator(".row", { hasText: "Impôts annuels test" })).toHaveCount(0);
-  await page.getByText(/^Factures d’autres mois \(1\)$/).click();
-  await expect(row).toContainText("Tous les ans");
-  await row.getByRole("button", { name: "Modifier Impôts annuels test", exact: true }).click();
-  dialog = page.getByRole("dialog", { name: "Une facture" });
-  await expect(dialog.getByRole("button", { name: "Comme maintenant", exact: true })).toHaveAttribute("aria-pressed", "true");
-  await expect(dialog.getByLabel("Montant", { exact: true })).toHaveValue("1200");
-  await dialog.getByRole("button", { name: "Tous les mois", exact: true }).click();
-  await expect(dialog).toContainText("Les mois d’avant ne changent pas.");
-  await dialog.getByLabel("Montant", { exact: true }).fill("100");
-  await dialog.getByRole("button", { name: "Enregistrer", exact: true }).click();
-  await expect(page.getByRole("dialog")).toHaveCount(0);
-  const dueRow = billsCard.locator(".row", { hasText: "Impôts annuels test" });
-  await expect(dueRow).toContainText("100.00");
-  await expect(dueRow).toContainText("Tous les mois");
-  await goToMonth(1);
-  await expect(dueRow).toContainText("100.00");
 
-  // The months before stay as they were: nothing due in between, the yearly one where it was.
-  const leftToPay = page.locator(".stat-card", { hasText: "Reste à payer" }).locator(".metric-value");
-  for (const offset of [-1, -2]) {
-    await goToMonth(offset);
-    await expect(dueRow).toHaveCount(0);
-    await expect(leftToPay).toHaveText(/^0\.00\s*CHF$/);
-  }
-  await goToMonth(-3);
-  await expect(dueRow).toContainText("1 200.00");
+  const add = async (button: string, title: string, label: string, amount: string, single = false) => {
+    await page.getByRole("button", { name: button, exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: title });
+    await dialog.getByLabel("Libellé", { exact: true }).fill(label);
+    await dialog.getByLabel("Montant", { exact: true }).fill(amount);
+    if (single) await dialog.getByRole("button", { name: /^Seulement / }).click();
+    await dialog.getByRole("button", { name: "Enregistrer", exact: true }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+  };
+  await add("Ajouter une facture", "Une facture", "Loyer test", "2000");
+  await add("Ajouter une facture", "Une facture", "Impôts test", "500", true);
+  // No income yet: never a made-up negative « reste », an invitation instead.
+  const left = page.locator(".left-card");
+  await expect(left.locator(".metric-value")).toHaveText("—");
+  await expect(left).toContainText("Ajoutez votre salaire");
+  await add("Ajouter un revenu", "Un revenu", "Salaire test", "5000");
+
+  // Factures: what is left after the fixed bills, this month.
+  await expect(left).toContainText(`Après mes factures en ${monthNames[now.getMonth()].toLowerCase()}`);
+  await expect(left.locator(".metric-value")).toHaveText(/^2\s?500\.00\s*CHF$/);
+  await expect(left).toContainText("Revenus fixes 5 000.00 CHF − factures 2 500.00 CHF");
+
+  // Next month's rent and salary settled ahead of time, today.
+  await goToMonth(1);
+  await expect(left.locator(".metric-value")).toHaveText(/^3\s?000\.00\s*CHF$/);
+  const rent = page.locator(".row", { hasText: "Loyer test" });
+  const salary = page.locator(".row", { hasText: "Salaire test" });
+  await rent.getByRole("button", { name: "Payer", exact: true }).click();
+  await expect(rent).toContainText("Payé");
+  await salary.getByRole("button", { name: "Reçu", exact: true }).click();
+  await expect(salary).toContainText("Reçu");
+
+  // Mon mois, next month: not empty — its own rent and salary, paid ahead, with no date shown.
+  await nav.getByRole("button", { name: "Mon mois", exact: true }).click();
+  const operations = page.locator(".card", {
+    has: page.locator(".card-title", { hasText: "Les opérations" }),
+  });
+  await expect(operations.locator(".row", { hasText: "Loyer test" })).toContainText("Payé");
+  await expect(operations.locator(".row", { hasText: "Salaire test" })).toContainText("Reçu");
+  await expect(left).toContainText(`Il me reste en ${monthNames[(now.getMonth() + 1) % 12].toLowerCase()}`);
+  await expect(operations.locator(".row", { hasText: "Loyer test" })).not.toContainText(/\d{4}-\d{2}-\d{2}/);
+  await expect(left.locator(".metric-value")).toHaveText(/^3\s?000\.00\s*CHF$/);
+  await expect(page.locator(".stat-card", { hasText: "Dépenses payées" }).locator(".metric-value")).toHaveText(/^2\s?000\.00\s*CHF$/);
+
+  // This month: only its own rent (still due) and the one-month tax — never next month's.
+  await goToMonth(0);
+  await expect(operations.locator(".row", { hasText: "Loyer test" })).toHaveCount(1);
+  await expect(operations.locator(".row", { hasText: "Loyer test" })).toContainText("Pas encore payé");
+  await expect(left.locator(".metric-value")).toHaveText(/^2\s?500\.00\s*CHF$/);
+  await expect(page.locator(".stat-card", { hasText: "Dépenses payées" }).locator(".metric-value")).toHaveText(/^0\.00\s*CHF$/);
+
+  // The recurring preview on Mon mois shows a rhythm, never a day.
+  const recurring = page.locator(".card", {
+    has: page.locator(".card-title", { hasText: "Abonnements et charges récurrentes" }),
+  });
+  await expect(recurring.locator(".row", { hasText: "Loyer test" })).toContainText("Tous les mois");
+  await expect(recurring).not.toContainText(/Le \d{1,2}\b/);
   expect(errors).toEqual([]);
 });
 
