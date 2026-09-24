@@ -301,7 +301,7 @@ test("daily entries: income, currency-synced transfer, recurrence, investment-on
   let dialog = page.getByRole("dialog");
   await dialog.getByLabel("Nom du compte").fill("Portefeuille test");
   await dialog.getByLabel("Établissement").fill("Courtier Fictif");
-  await dialog.getByLabel("Type", { exact: true }).selectOption("investment");
+  await dialog.getByLabel("Type de compte", { exact: true }).selectOption("Trading");
   await dialog
     .getByRole("button", { name: "Enregistrer", exact: true })
     .click();
@@ -2149,6 +2149,66 @@ test("what is left this month: a bill paid ahead counts in its own month, on Mon
   });
   await expect(recurring.locator(".row", { hasText: "Loyer test" })).toContainText("Tous les mois");
   await expect(recurring).not.toContainText(/Le \d{1,2}\b/);
+  expect(errors).toEqual([]);
+});
+
+test("account types: accounts grouped by type with totals, on Mes comptes and the Accueil", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  const nav = page.getByRole("navigation", { name: "Navigation principale", exact: true });
+  await page.goto("/");
+  await page.getByLabel("Phrase secrète", { exact: true }).fill("Exemple-test-Finance-types");
+  await page.getByLabel("Confirmer la phrase secrète").fill("Exemple-test-Finance-types");
+  await page.getByRole("button", { name: "Créer mon coffre" }).click();
+  await nav.getByRole("button", { name: "Mes comptes", exact: true }).click();
+
+  const addAccount = async (name: string, type: string, amount: string, custom?: string) => {
+    await page.getByRole("button", { name: "Ajouter", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Un compte" });
+    await dialog.getByLabel("Nom du compte", { exact: true }).fill(name);
+    await dialog.getByLabel("Type de compte", { exact: true }).selectOption(type);
+    if (custom) await dialog.getByLabel("Nom du type", { exact: true }).fill(custom);
+    // Only an investment asks how its balance is valued.
+    await expect(dialog.getByLabel("Ce que représente le solde", { exact: true })).toHaveCount(
+      type === "Trading" ? 1 : 0,
+    );
+    await dialog.getByRole("button", { name: "Enregistrer", exact: true }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    const card = page.locator(".account-card", { hasText: name });
+    await card.getByRole("button", { name: "Actualiser", exact: true }).click();
+    const balance = page.getByRole("dialog");
+    await balance.getByLabel("Solde observé", { exact: true }).fill(amount);
+    await balance.getByRole("button", { name: "Enregistrer", exact: true }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+  };
+  await addAccount("Poste 3a test", "3e pilier", "8295");
+  await addAccount("Helvetia 3a test", "3e pilier", "5310");
+  await addAccount("UBS Léna test", "__autre__", "11150", "Léna");
+  await addAccount("Courant test", "Compte courant", "500");
+
+  const group = (name: string) => page.locator(".account-group", { hasText: name });
+  await expect(page.locator(".account-group-name")).toHaveText(["3e pilier", "Léna", "Compte courant"]);
+  await expect(group("3e pilier").locator(".account-group-total")).toHaveText(/^13\s?605\.00\s*CHF$/);
+  await expect(group("3e pilier").locator(".account-card")).toHaveCount(2);
+  await expect(group("Léna").locator(".account-card")).toContainText("Léna");
+  await expect(page.locator(".accounts-total-value")).toHaveText(/^25\s?255\.00\s*CHF$/);
+
+  // Accueil: the same groups, largest first, with their share.
+  await nav.getByRole("button", { name: "Vue d’ensemble", exact: true }).click();
+  const byType = page.locator(".card", { has: page.locator(".card-title", { hasText: "Patrimoine par type" }) });
+  await expect(byType.locator(".row-title")).toHaveText(["3e pilier", "Léna", "Compte courant"]);
+  await expect(byType.locator(".row", { hasText: "3e pilier" })).toContainText("2 comptes");
+  await expect(byType.locator(".row", { hasText: "3e pilier" })).toContainText("54 %");
+  await expect(byType.locator(".row", { hasText: "Léna" }).locator(".row-value")).toHaveText(/^11\s?150\.00\s*CHF$/);
+
+  // Reopening keeps the custom type.
+  await nav.getByRole("button", { name: "Mes comptes", exact: true }).click();
+  await page.getByRole("button", { name: "Modifier UBS Léna test", exact: true }).click();
+  const reopened = page.getByRole("dialog", { name: "Un compte" });
+  await expect(reopened.getByLabel("Type de compte", { exact: true })).toHaveValue("__autre__");
+  await expect(reopened.getByLabel("Nom du type", { exact: true })).toHaveValue("Léna");
   expect(errors).toEqual([]);
 });
 

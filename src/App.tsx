@@ -55,6 +55,11 @@ import { demoData } from "./demo";
 import { parseTransactionCsv, CSV_TEMPLATE } from "./importCsv";
 import { Icon, type IconName } from "./components/Icon";
 import {
+  accountTypeIcon,
+  accountTypeOf,
+  wealthByType,
+} from "./domain/accountTypes";
+import {
   Allocation,
   FlowChart,
   SPARKLINE_MIN_POINTS,
@@ -1293,6 +1298,8 @@ export default function App() {
     );
   const available = availableSummary(data, currency, month);
   const wealth = wealthSummary(data, currency),
+    // Patrimoine par type de compte (Compte courant, 3e pilier, Léna…), mêmes valeurs que le total.
+    wealthTypes = wealthByType(data, currency),
     accountRanking = rankAccounts(data, currency),
     // Largest to smallest comparable value first (docs/AUDIT_UI_V2.md), then accounts
     // without a common rate/date — never given a guessed position among the ranked ones.
@@ -1649,55 +1656,15 @@ export default function App() {
   function subsVirtualTransaction(r: Recurrence, dueDate: string, amountMinor: number): Transaction {
     return projectedOccurrence(r, dueDate, amountMinor);
   }
-  const kinds = {
-    bank: "Compte bancaire",
-    savings: "Épargne",
-    investment: "Investissement",
-    debt: "Dette",
-  };
-  // The account's own icon (institution-icon slot) now shows what the account IS, not who
-  // holds it: real icons from the existing set, never an emoji or an institution-derived
-  // monogram. "bank"/"vault"/"chart" already carry these exact meanings elsewhere in the app
-  // (recurring charge/saving/wealth trend); "debt" is the one new glyph this lot adds.
-  const kindIcons: Record<Account["kind"], IconName> = {
-    bank: "bank",
-    savings: "vault",
-    investment: "chart",
-    debt: "debt",
-  };
   // Solde affiché (daté, sinon dernier saisi) et sa date, communs à la carte et à la ligne.
   function accountBalance(a: Account) {
     const b = latestBalance(a),
       show = b || a.balances.at(-1);
     return { show, asOf: b?.asOf || null };
   }
-  // Ligne compacte de l'Accueil : le détail (actualiser, historique) reste dans Mes comptes.
-  function accountRow(a: Account) {
-    const { show, asOf } = accountBalance(a);
-    // Mention courte : sur iPhone, une plus longue ferait passer le montant à la ligne.
-    const note = asOf ? `au ${asOf}` : show ? "Non daté" : "À renseigner";
-    return (
-      <div className="row" key={a.id}>
-        <span
-          className="institution-icon"
-          role="img"
-          aria-label={kinds[a.kind]}
-        >
-          <Icon name={kindIcons[a.kind]} size={18} />
-        </span>
-        <div className="row-main">
-          <span className="row-title">{a.name}</span>
-          <span className="row-detail">{a.institution}</span>
-        </div>
-        <span className="row-value">
-          {display(show?.amountMinor ?? null, a.currency)}
-          <span className="row-detail nowrap">{note}</span>
-        </span>
-      </div>
-    );
-  }
   // Le nom du compte est primaire ; l'établissement et la nature restent secondaires.
-  function accountCard(a: Account) {
+  // Sous l'en-tête de son type, la carte n'a pas besoin de répéter le type.
+  function accountCard(a: Account, showType = true) {
     const { show, asOf } = accountBalance(a);
     const note = asOf
       ? `Solde au ${asOf}`
@@ -1721,13 +1688,15 @@ export default function App() {
       <article className="account-card" key={a.id}>
         <div className="account-head">
           <span className="institution-icon">
-            <Icon name={kindIcons[a.kind]} size={20} />
+            <Icon name={accountTypeIcon(accountTypeOf(a))} size={20} />
           </span>
           <div className="account-id">
             <h3>{a.name}</h3>
             <p className="account-sub">
               <span className="institution">{a.institution}</span>
-              <span className="kind-badge">{kinds[a.kind]}</span>
+              {showType && (
+                <span className="kind-badge">{accountTypeOf(a)}</span>
+              )}
             </p>
           </div>
           <button
@@ -2729,7 +2698,7 @@ export default function App() {
               ))}
             </div>
             <Card
-              title="Vos comptes"
+              title="Patrimoine par type"
               icon="wallet"
               action={
                 <button
@@ -2740,7 +2709,27 @@ export default function App() {
                 </button>
               }
             >
-              {sortedAccounts.slice(0, 3).map(accountRow)}
+              {wealthTypes.map((g) => (
+                <div className="row" key={g.label}>
+                  <span className="institution-icon" aria-hidden="true">
+                    <Icon name={accountTypeIcon(g.label)} size={18} />
+                  </span>
+                  <div className="row-main">
+                    <span className="row-title">{g.label}</span>
+                    <span className="row-detail">
+                      {g.count} compte{g.count > 1 ? "s" : ""}
+                      {g.excluded > 0 && `${SEP}${g.excluded} sans solde daté`}
+                      {!hidden &&
+                        g.totalMinor !== null &&
+                        g.totalMinor > 0 &&
+                        wealth.totalMinor !== null &&
+                        wealth.totalMinor > 0 &&
+                        `${SEP}${Math.round((g.totalMinor / wealth.totalMinor) * 100)} %`}
+                    </span>
+                  </div>
+                  <span className="row-value">{display(g.totalMinor)}</span>
+                </div>
+              ))}
               {!data.accounts.length && (
                 <div className="empty-state">
                   <Icon name="wallet" size={30} />
@@ -2760,17 +2749,13 @@ export default function App() {
                 <Allocation
                   hidden={hidden}
                   currency={currency}
-                  // Ordered like sortedAccounts (largest to smallest), not wealth.items'
-                  // insertion order — docs/PLAN_AMELIORATION_V2.md also asks répartitions
-                  // to sort, not just the account list itself.
-                  items={sortedAccounts.flatMap((a) => {
-                    const valueMinor = wealth.items.find(
-                      (i) => i.accountId === a.id,
-                    )?.valueMinor;
-                    return valueMinor == null
+                  unit="types"
+                  // Par type de compte, du plus grand au plus petit (wealthByType est déjà trié).
+                  items={wealthTypes.flatMap((g) =>
+                    g.totalMinor === null
                       ? []
-                      : [{ name: accountName(a.id), value: valueMinor }];
-                  })}
+                      : [{ name: g.label, value: g.totalMinor }],
+                  )}
                 />
                 <p className="footer-note">
                   Actifs positifs uniquement. Dettes déduites du patrimoine
@@ -3040,8 +3025,34 @@ export default function App() {
                     </p>
                   )}
                 </div>
-                <div className="account-grid">
-                  {sortedAccounts.map(accountCard)}
+                {/* Rangés par type de compte, comme dans le Notion : le total de chaque type,
+                    puis ses comptes du plus grand au plus petit. */}
+                <div className="account-groups">
+                  {wealthTypes.map((g) => (
+                    <section
+                      className="account-group"
+                      key={g.label}
+                      data-count={Math.min(g.count, 3)}
+                    >
+                      <h2 className="account-group-title">
+                        <span className="card-icon">
+                          <Icon name={accountTypeIcon(g.label)} size={18} />
+                        </span>
+                        <span className="account-group-name">{g.label}</span>
+                        <span className="account-group-total">
+                          {display(g.totalMinor)}
+                          {g.excluded > 0 && (
+                            <span className="tag">Partiel</span>
+                          )}
+                        </span>
+                      </h2>
+                      <div className="account-grid">
+                        {sortedAccounts
+                          .filter((a) => accountTypeOf(a) === g.label)
+                          .map((a) => accountCard(a, false))}
+                      </div>
+                    </section>
+                  ))}
                 </div>
               </>
             ) : (
@@ -3456,7 +3467,7 @@ export default function App() {
                   <h2>Comptes liés</h2>
                 </div>
                 <div className="account-grid">
-                  {investmentAccounts.map(accountCard)}
+                  {investmentAccounts.map((a) => accountCard(a))}
                 </div>
               </>
             )}

@@ -23,6 +23,11 @@ import {
   today,
   type SimpleChoice,
 } from "../domain/finance";
+import {
+  ACCOUNT_TYPES,
+  accountTypeOf,
+  accountTypePreset,
+} from "../domain/accountTypes";
 import { Icon } from "./Icon";
 /** Resolves the date/budgetMonth pair a transaction save should carry, given the quick
  * editor's single Mois field and the date/budgetMonth values present before this save (read
@@ -126,6 +131,23 @@ export default function Editor({
   });
   const recurrenceType: Recurrence["recurrenceType"] =
     recurrenceKind === "income" ? "income" : expenseRecurrenceType;
+  // Type de compte (Compte courant, 3e pilier…) ou un type à soi (« Léna ») : le type prédéfini
+  // fixe la nature de calcul ; un type libre la choisit à côté.
+  const CUSTOM_TYPE = "__autre__";
+  const existingAccount =
+    spec.type === "account" ? data.accounts.find((a) => a.id === spec.id) : undefined;
+  const [accountType, setAccountType] = useState(() => {
+    if (!existingAccount) return ACCOUNT_TYPES[0].label;
+    const label = accountTypeOf(existingAccount);
+    return accountTypePreset(label) ? label : CUSTOM_TYPE;
+  });
+  const [customKind, setCustomKind] = useState<Account["kind"]>(
+    existingAccount?.kind ?? "savings",
+  );
+  const accountKind =
+    accountType === CUSTOM_TYPE
+      ? customKind
+      : (accountTypePreset(accountType)?.kind ?? "bank");
   // Factures et revenus : pas de date à saisir, « Tous les mois » ou un seul mois.
   const existingRecurrence =
     spec.type === "recurrence"
@@ -362,13 +384,20 @@ export default function Editor({
         : { system: "manual", updatedAt: new Date().toISOString() };
       if (spec.type === "account") {
         const previous = data.accounts.find((a) => a.id === id);
-        const a = {
+        const group =
+          accountType === CUSTOM_TYPE ? get("customType") : accountType;
+        const a: Account = {
           id,
           name: get("name"),
           institution: get("institution"),
-          kind: get("kind") as FinanceData["accounts"][number]["kind"],
+          kind: accountKind,
+          group,
           currency: get("currency"),
-          valuationMode: get("valuationMode") as "total" | "components",
+          // Seul un placement peut compter ses positions à part ; sinon le solde est total.
+          valuationMode:
+            accountKind === "investment"
+              ? (get("valuationMode") as "total" | "components")
+              : "total",
           balances: previous?.balances || [],
           source,
         };
@@ -572,35 +601,62 @@ export default function Editor({
           {spec.type === "account" && (
             <>
               {field("Nom du compte", "name", { required: true })}
-              {field("Établissement", "institution", { required: true })}
-              {field("Type", "kind", {
-                defaultValue: val("kind", "bank"),
+              {field("Établissement", "institution")}
+              {field("Type de compte", "accountType", {
+                value: accountType,
+                onChange: (e) => setAccountType(e.target.value),
                 children: (
                   <>
-                    <option value="bank">Compte bancaire</option>
-                    <option value="savings">Épargne</option>
-                    <option value="investment">Investissement</option>
-                    <option value="debt">Dette</option>
+                    {ACCOUNT_TYPES.map((t) => (
+                      <option key={t.label} value={t.label}>
+                        {t.label}
+                      </option>
+                    ))}
+                    <option value={CUSTOM_TYPE}>Autre (ex. Léna)…</option>
                   </>
                 ),
               })}
+              {accountType === CUSTOM_TYPE && (
+                <>
+                  {field("Nom du type", "customType", {
+                    required: true,
+                    defaultValue:
+                      existingAccount && !accountTypePreset(accountTypeOf(existingAccount))
+                        ? accountTypeOf(existingAccount)
+                        : "",
+                  })}
+                  {field("C’est plutôt", "customKind", {
+                    value: customKind,
+                    onChange: (e) => setCustomKind(e.target.value as Account["kind"]),
+                    children: (
+                      <>
+                        <option value="bank">Un compte</option>
+                        <option value="savings">De l’épargne</option>
+                        <option value="investment">Des placements</option>
+                        <option value="debt">Une dette</option>
+                      </>
+                    ),
+                  })}
+                </>
+              )}
               {currency()}
-              {field("Ce que représente le solde", "valuationMode", {
-                defaultValue: val("valuationMode", "total"),
-                children: (
-                  <>
-                    <option value="total">
-                      Valeur totale, positions incluses
-                    </option>
-                    <option value="components">
-                      Liquidités seules, ajouter les positions
-                    </option>
-                  </>
-                ),
-              })}
+              {accountKind === "investment" &&
+                field("Ce que représente le solde", "valuationMode", {
+                  defaultValue: val("valuationMode", "total"),
+                  children: (
+                    <>
+                      <option value="total">
+                        Valeur totale, positions incluses
+                      </option>
+                      <option value="components">
+                        Liquidités seules, ajouter les positions
+                      </option>
+                    </>
+                  ),
+                })}
               <p className="footer-note field-full">
-                Vous pourrez ensuite ajouter un solde daté. Le choix de
-                valorisation évite de compter les investissements deux fois.
+                Ajoutez ensuite son solde avec « Actualiser ». Le type range
+                le compte sur l’Accueil et dans Mes comptes.
               </p>
             </>
           )}

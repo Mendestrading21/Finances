@@ -731,6 +731,23 @@ Preuves :
 
 Limites : on ne crée plus de récurrence annuelle ou trimestrielle, ni de jour précis (conforme à « pas de dates ») ; les existantes gardent leur rythme. Un paiement anticipé dont la répétition change ensuite reste compté dans le mois de son ancienne échéance.
 
+## Types de compte et patrimoine par type (développé et testé le 24 septembre 2026)
+
+Fusion précédente : « Il me reste » et paiements anticipés dans `main` (commit `19d7d31`, PR #54), CI et déploiement Pages vérifiés verts.
+
+Demande de l'utilisateur, capture de sa table Notion à l'appui : voir sur chaque compte ce qu'il est (compte courant, épargne, prévoyance, trading, le compte de sa fille…) et le patrimoine complet par type sur l'Accueil, pour « un contrôle total ».
+
+- **Type de compte** : champ facultatif `group` sur `Account`, validé (60 caractères, non vide).
+  - Types proposés comme dans le Notion : Compte courant, Épargne, Épargne secours, Impôts, 2e pilier, 3e pilier, Trading, Business, Dette.
+  - « Autre (ex. Léna)… » : un nom libre, et « C'est plutôt » (compte, épargne, placements, dette) qui garde les calculs justes.
+  - Le type ne sert qu'à ranger et nommer. Les calculs restent portés par la nature (`kind`), inchangée.
+  - Un compte existant sans type est rangé selon sa nature (compte bancaire → Compte courant, épargne → Épargne, investissement → Trading, dette → Dette). Aucune migration n'est nécessaire ; un ancien export reste valide.
+- **Mes comptes** : un en-tête par type avec son total, puis ses comptes du plus grand au plus petit. Sur ordinateur, les types se rangent en grille. Le type n'est plus répété sur chaque carte.
+- **Accueil** : la carte « Patrimoine par type » remplace les trois premiers comptes. Elle montre, pour chaque type, le nombre de comptes, la part du patrimoine et le total. La répartition en anneau suit les mêmes types.
+- `wealthByType` réutilise `accountValue`, donc les mêmes valeurs, taux et dates que le total. La somme des types égale le total du patrimoine (testé). Un compte sans solde daté ou sans taux est compté « exclu », jamais estimé.
+- Icônes ajoutées : parapluie (prévoyance), mallette (business), carte (dette), cœur (types libres).
+- La démonstration fictive montre cinq types, dont « 3e pilier » et un compte « Enfant ».
+
 ## État réel
 
 | Élément                           | État                                                                                                                                                                   | Résultat et limite                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |

@@ -31,6 +31,28 @@ const paths: Record<string, ReactNode> = {
       <path d="M17 5h4v4" />
     </>
   ),
+  // Types de compte : prévoyance (piliers), business, carte, type personnel (ex. un enfant).
+  umbrella: (
+    <>
+      <path d="M3 12a9 9 0 0 1 18 0Z" />
+      <path d="M12 12v6.5a2.5 2.5 0 0 0 5 0" />
+    </>
+  ),
+  briefcase: (
+    <>
+      <rect x="3" y="7" width="18" height="13" rx="2" />
+      <path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 13h18" />
+    </>
+  ),
+  card: (
+    <>
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <path d="M3 10h18M7 15h4" />
+    </>
+  ),
+  heart: (
+    <path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10Z" />
+  ),
   folder: (
     <path d="M3 7V5a2 2 0 0 1 2-2h5l3 4h6a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" />
   ),

@@ -1117,11 +1117,53 @@ details[open] > summary::after {
   margin-top: 8px;
 }
 
-/* Comptes */
+/* Comptes, rangés par type (Compte courant, 3e pilier, Léna…) avec le total de chaque type. */
+.account-group-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 24px 0 12px;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.account-group-name {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.account-group-total {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
 .account-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 16px;
+}
+/* Les types se rangent en grille : un type à un compte occupe une case, un type à plusieurs comptes s'étend. */
+.account-groups {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  column-gap: 16px;
+}
+.account-group {
+  min-width: 0;
+}
+.account-group[data-count="2"] {
+  grid-column: span 2;
+}
+.account-group[data-count="3"] {
+  grid-column: 1 / -1;
+}
+.account-group[data-count="1"] > .account-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+.account-group[data-count="2"] > .account-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 .account-card {
   position: relative;
@@ -2342,6 +2384,13 @@ input::file-selector-button {
   .account-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+  .account-groups {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .account-group[data-count="2"],
+  .account-group[data-count="3"] {
+    grid-column: 1 / -1;
+  }
   .three-columns {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -2390,6 +2439,15 @@ input::file-selector-button {
   .three-columns,
   .account-grid {
     grid-template-columns: 1fr;
+  }
+  .account-groups {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .account-group[data-count] {
+    grid-column: 1 / -1;
+  }
+  .account-group[data-count] > .account-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
   .stat-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));

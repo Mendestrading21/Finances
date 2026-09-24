@@ -18,6 +18,10 @@ export type Account = {
   name: string;
   institution: string;
   kind: "bank" | "savings" | "investment" | "debt";
+  /** « Type de compte » as the person names it (Compte courant, 3e pilier, Léna…), used only
+   * to group and label accounts; `kind` still drives every calculation. Absent: derived from
+   * `kind` (see accountTypes.ts). */
+  group?: string;
   currency: Currency;
   valuationMode: "total" | "components";
   balances: Balance[];
