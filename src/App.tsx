@@ -36,6 +36,7 @@ import {
   wealthSummary,
   findOccurrenceTransaction,
   projectedOccurrence,
+  transactionMonth,
   rhythmLabel,
   simpleRepeatOf,
   withOccurrenceAmount,
@@ -1347,7 +1348,7 @@ export default function App() {
   const otherMonthsWithData = [
     ...new Set(
       data.transactions.flatMap((t) => {
-        const m = t.date?.slice(0, 7) ?? t.budgetMonth;
+        const m = transactionMonth(t);
         return m && m !== month ? [m] : [];
       }),
     ),
@@ -1608,6 +1609,35 @@ export default function App() {
       ? Math.min(100, (incomeCohort.settledMinor / incomeCohort.dueMinor) * 100)
       : null;
   const incomes = splitByMonth("income");
+  // « Il me reste » : revenus du mois moins dépenses du mois (Mon mois), ou revenus fixes moins
+  // factures (Factures). Rien de saisi, ou un montant inconnu : « — », jamais un zéro inventé.
+  const sumKnown = (values: (number | null)[]) =>
+    values.every((v) => v === null) ? null : values.reduce<number>((a, v) => a + (v ?? 0), 0);
+  const monthIncome = sumKnown([summary.incomeSettled, summary.incomePlanned]),
+    monthExpense = sumKnown([summary.expenseSettled, summary.expensePlanned]);
+  const monthLeft =
+    summary.unknownCount > 0 || (monthIncome === null && monthExpense === null)
+      ? null
+      : (monthIncome ?? 0) - (monthExpense ?? 0);
+  const billsLeft =
+    incomeCohort.dueMinor === null || billsCohort.dueMinor === null
+      ? null
+      : incomeCohort.dueMinor - billsCohort.dueMinor;
+  const leftCard = (
+    label: string,
+    value: number | null,
+    detail: string,
+  ) => (
+    <div className="stat-card left-card">
+      <p className="metric-label">{label}</p>
+      <div
+        className={`metric-value ${value === null ? "" : value < 0 ? "negative" : "positive"}`}
+      >
+        {display(value)}
+      </div>
+      <p className="meta">{detail}</p>
+    </div>
+  );
   const incomeActive = incomes.due,
     incomeElsewhere = incomes.elsewhere,
     incomeInactive = incomes.stopped;
@@ -1934,10 +1964,9 @@ export default function App() {
             >
               <span className="row-title">{t.label}</span>
               <span className="row-detail">
-                {/* Facture ou revenu fixe pas encore réglé : il compte pour le mois, sans date
-                    (le jour interne n'est pas une échéance). Un règlement garde sa vraie date. */}
-                {t.status !== "settled" &&
-                data?.recurrences.some(
+                {/* Facture ou revenu fixe : il compte pour son mois, sans date à l'écran (le jour
+                    interne n'est pas une échéance ; la date d'un paiement reste enregistrée). */}
+                {data?.recurrences.some(
                   (r) =>
                     r.id === t.recurrenceId &&
                     (r.recurrenceType === "bill" || r.recurrenceType === "income"),
@@ -2848,6 +2877,13 @@ export default function App() {
         )}
         {page === "month" && (
           <>
+            {leftCard(
+              `Il me reste en ${monthLabel(month)}`,
+              monthLeft,
+              summary.unknownCount > 0
+                ? "À compléter : une opération sans date, sans taux de change ou à vérifier."
+                : `Revenus ${display(monthIncome ?? 0)} − dépenses ${display(monthExpense ?? 0)}, payées et prévues.`,
+            )}
             <div className="stat-grid">
               {[
                 { label: "Revenus reçus", v: summary.incomeSettled, tone: "positive" },
@@ -2962,13 +2998,7 @@ export default function App() {
                     </span>
                     <div className="row-main">
                       <span className="row-title">{r.label}</span>
-                      <span className="row-detail">
-                        Le {r.day}
-                        {SEP}
-                        {r.intervalMonths === 1
-                          ? "tous les mois"
-                          : `tous les ${r.intervalMonths} mois`}
-                      </span>
+                      <span className="row-detail">{rhythmLabel(r, month)}</span>
                     </div>
                     <span
                       className={`row-value ${recurrenceTone(r)}`}
@@ -3026,6 +3056,13 @@ export default function App() {
         )}
         {page === "bills" && (
           <>
+            {leftCard(
+              `Il me reste en ${monthLabel(month)}`,
+              billsLeft,
+              billsLeft === null
+                ? "À compléter : un montant dans une autre devise sans taux de change."
+                : `Revenus ${display(incomeCohort.dueMinor)} − factures ${display(billsCohort.dueMinor)}.`,
+            )}
             <div className="stat-grid">
               {[
                 {

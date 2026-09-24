@@ -299,14 +299,23 @@ function occurrenceLinks(
 
 /** Virtual planned occurrences are replaced by an explicit transaction linked to that occurrence,
  * even if its payment date moves to another month. Only actual transaction dates determine cash month. */
+/** Month a transaction counts in: its payment month (or budget month when undated) — except a
+ * recurring occurrence paid ahead of time, which counts in its own month: October's rent paid
+ * on 24 September is October's rent, not a second rent in September. A late payment still
+ * counts when it was paid (February's charge paid 2 March is March's outflow). */
+export function transactionMonth(transaction: Transaction): string | undefined {
+  const paid = transaction.date?.slice(0, 7) ?? transaction.budgetMonth;
+  const due = transaction.occurrenceDate?.slice(0, 7);
+  return due && paid && paid < due ? due : paid;
+}
+
 export function transactionsForMonth(
   data: FinanceData,
   month: string,
 ): Transaction[] {
   monthParts(month); // validates even when nothing below happens to call it
   const result = data.transactions.filter(
-    (transaction) =>
-      (transaction.date?.slice(0, 7) ?? transaction.budgetMonth) === month,
+    (transaction) => transactionMonth(transaction) === month,
   );
   // Link fields first; the projection's id is a second guard only for older exports that never
   // persisted them — a transaction linked to ANOTHER occurrence does not hide this one.

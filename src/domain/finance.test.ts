@@ -775,6 +775,24 @@ describe("cohorte d'échéances (occurrenceCohort)", () => {
     );
     expect(marchFlow).toMatchObject({ status: "settled", date: "2026-03-02" });
   });
+  it("une échéance payée en avance compte dans son propre mois, pas dans celui du paiement", () => {
+    const paidEarly = transaction({
+      id: "rent:2026-10-28",
+      label: "Loyer",
+      amountMinor: 10000,
+      status: "settled",
+      date: "2026-09-24",
+      recurrenceId: "rent",
+      occurrenceDate: "2026-10-28",
+    });
+    const d = data({ recurrences: [lateRecurrence], transactions: [paidEarly] });
+    const september = transactionsForMonth(d, "2026-09").filter((t) => t.recurrenceId === "rent");
+    expect(september.map((t) => [t.id, t.status])).toEqual([["rent:2026-09-28", "planned"]]);
+    const october = transactionsForMonth(d, "2026-10").filter((t) => t.recurrenceId === "rent");
+    expect(october.map((t) => [t.id, t.status, t.date])).toEqual([["rent:2026-10-28", "settled", "2026-09-24"]]);
+    expect(monthSummary(d, "2026-10", "CHF")).toMatchObject({ expenseSettled: 10000, expensePlanned: 0 });
+    expect(monthSummary(d, "2026-09", "CHF")).toMatchObject({ expenseSettled: 0, expensePlanned: 10000 });
+  });
   it("une occurrence encore due n'a pas de règlement", () => {
     const d = data({ recurrences: [lateRecurrence] });
     expect(occurrenceCohort(d, "2026-02")).toEqual([
