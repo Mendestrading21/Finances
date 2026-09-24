@@ -1149,19 +1149,23 @@ describe("détection du dépôt depuis la seule clé", () => {
     expect(await rejection(detectSyncRepos(TOKEN))).toBeInstanceOf(SyncError);
   });
 
-  it("choisit finance-coffre, sinon le seul dépôt privé, sinon demande lequel", async () => {
+  it("ne choisit seul que finance-coffre, jamais un autre dépôt en silence", async () => {
     const input = { owner: "", repo: "", path: PATH, token: TOKEN };
-    stubGitHub(OWNER, [own("autre"), own("finance-coffre")]);
+    stubGitHub(OWNER, [own("finance-coffre")]);
     expect(await resolveSyncInput(input)).toEqual({
       ...input,
       owner: OWNER,
       repo: "finance-coffre",
     });
-    stubGitHub(OWNER, [own(REPO)]);
-    expect(await resolveSyncInput(input)).toEqual({ ...input, owner: OWNER, repo: REPO });
-    stubGitHub(OWNER, [own("un"), own("deux")]);
+    // finance-coffre rendu public par erreur : l'autre dépôt privé n'est pas pris à sa place.
+    stubGitHub(OWNER, [own("notes-perso"), own("finance-coffre", false)]);
     expect((await rejection(resolveSyncInput(input))).message).toMatch(
-      /Plusieurs dépôts privés.*un, deux/,
+      /ouvre le dépôt privé notes-perso, pas finance-coffre/,
+    );
+    // Clé « All repositories » : refusée, même si finance-coffre en fait partie.
+    stubGitHub(OWNER, [own("autre"), own("finance-coffre")]);
+    expect((await rejection(resolveSyncInput(input))).message).toMatch(
+      /plusieurs dépôts privés \(autre, finance-coffre\)\. Limitez-la/,
     );
     stubGitHub(OWNER, []);
     expect((await rejection(resolveSyncInput(input))).message).toMatch(

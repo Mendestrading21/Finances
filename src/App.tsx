@@ -227,13 +227,6 @@ const OLDER_BACKUP_ERROR_PREFIX = "Cette sauvegarde est plus ancienne";
 function isOlderBackupError(message: string): boolean {
   return message.startsWith(OLDER_BACKUP_ERROR_PREFIX);
 }
-// Lien d'ajout d'appareil ouvert directement (#ajouter=…) : lu une fois, puis retiré de l'URL.
-function takeDeviceLinkFromUrl(): string {
-  if (!window.location.hash.startsWith("#ajouter=")) return "";
-  const value = window.location.href;
-  history.replaceState(null, "", window.location.pathname + window.location.search);
-  return value;
-}
 type InstallPromptEvent = Event & { prompt: () => Promise<void> };
 function Auth({
   onOpen,
@@ -268,9 +261,9 @@ function Auth({
     [fromGitHub, setFromGitHub] = useState(false),
     // Réglages GitHub (jeton compris) gardés hors de l'état React, le temps d'une confirmation « plus ancien ».
     pendingGitHubRef = useRef<SyncInput | null>(null),
-    // Nouvel appareil par un lien créé sur un appareil déjà configuré : lien + phrase secrète.
-    [linkInput] = useState(takeDeviceLinkFromUrl),
-    [fromLink, setFromLink] = useState(() => linkInput !== ""),
+    // Nouvel appareil par un code créé sur un appareil déjà configuré : code + phrase secrète.
+    // Collé, jamais ouvert comme adresse : une URL resterait dans l'historique du navigateur.
+    [fromLink, setFromLink] = useState(false),
     pendingLinkRef = useRef<DeviceLink | null>(null),
     [quick, setQuick] = useState(quickUnlockEnabled);
   const standalone =
@@ -461,7 +454,7 @@ function Auth({
           {olderBackup
             ? "Cette sauvegarde est plus ancienne que les données déjà présentes sur cet appareil."
             : fromLink
-              ? "Collez le lien créé sur votre autre appareil (Documents et réglages → Ajouter un appareil), puis tapez votre phrase secrète."
+              ? "Collez le code créé sur votre autre appareil (Documents et réglages → Ajouter un appareil), puis tapez votre phrase secrète."
             : fromGitHub
               ? "Récupérez le coffre chiffré de vos autres appareils, puis déverrouillez-le avec la même phrase secrète."
               : exists
@@ -526,14 +519,13 @@ function Auth({
             <form onSubmit={submit}>
               {fromLink && (
                 <label className="field">
-                  <span>Lien d’ajout</span>
+                  <span>Code d’ajout</span>
                   <input
                     name="link"
                     autoComplete="off"
                     autoCapitalize="none"
                     spellCheck={false}
-                    defaultValue={linkInput}
-                    placeholder="Collez le lien ici"
+                    placeholder="FIN1.…"
                     required
                   />
                 </label>
@@ -678,7 +670,7 @@ function Auth({
                       setError("");
                     }}
                   >
-                    Pas de lien ? Utiliser la clé GitHub
+                    Pas de code ? Utiliser la clé GitHub
                   </button>
                 )}
                 <button
@@ -700,7 +692,7 @@ function Auth({
                   {installPrompt
                     ? "Installez Finance comme une app sur cet appareil."
                     : ios
-                      ? "Pour l’installer : ouvrez ce lien dans Safari, touchez Partager puis « Sur l’écran d’accueil »."
+                      ? "Pour l’installer : ouvrez Finance dans Safari, touchez Partager puis « Sur l’écran d’accueil »."
                       : "Pour l’installer : menu du navigateur, puis « Installer l’application »."}{" "}
                   Chaque navigateur et l’app installée gardent leurs propres données.
                 </span>
@@ -2547,7 +2539,7 @@ export default function App() {
                 <span>
                   Un seul compte sur tous vos appareils : activez la
                   synchronisation, puis ajoutez vos autres appareils avec un
-                  lien. Face ID ou l’empreinte évitent de retaper la phrase.
+                  code. Face ID ou l’empreinte évitent de retaper la phrase.
                 </span>
                 <button className="text-button" onClick={() => navigate("documents")}>
                   Relier mes appareils
@@ -3516,7 +3508,7 @@ export default function App() {
                     const stored = await loadSyncState(key);
                     if (stored.state !== "ready")
                       throw new Error("Synchronisation à reconfigurer sur cet appareil.");
-                    return (await createDeviceLink(key, stored.config)).url;
+                    return (await createDeviceLink(key, stored.config)).code;
                   }}
                 />
               </Card>

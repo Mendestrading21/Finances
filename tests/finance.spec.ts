@@ -1254,6 +1254,13 @@ function serveStaticDir(root: string): Promise<{ server: Server; port: number }>
   });
 }
 
+// The page is still open when a test ends: its keep-alive or in-flight requests (service worker
+// update checks) would keep close() waiting until the test times out. Drop them first.
+function stopServer(server: Server): Promise<void> {
+  server.closeAllConnections();
+  return new Promise<void>((resolve) => server.close(() => resolve()));
+}
+
 // Regression: sw.js's install/activate handlers used to omit skipWaiting()/clients.claim(), so a
 // newly deployed shell stayed "waiting" and an already-open tab (or installed PWA) kept serving
 // the OLD cached shell indefinitely — until every tab was fully closed and reopened, not merely
@@ -1347,7 +1354,7 @@ test("PWA update: a new deploy offers an already-open tab a reload, without clos
       { timeout: 15000 },
     );
   } finally {
-    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await stopServer(server);
     await rm(siteDir, { recursive: true, force: true });
   }
 });
@@ -1410,7 +1417,7 @@ test("PWA update: on the lock screen with nothing typed, a new deploy reloads by
       page.getByRole("button", { name: "Recharger", exact: true }),
     ).toHaveCount(0);
   } finally {
-    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await stopServer(server);
     await rm(siteDir, { recursive: true, force: true });
   }
 });
@@ -1477,7 +1484,7 @@ test("PWA update: locking the vault applies a waiting update", async ({ page }) 
       { timeout: 15000 },
     );
   } finally {
-    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await stopServer(server);
     await rm(siteDir, { recursive: true, force: true });
   }
 });
@@ -1536,7 +1543,7 @@ test("PWA update: after typing on the lock screen, a new deploy waits for Rechar
       ),
     ).toBeNull();
   } finally {
-    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await stopServer(server);
     await rm(siteDir, { recursive: true, force: true });
   }
 });
@@ -1622,11 +1629,11 @@ function fakeGitHub() {
     if (pathname === "/user") return json(200, { login: "exemple-test" });
     if (pathname === "/user/repos")
       return json(200, [
-        { name: "finance-coffre-test", private: true, owner: { login: "exemple-test" } },
+        { name: "finance-coffre", private: true, owner: { login: "exemple-test" } },
       ]);
-    if (pathname === "/repos/exemple-test/finance-coffre-test")
-      return json(200, { full_name: "exemple-test/finance-coffre-test", private: true });
-    if (pathname === "/repos/exemple-test/finance-coffre-test/contents/finance-coffre.json") {
+    if (pathname === "/repos/exemple-test/finance-coffre")
+      return json(200, { full_name: "exemple-test/finance-coffre", private: true });
+    if (pathname === "/repos/exemple-test/finance-coffre/contents/finance-coffre.json") {
       if (request.method() === "GET")
         return file.raw === null
           ? json(404, { message: "Not Found" })
@@ -2050,7 +2057,7 @@ test("bills page also lists recurring income: received, left to receive, changed
   expect(errors).toEqual([]);
 });
 
-test("add a device with a link: the new device only needs the link and the passphrase", async ({
+test("add a device with a code: the new device only needs the code and the passphrase", async ({
   page,
 }) => {
   test.setTimeout(150_000);
@@ -2082,12 +2089,14 @@ test("add a device with a link: the new device only needs the link and the passp
   await syncCard.getByRole("button", { name: "Activer la synchronisation" }).click();
   await expect(syncCard.getByRole("status").first()).toContainText("Synchronisé");
   await syncCard.getByRole("button", { name: "Ajouter un appareil", exact: true }).click();
-  const link = await syncCard.getByLabel("Lien d’ajout d’appareil").inputValue();
-  expect(link).toContain("#ajouter=FIN1.");
+  const link = await syncCard.getByLabel("Code d’ajout d’appareil").inputValue();
+  // The code alone, never an address: an opened URL would stay in the browser history.
+  expect(link).toMatch(/^FIN1\.[A-Za-z0-9._-]+$/);
   expect(link).not.toContain(token);
   expect(link).not.toContain("exemple-test");
+  expect(link).not.toContain("finance-coffre");
 
-  // Device B (own storage): paste the link, type the passphrase — nothing else.
+  // Device B (own storage): paste the code, type the passphrase — nothing else.
   const originA = new URL(page.url()).origin;
   const originB = originA.replace("127.0.0.1", "localhost");
   const pageB = await page.context().newPage();
@@ -2096,7 +2105,7 @@ test("add a device with a link: the new device only needs the link and the passp
   await pageB
     .getByRole("button", { name: "J’ai déjà un compte sur un autre appareil", exact: true })
     .click();
-  await pageB.getByLabel("Lien d’ajout", { exact: true }).fill(link);
+  await pageB.getByLabel("Code d’ajout", { exact: true }).fill(link);
   await pageB.getByLabel("Phrase secrète", { exact: true }).fill("phrase-incorrecte-test");
   await pageB.getByRole("button", { name: "Ajouter cet appareil", exact: true }).click();
   await expect(pageB.getByRole("alert")).toContainText("Phrase secrète incorrecte");
@@ -2106,21 +2115,6 @@ test("add a device with a link: the new device only needs the link and the passp
   await expect(pageB.getByText("Achat lien test", { exact: true })).toBeVisible();
   await pageB.close();
 
-  // Device C (B's origin, storage emptied): the link opened directly fills the form, and the
-  // fragment leaves the address bar.
-  const pageC = await page.context().newPage();
-  pageC.on("pageerror", (e) => errors.push(e.message));
-  await pageC.goto(`${originB}/`);
-  await pageC.evaluate(() => localStorage.clear());
-  await pageC.goto(link.replace(originA, originB));
-  await pageC.reload();
-  await expect(pageC.getByRole("heading", { name: "Ajouter cet appareil" })).toBeVisible();
-  expect(pageC.url()).not.toContain("#ajouter=");
-  await pageC.getByLabel("Phrase secrète", { exact: true }).fill(secret);
-  await pageC.getByRole("button", { name: "Ajouter cet appareil", exact: true }).click();
-  await nav(pageC).getByRole("button", { name: "Mon mois", exact: true }).click();
-  await expect(pageC.getByText("Achat lien test", { exact: true })).toBeVisible();
-  await pageC.close();
   expect(errors).toEqual([]);
 });
 

@@ -89,7 +89,8 @@ export function QuickUnlockCard({ demo }: { demo: boolean }) {
       <p className="footer-note">
         Déverrouillez Finance d’un regard ou d’un doigt au lieu de taper la
         phrase secrète. Elle reste chiffrée sur cet appareil, protégée par Face
-        ID, l’empreinte ou Windows Hello. À activer sur chaque appareil.
+        ID, l’empreinte, Windows Hello ou le code de l’appareil : à activer
+        seulement sur vos appareils personnels, un par un.
       </p>
       <label className="field">
         <span>Phrase secrète</span>

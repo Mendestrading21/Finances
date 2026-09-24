@@ -111,29 +111,27 @@ export function SyncFields({ idPrefix }: { idPrefix: string }) {
   );
 }
 
-/** Complète propriétaire et dépôt depuis la seule clé quand ils ne sont pas indiqués. */
+/** Complète propriétaire et dépôt depuis la seule clé quand ils ne sont pas indiqués.
+ * Seul le dépôt privé finance-coffre est choisi sans le demander : jamais un autre dépôt en silence. */
 export async function resolveSyncInput(input: SyncInput): Promise<SyncInput> {
   if (input.owner && input.repo) return input;
   const { owner, repos } = await detectSyncRepos(input.token);
   // Propriétaire indiqué autre que le titulaire de la clé : sa liste ne dit rien de ses dépôts.
   if (!input.repo && input.owner && input.owner.toLowerCase() !== owner.toLowerCase())
     throw new Error(
-      `Indiquez aussi le dépôt de ${input.owner} dans « Options avancées ».`,
+      `Indiquez aussi le dépôt de ${input.owner} dans «\u00a0Options avancées\u00a0».`,
     );
-  const repo = input.repo
-    ? input.repo
-    : repos.includes(DEFAULT_SYNC_REPO)
-      ? DEFAULT_SYNC_REPO
+  if (input.repo) return { ...input, owner: input.owner || owner };
+  if (repos.length === 1 && repos[0].toLowerCase() === DEFAULT_SYNC_REPO) {
+    return { ...input, owner, repo: repos[0] };
+  }
+  throw new Error(
+    repos.length === 0
+      ? `Aucun dépôt privé accessible avec cette clé : à l’étape 2, choisissez le dépôt ${DEFAULT_SYNC_REPO} (privé).`
       : repos.length === 1
-        ? repos[0]
-        : null;
-  if (!repo)
-    throw new Error(
-      repos.length
-        ? `Plusieurs dépôts privés sont accessibles avec cette clé (${repos.join(", ")}). Indiquez lequel dans « Options avancées ».`
-        : `Aucun dépôt privé accessible avec cette clé : à l’étape 2, choisissez le dépôt ${DEFAULT_SYNC_REPO}.`,
-    );
-  return { ...input, owner: input.owner || owner, repo };
+        ? `Cette clé ouvre le dépôt privé ${repos[0]}, pas ${DEFAULT_SYNC_REPO}. Pour l’utiliser, indiquez-le dans «\u00a0Options avancées\u00a0».`
+        : `Cette clé ouvre plusieurs dépôts privés (${repos.join(", ")}). Limitez-la au seul dépôt ${DEFAULT_SYNC_REPO} («\u00a0Only select repositories\u00a0»), ou indiquez le dépôt dans «\u00a0Options avancées\u00a0».`,
+  );
 }
 
 export function readSyncInput(form: FormData): SyncInput {
@@ -207,12 +205,13 @@ export function SyncCard({
     try {
       setLink(await onCreateLink());
     } catch (err) {
-      setLinkNote(err instanceof Error ? err.message : "Lien impossible à créer.");
+      setLinkNote(err instanceof Error ? err.message : "Code impossible à créer.");
     }
   }
   async function shareLink() {
     try {
-      await navigator.share({ title: "Finance", text: "Ajouter un appareil à Finance", url: link });
+      // Le code seul, pas une URL : une adresse ouverte resterait dans l’historique du navigateur.
+      await navigator.share({ text: link });
     } catch {
       // Partage annulé : le lien reste affiché et copiable.
     }
@@ -220,9 +219,9 @@ export function SyncCard({
   async function copyLink() {
     try {
       await navigator.clipboard.writeText(link);
-      setLinkNote("Lien copié. Collez-le dans Finance sur l’autre appareil.");
+      setLinkNote("Code copié. Collez-le dans Finance sur l’autre appareil.");
     } catch {
-      setLinkNote("Copie impossible ici : sélectionnez le lien et copiez-le.");
+      setLinkNote("Copie impossible ici : sélectionnez le code et copiez-le.");
     }
   }
   const configured = view.state !== "off" && view.state !== "reconfigure";
@@ -291,12 +290,12 @@ export function SyncCard({
               <p className="meta">
                 Sur l’autre appareil, dans Finance (l’app installée de
                 préférence) : touchez « J’ai déjà un compte sur un autre
-                appareil », collez ce lien, puis tapez votre phrase secrète.
+                appareil », collez ce code, puis tapez votre phrase secrète.
               </p>
               <input
                 readOnly
                 value={link}
-                aria-label="Lien d’ajout d’appareil"
+                aria-label="Code d’ajout d’appareil"
                 onFocus={(e) => e.currentTarget.select()}
               />
               <div className="action-row">
@@ -312,8 +311,10 @@ export function SyncCard({
                 </button>
               </div>
               <p className="meta">
-                Le lien contient l’accès au dépôt, chiffré avec votre phrase
-                secrète : envoyez-le seulement à vous-même.
+                Ce code contient l’accès au dépôt, chiffré avec votre phrase
+                secrète : gardez-le comme une sauvegarde et envoyez-le
+                seulement à vous-même. Pour le révoquer, régénérez la clé sur
+                GitHub.
               </p>
             </div>
           )}
