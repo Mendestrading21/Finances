@@ -1197,7 +1197,7 @@ export default function App() {
         }}
       >
         <span
-          className="row-icon"
+          className={`row-icon${t.kind === "income" ? " positive" : t.kind === "expense" ? " negative" : ""}`}
         >
           <Icon
             name={
@@ -1380,7 +1380,7 @@ export default function App() {
         }}
       >
         <span
-          className="row-icon"
+          className={`row-icon ${r.kind === "income" ? "positive" : "negative"}`}
         >
           <Icon name={recurrenceTypeIcons[r.recurrenceType]} />
         </span>
@@ -1730,7 +1730,7 @@ export default function App() {
                 </div>
                 <div className="metric">
                   <div className="metric-label">Dépenses confirmées</div>
-                  <div className="metric-value">
+                  <div className="metric-value negative">
                     {display(summary.expenseSettled)}
                   </div>
                 </div>
@@ -1772,26 +1772,30 @@ export default function App() {
                       ? null
                       : summary.incomePlanned + summary.incomeSettled,
                   meta: null as string | null,
+                  tone: "positive",
                 },
                 {
                   label: "Abonnements (mensuel)",
                   value: subsMonthlyOverview.totalMinor,
                   meta: `${subsMonthlyOverview.count} actif(s)`,
+                  tone: "negative",
                 },
                 {
                   label: "Factures et charges (mensuel)",
                   value: billsMonthlyOverview.totalMinor,
                   meta: `${billsMonthlyOverview.count} actif(s)`,
+                  tone: "negative",
                 },
                 {
                   label: "Épargne (mensuel)",
                   value: savingMonthlyOverview.totalMinor,
                   meta: `${savingMonthlyOverview.count} actif(s)`,
+                  tone: "",
                 },
               ].map((s) => (
                 <div className="stat-card" key={s.label}>
                   <p className="metric-label">{s.label}</p>
-                  <div className="metric-value">
+                  <div className={`metric-value ${s.tone}`}>
                     {s.value !== null ? display(s.value) : "—"}
                   </div>
                   {s.meta && <p className="meta">{s.meta}</p>}
@@ -1948,14 +1952,14 @@ export default function App() {
           <>
             <div className="stat-grid">
               {[
-                { label: "Revenus reçus", v: summary.incomeSettled },
-                { label: "Revenus attendus", v: summary.incomePlanned },
-                { label: "Dépenses payées", v: summary.expenseSettled },
-                { label: "Dépenses prévues", v: summary.expensePlanned },
+                { label: "Revenus reçus", v: summary.incomeSettled, tone: "positive" },
+                { label: "Revenus attendus", v: summary.incomePlanned, tone: "positive" },
+                { label: "Dépenses payées", v: summary.expenseSettled, tone: "negative" },
+                { label: "Dépenses prévues", v: summary.expensePlanned, tone: "negative" },
               ].map((s) => (
                 <div className="stat-card" key={s.label}>
                   <p className="metric-label">{s.label}</p>
-                  <div className="metric-value">{display(s.v)}</div>
+                  <div className={`metric-value ${s.tone}`}>{display(s.v)}</div>
                 </div>
               ))}
             </div>
@@ -2054,7 +2058,7 @@ export default function App() {
                 .map((r) => (
                   <div className="row" key={r.id}>
                     <span
-                      className="row-icon"
+                      className={`row-icon ${r.kind === "income" ? "positive" : "negative"}`}
                     >
                       <Icon name={recurrenceTypeIcons[r.recurrenceType]} />
                     </span>
@@ -2187,11 +2191,13 @@ export default function App() {
               {[
                 {
                   label: "Payé ce mois",
+                  tone: "negative",
                   value:
                     subsFlow.paidMinor !== null ? display(subsFlow.paidMinor) : "—",
                 },
                 {
                   label: "Reçu ce mois",
+                  tone: "positive",
                   value:
                     subsFlow.receivedMinor !== null
                       ? display(subsFlow.receivedMinor)
@@ -2200,7 +2206,7 @@ export default function App() {
               ].map((s) => (
                 <div className="stat-card" key={s.label}>
                   <p className="metric-label">{s.label}</p>
-                  <div className="metric-value">{s.value}</div>
+                  <div className={`metric-value ${s.tone}`}>{s.value}</div>
                 </div>
               ))}
             </div>

@@ -38,6 +38,7 @@
   --glass-blur: 16px;
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px -14px rgba(0, 0, 0, 0.55);
   --shadow-float: 0 24px 56px -20px rgba(0, 0, 0, 0.75), 0 2px 6px rgba(0, 0, 0, 0.35);
+  --positive: #8fd1b5;
   --negative: #e8a3ae;
   --warning: #d9be8c;
   --radius: 16px;
@@ -1460,12 +1461,14 @@ details[open] > summary::after {
   }
 }
 /* Pas de vert ni de rouge : une entrée (« + » et flèche) prend l'accent, une dépense reste en texte ; --negative reste aux erreurs et retards. */
+/* Entrées en vert, sorties en rouge, adoucis ; le signe, la flèche et le libellé portent aussi le sens. */
 .positive,
-.negative {
-  color: var(--text);
+.row-icon.positive {
+  color: var(--positive);
 }
-.row-value.positive {
-  color: var(--accent);
+.negative,
+.row-icon.negative {
+  color: var(--negative);
 }
 .warning {
   color: var(--warning);
@@ -2849,6 +2852,7 @@ input::file-selector-button {
     --muted: #555;
     --accent: #2b4a8b;
     --accent-strong: #1f3a73;
+    --positive: #1d6b4f;
     --negative: #a1283b;
     --warning: #7a5a12;
     --line: #ddd;

@@ -1080,8 +1080,8 @@ test("Mon mois: reçu, facture, abonnement, virement — montant décroissant da
     0,
   );
 
-  // The amount's class follows kind, not status. In Midnight Glass, income reads glacier blue
-  // with "+" and expenses soft white, whether still due or already paid.
+  // The amount's class follows kind, not status: income reads soft green with "+", an expense
+  // soft red, whether still due or already paid.
   await expect(
     operationsCard.locator(".row", { hasText: "Revenu test tri" }).locator(".row-value"),
   ).toHaveClass(/positive/);
