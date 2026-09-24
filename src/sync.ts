@@ -419,6 +419,47 @@ async function github<T>(
   }
 }
 
+/** Connexion simplifiée : avec la seule clé d'accès, retrouve l'identifiant GitHub et les
+ * dépôts privés que cette clé peut lire (le dépôt de l'application exclu). Rien n'est écrit. */
+export async function detectSyncRepos(
+  token: string,
+): Promise<{ owner: string; repos: string[] }> {
+  const clean = trimmed(token);
+  const problem = tokenProblem(clean);
+  if (problem) throw new SyncError(problem);
+  const probe: SyncTarget = { owner: "", repo: "", path: DEFAULT_SYNC_PATH, token: clean };
+  const user = await github(probe, `${API}/user`, {}, async (response) => {
+    if (!response.ok) throw httpError(response);
+    return bodyJson(response);
+  });
+  if (!record(user) || typeof user.login !== "string" || !NAME_PATTERN.test(user.login))
+    throw unexpectedResponse();
+  const owner = user.login;
+  const list = await github(
+    probe,
+    `${API}/user/repos?visibility=private&affiliation=owner&per_page=100&sort=updated`,
+    {},
+    async (response) => {
+      if (!response.ok) throw httpError(response);
+      return bodyJson(response);
+    },
+  );
+  if (!Array.isArray(list)) throw unexpectedResponse();
+  const repos = list
+    .filter(
+      (item): item is Record<string, unknown> =>
+        record(item) &&
+        item.private === true &&
+        typeof item.name === "string" &&
+        NAME_PATTERN.test(item.name) &&
+        record(item.owner) &&
+        item.owner.login === owner &&
+        !APP_REPOSITORIES.includes(`${owner}/${item.name}`.toLowerCase()),
+    )
+    .map((item) => item.name as string);
+  return { owner, repos };
+}
+
 /** Refuses a public (or unconfirmed) repository and the application's own source repository. */
 export async function checkRepoPrivate(target: SyncTarget): Promise<void> {
   const body = await github(target, repoUrl(target), {}, async (response) => {

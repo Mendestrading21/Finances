@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { emptyData, type FinanceData } from "./domain/types";
+import { resolveSyncInput } from "./components/SyncPanel";
 import {
   configureSync,
+  detectSyncRepos,
   disableSync,
   loadSyncConfig,
   loadSyncState,
@@ -1091,5 +1093,97 @@ describe("synchronisation GitHub du coffre chiffré", () => {
       expect(await loadSyncState(key)).toEqual({ state: "reconfigure" });
       expect(deviceA.getItem("finance.sync.v1")).toBe(altered);
     }
+  });
+});
+
+describe("détection du dépôt depuis la seule clé", () => {
+  type Repo = { name: string; private: boolean; owner: { login: string } };
+  function stubGitHub(login: string, repos: Repo[]) {
+    const calls: { url: string; auth: string | null }[] = [];
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const url = new URL(String(input));
+      const auth = new Headers(init.headers).get("authorization");
+      calls.push({ url: String(input), auth });
+      if (auth !== `Bearer ${TOKEN}`) return json(401, { message: "Bad credentials" });
+      if (url.pathname === "/user") return json(200, { login });
+      if (url.pathname === "/user/repos") return json(200, repos);
+      return json(404, { message: "Not Found" });
+    });
+    return calls;
+  }
+  const own = (name: string, isPrivate = true, login = OWNER): Repo => ({
+    name,
+    private: isPrivate,
+    owner: { login },
+  });
+
+  it("ne garde que les dépôts privés du titulaire, hors dépôts de l’application", async () => {
+    const calls = stubGitHub("Mendestrading21", [
+      own("finance-coffre", true, "Mendestrading21"),
+      own("public-notes", false, "Mendestrading21"),
+      own("coffre-orga", true, "une-orga"),
+      own("Finances", true, "Mendestrading21"),
+      own("FINANCE1", true, "Mendestrading21"),
+      { name: "../evil", private: true, owner: { login: "Mendestrading21" } },
+    ]);
+    expect(await detectSyncRepos(`  ${TOKEN}  `)).toEqual({
+      owner: "Mendestrading21",
+      repos: ["finance-coffre"],
+    });
+    expect(calls.map((c) => new URL(c.url).pathname)).toEqual(["/user", "/user/repos"]);
+    const list = new URL(calls[1].url).searchParams;
+    expect(list.get("visibility")).toBe("private");
+    expect(list.get("affiliation")).toBe("owner");
+    expect(calls.every((c) => c.url.startsWith(`${API}/`))).toBe(true);
+  });
+
+  it("refuse une clé mal formée sans rien envoyer", async () => {
+    const calls = stubGitHub(OWNER, []);
+    const error = await rejection(detectSyncRepos("mot-de-passe"));
+    expect(error).toBeInstanceOf(SyncError);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("refuse une réponse inattendue plutôt que d’inventer un propriétaire", async () => {
+    stubGitHub("../pas-un-nom", [own(REPO)]);
+    expect(await rejection(detectSyncRepos(TOKEN))).toBeInstanceOf(SyncError);
+  });
+
+  it("ne choisit seul que finance-coffre, jamais un autre dépôt en silence", async () => {
+    const input = { owner: "", repo: "", path: PATH, token: TOKEN };
+    stubGitHub(OWNER, [own("finance-coffre")]);
+    expect(await resolveSyncInput(input)).toEqual({
+      ...input,
+      owner: OWNER,
+      repo: "finance-coffre",
+    });
+    // finance-coffre rendu public par erreur : l'autre dépôt privé n'est pas pris à sa place.
+    stubGitHub(OWNER, [own("notes-perso"), own("finance-coffre", false)]);
+    expect((await rejection(resolveSyncInput(input))).message).toMatch(
+      /ouvre le dépôt privé notes-perso, pas finance-coffre/,
+    );
+    // Clé « All repositories » : refusée, même si finance-coffre en fait partie.
+    stubGitHub(OWNER, [own("autre"), own("finance-coffre")]);
+    expect((await rejection(resolveSyncInput(input))).message).toMatch(
+      /plusieurs dépôts privés \(autre, finance-coffre\)\. Limitez-la/,
+    );
+    stubGitHub(OWNER, []);
+    expect((await rejection(resolveSyncInput(input))).message).toMatch(
+      /Aucun dépôt privé/,
+    );
+  });
+
+  it("respecte les options avancées sans deviner le dépôt d’un autre propriétaire", async () => {
+    const calls = stubGitHub(OWNER, [own(REPO)]);
+    const full = { owner: "une-orga", repo: "coffre", path: PATH, token: TOKEN };
+    expect(await resolveSyncInput(full)).toBe(full);
+    expect(calls).toHaveLength(0);
+    expect(
+      await resolveSyncInput({ owner: "", repo: "choisi", path: PATH, token: TOKEN }),
+    ).toEqual({ owner: OWNER, repo: "choisi", path: PATH, token: TOKEN });
+    expect(
+      (await rejection(resolveSyncInput({ owner: "une-orga", repo: "", path: PATH, token: TOKEN })))
+        .message,
+    ).toMatch(/Indiquez aussi le dépôt de une-orga/);
   });
 });

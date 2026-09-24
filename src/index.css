@@ -1690,12 +1690,95 @@ details[open] > summary::after {
 .sync-status.sync-error {
   color: var(--negative);
 }
+.device-link {
+  display: grid;
+  gap: 8px;
+}
+.device-link input {
+  width: 100%;
+  min-height: var(--control-h);
+  padding: 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  background: rgba(6, 7, 13, 0.4);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-overflow: ellipsis;
+}
+.device-link .action-row,
+.quick-unlock .action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.quick-unlock {
+  display: grid;
+  gap: 12px;
+}
+.auth-more {
+  display: grid;
+  gap: 4px;
+}
+.auth-more summary {
+  min-height: var(--tap-h);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 14px;
+}
+.auth-more[open] summary {
+  color: var(--text-soft);
+}
+.auth-quick {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.auth-install {
+  margin-top: 16px;
+}
+.sync-steps {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.sync-steps li {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+}
+.sync-steps .meta {
+  margin: 0;
+}
+.sync-advanced summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 13px;
+}
+.sync-advanced[open] {
+  display: grid;
+  gap: 12px;
+}
 .sync-form {
   display: grid;
   gap: 12px;
 }
 .sync-form .footer-note {
   margin: 0;
+}
+.notice.onboarding-notice {
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+.onboarding-notice .text-button {
+  white-space: nowrap;
 }
 /* Une ligne : la hauteur vient du lien (cible de 36 à 44 px), pas d'un rembourrage ajouté. */
 .notice.demo-notice {
@@ -1967,6 +2050,16 @@ input::file-selector-button {
 }
 .auth-card .notice {
   margin-top: 16px;
+}
+.auth-card .sync-steps,
+.auth-card .sync-advanced {
+  margin: 16px 0;
+}
+.auth-card .sync-advanced .field {
+  margin: 0;
+}
+.auth-card .sync-advanced[open] summary {
+  margin-bottom: 4px;
 }
 .auth-card .mobile-brand {
   display: none;

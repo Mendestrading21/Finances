@@ -15,6 +15,7 @@ import {
   vaultExists,
   VaultKeyMismatchError,
   vaultRevision,
+  vaultSaltOnly,
 } from "./vault";
 
 class MemoryStorage implements Storage {
@@ -579,6 +580,31 @@ describe("remplacement depuis un coffre distant et secrets scellés", () => {
     });
     expect(derive).not.toHaveBeenCalled();
     expect(decrypt).not.toHaveBeenCalled();
+  });
+
+  it("lit le seul sel du coffre sans décoder le chiffré, et refuse une enveloppe illisible", async () => {
+    expect(vaultSaltOnly()).toBeNull();
+    await createVault(PASSPHRASE, sample());
+    const envelope = JSON.parse(exportVault());
+    expect(vaultSaltOnly()).toBe(envelope.kdf.salt);
+    // Chiffré abîmé, sel intact : le sel reste lisible (l'ouverture, elle, sera refusée).
+    local.setItem(
+      "finance.vault.v1",
+      JSON.stringify({ ...envelope, ciphertext: "%%%" }),
+    );
+    expect(() => vaultEnvelopeInfo()).toThrow();
+    expect(vaultSaltOnly()).toBe(envelope.kdf.salt);
+    for (const salt of ["", "AAAA", `${envelope.kdf.salt}AAAA`, 42]) {
+      local.setItem(
+        "finance.vault.v1",
+        JSON.stringify({ ...envelope, kdf: { ...envelope.kdf, salt } }),
+      );
+      expect(() => vaultSaltOnly()).toThrow("Sauvegarde Finance invalide");
+    }
+    local.setItem("finance.vault.v1", "{pas du JSON");
+    expect(() => vaultSaltOnly()).toThrow("Sauvegarde Finance invalide");
+    local.setItem("finance.vault.v1", JSON.stringify({ kdf: null }));
+    expect(() => vaultSaltOnly()).toThrow("Sauvegarde Finance invalide");
   });
 
   it("remplace le coffre ouvert par une enveloppe de même clé et garde la session utilisable", async () => {

@@ -554,6 +554,23 @@ export function vaultEnvelopeInfo(): EnvelopeInfo | null {
   return raw === null ? null : envelopeInfo(raw);
 }
 
+/** Only the key-derivation salt of the stored vault, without decoding its ciphertext: fast even on
+ * a vault of several megabytes (checked before a Face ID prompt, which must follow the tap closely).
+ * Null when there is no vault; throws when the envelope is unreadable. */
+export function vaultSaltOnly(): string | null {
+  const raw = readRaw();
+  if (raw === null) return null;
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    throw new Error(INVALID_ERROR);
+  }
+  if (!record(value) || !record(value.kdf)) throw new Error(INVALID_ERROR);
+  fromBase64(value.kdf.salt, 16, 16);
+  return value.kdf.salt as string;
+}
+
 export class VaultKeyMismatchError extends Error {
   constructor() {
     super(
@@ -708,4 +725,42 @@ export async function openSecret(
   } catch {
     throw new Error("Secret illisible avec ce coffre.");
   }
+}
+
+/** Whether `iterations` is a PBKDF2 iteration count this vault format accepts (same bounds as an envelope). */
+export function vaultIterationsAllowed(
+  iterations: unknown,
+): iterations is number {
+  return (
+    typeof iterations === "number" &&
+    Number.isSafeInteger(iterations) &&
+    iterations >= ITERATIONS &&
+    iterations <= MAX_ITERATIONS
+  );
+}
+
+/** Derives the key a vault with this salt and iteration count would use. The key is not an
+ * open vault: it cannot save, seal secrets or replace anything (see openVaultKeyInfo). */
+export async function deriveVaultKey(
+  passphrase: string,
+  salt: string,
+  iterations: number,
+): Promise<CryptoKey> {
+  if (!vaultIterationsAllowed(iterations)) throw new Error(INVALID_ERROR);
+  return deriveKey(passphrase, salt, iterations);
+}
+
+/** Public KDF parameters of an open vault key; never the key or the passphrase. */
+export function openVaultKeyInfo(key: CryptoKey): {
+  salt: string;
+  iterations: number;
+} {
+  const state = keyStates.get(key);
+  if (!state) throw new Error("Coffre verrouillé.");
+  return { salt: state.salt, iterations: state.iterations };
+}
+
+/** True for the single, deliberately vague error of a passphrase that does not open the vault. */
+export function isVaultOpenError(error: unknown): boolean {
+  return error instanceof Error && error.message === OPEN_ERROR;
 }
