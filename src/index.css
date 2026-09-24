@@ -1004,6 +1004,14 @@ details[open] > summary::after {
   gap: 10px;
   min-width: 0;
 }
+/* Mes comptes : le total ne passe sous le type que s'il ne tient vraiment pas à côté. */
+.account-group .card-heading {
+  flex-basis: auto;
+}
+/* Une action passée sous le titre reste au bord droit, comme les totaux. */
+.card-header > .card-action {
+  margin-left: auto;
+}
 /* Tuiles d'icônes décoratives : sans cadre, seul ce qui est actionnable est encadré. */
 .card-icon {
   width: 30px;

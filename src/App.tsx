@@ -1790,7 +1790,9 @@ export default function App() {
     // d'un mois (comme « À votre attention »).
     const note = asOf
       ? valued === null
-        ? "À valoriser : position ou taux manquant"
+        ? a.valuationMode === "components"
+          ? "À valoriser : position ou taux manquant"
+          : "Montant du solde à compléter"
         : asOf.slice(0, 7) === today().slice(0, 7)
           ? null
           : `au ${shortDateLabel(asOf)}`

@@ -819,6 +819,38 @@ Preuves :
 - Les scénarios existants sont adaptés : « Il me reste » identique sur l'Accueil, Mon mois et Factures, « À régler », lignes de compte à ouvrir.
 - Captures `02` à `05` régénérées et revues à 1 280, 834 et 390 px, sans débordement horizontal.
 
+## Écrans plus simples : « Ajouter » à choix, dates courtes, comptes non comptés nommés (développé et testé le 24 septembre 2026)
+
+Fusion précédente : un seul « Il me reste » et comptes en lignes compactes dans `main` (commit `c3e7af4`, PR #56), CI verte, deux passes de relecture indépendante.
+
+Suite de l'audit de simplicité (priorités 5 à 8), à la demande « carré, simple à suivre et logique » :
+- **« Ajouter » de l'Accueil** : un choix en un toucher (une facture, un revenu, une dépense ou un compte), chacun vers son formulaire court. Plus de bouton « Ajouter » dans Documents et réglages, où il ouvrait une opération.
+- **Plus aucune date AAAA-MM-JJ à l'écran** : « 28 sept. », avec l'année seulement si elle diffère. Concerné : opérations, échéances de projets, réserves, positions, taux, documents, pied de page. Les dates restent enregistrées telles quelles.
+- **Comptes non comptés nommés** :
+  - « Non compté : Courtier D USD (taux USD → CHF manquant) » au lieu de « 2 compte(s) exclu(s) : date, valeur ou taux manquant » ;
+  - un bouton « Ajouter un taux de change » sur la carte patrimoine ;
+  - le cas compté dans « À votre attention ».
+- **Coffre vide** : « Ajoutez un compte pour voir votre patrimoine. », au lieu de « Partiel · — · 0 compte(s) exclu(s) ».
+- **« Remettre à payer »** agit tout de suite, sans fenêtre de confirmation du navigateur, avec « Annuler » dans le message. L'annulation s'applique aux données du moment, jamais à une copie ancienne. L'icône « retour » se distingue désormais d'« Actualiser ».
+- **Dialogue d'un compte existant** : titré « Modifier {nom} ».
+- **Import** : la vérification est amenée à l'écran et compte aussi les factures, abonnements et revenus importés.
+- **Libellés** : « Abonnements actifs » (qui comptait toutes les récurrences, salaire compris) devient « Actifs, tous types ».
+- **Textes retirés** : accroche et sous-titres de page, bandeau « FINANCE · SAISIE RAPIDE » des dialogues, et notes de bas de page qui répétaient la page. Le titre de l'Accueil devient « Vue d'ensemble ». Les notes utiles (confidentialité, valorisation, sauvegardes) restent.
+- **Remarques R1 à R3 de la relecture de la PR #56** :
+  - le total d'un type ne passe sous son nom que s'il ne tient pas à côté ;
+  - une action passée à la ligne reste alignée à droite ;
+  - « Montant du solde à compléter » pour un compte dont le solde daté n'a pas de montant.
+
+Preuves :
+- `typecheck`, `test` (**259/259**), `build`.
+- Les **24** scénarios `test:e2e` rejoués individuellement. Le nouveau, « simpler screens… », vérifie :
+  - aucune date ISO sur cinq pages de la démo ;
+  - le coffre vide ;
+  - les quatre choix d'« Ajouter » ;
+  - un compte USD sans taux nommé, avec sa raison, compté dans « À votre attention », et le bouton qui ouvre le formulaire de taux ;
+  - aucun « Ajouter » dans les réglages.
+- « Remettre à payer » puis « Annuler » est vérifié dans le scénario des abonnements.
+
 ## État réel
 
 | Élément                           | État                                                                                                                                                                   | Résultat et limite                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
