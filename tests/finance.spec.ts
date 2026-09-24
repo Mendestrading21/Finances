@@ -34,7 +34,9 @@ test("private vault: account, dated balance, operation, lock, wrong password, re
   // A compact row: a tap opens its detail, where « Actualiser » lives.
   const accountRow = page.locator(".account-row", { hasText: "Banque exemple test" });
   await accountRow.click();
-  await page.getByRole("button", { name: "Actualiser", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Actualiser le solde de Banque exemple test", exact: true })
+    .click();
   dialog = page.getByRole("dialog");
   await dialog.getByLabel("Nouveau solde").fill("1234.56");
   await dialog
@@ -151,9 +153,8 @@ test("real rendered demo screenshots at desktop, tablet and mobile; pages, priva
     .click();
   await page.getByRole("button", { name: "Masquer les montants" }).click();
   await expect(page.locator(".hero-value").first()).toHaveText("••••••");
-  await expect(
-    page.locator('svg[aria-label="Répartition des actifs positifs"]'),
-  ).toHaveCount(0);
+  // Amounts hidden: no share bar either, it would give the proportions away.
+  await expect(page.locator(".type-share")).toHaveCount(0);
   await page.getByRole("button", { name: "Afficher les montants" }).click();
   await page.setViewportSize({ width: 834, height: 1112 });
   await page.screenshot({
@@ -2319,7 +2320,9 @@ test("accounts: compact rows, balance with the account, all balances updated at 
   // One field to update a single account; the history lists the newest balance first.
   await row("Courant soldes test").click();
   const item = page.locator(".account-item", { has: row("Courant soldes test") });
-  await item.getByRole("button", { name: "Actualiser", exact: true }).click();
+  await item
+    .getByRole("button", { name: "Actualiser le solde de Courant soldes test", exact: true })
+    .click();
   const balance = page.getByRole("dialog", { name: "Actualiser le solde" });
   await expect(balance.getByLabel("Date du solde", { exact: true })).toBeHidden();
   await balance.getByLabel("Nouveau solde", { exact: true }).fill("1600");
@@ -2328,6 +2331,34 @@ test("accounts: compact rows, balance with the account, all balances updated at 
   await expect(row("Courant soldes test").locator(".row-value")).toHaveText(/^1\s?600\.00\s*CHF$/);
   await expect(item.locator(".account-history-line").first()).toContainText(/1\s?600\.00/);
   await expect(item.locator(".account-history-line")).toHaveCount(3);
+
+  // A positions account whose position has no value: « — » on its row, like its type's total,
+  // never its cash alone; the update dialog names that amount « Liquidités actuelles ».
+  await page.getByRole("button", { name: "Ajouter", exact: true }).click();
+  const broker = page.getByRole("dialog", { name: "Un compte" });
+  await broker.getByLabel("Nom du compte", { exact: true }).fill("Courtier soldes test");
+  await broker.getByLabel("Type de compte", { exact: true }).selectOption("Trading");
+  await broker.getByLabel("Ce que représente le solde", { exact: true }).selectOption("components");
+  await broker.getByLabel("Solde actuel", { exact: true }).fill("300");
+  await broker.getByRole("button", { name: "Enregistrer", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await nav.getByRole("button", { name: "Investissements", exact: true }).click();
+  await page.getByRole("button", { name: "Ajouter", exact: true }).click();
+  const position = page.getByRole("dialog", { name: "Une position" });
+  await position.getByLabel("Nom du titre", { exact: true }).fill("Titre sans valeur test");
+  await position
+    .getByLabel("Compte d’investissement", { exact: true })
+    .selectOption({ label: "Courtier soldes test · CHF" });
+  await position.getByRole("button", { name: "Enregistrer", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await nav.getByRole("button", { name: "Mes comptes", exact: true }).click();
+  await expect(row("Courtier soldes test").locator(".row-value")).toHaveText("—");
+  await expect(row("Courtier soldes test")).toContainText("À valoriser : position ou taux manquant");
+  await page.getByRole("button", { name: "Mettre à jour les soldes", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "Mettre à jour les soldes" })).toContainText(
+    "Liquidités actuelles 300.00 CHF",
+  );
+  await page.keyboard.press("Escape");
 
   // Amounts hidden: the update dialog does not show current balances either.
   await page.getByRole("button", { name: /Masquer les montants/ }).click();

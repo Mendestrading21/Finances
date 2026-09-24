@@ -791,6 +791,21 @@ Ce lot applique les deux premières priorités du plan.
 - avec 17 comptes fictifs, Mes comptes passe de 4 049 à 2 093 px sur iPhone ; sur ordinateur (1 280 × 900), 12 comptes sont visibles sans défiler au lieu de 6 ;
 - les cartes de compte (`accountCard`), les graphiques `Allocation` et `FlowChart`, ainsi que leur CSS devenu inutile, sont retirés.
 
+Relecture indépendante (`finance-verification`, e2e complet et spec indépendante sur un jeu fictif) :
+- calculs, données (mise à jour groupée atomique, aucune écriture si un montant est invalide), confidentialité et accessibilité : conformes ;
+- **un défaut bloquant, corrigé** : un compte en mode positions dont une position n'a pas de valeur affichait ses seules liquidités, alors que le total de son type l'exclut. Sa ligne affiche maintenant « — » et « À valoriser : position ou taux manquant » ; le scénario échoue sans le correctif (« 300.00 CHF » au lieu de « — ») ;
+- défauts mineurs corrigés :
+  - titres coupés en plein mot à 320 px : l'action ou le total passe sous le titre ;
+  - marge haute des lignes de compte ;
+  - dette affichée en positif dans l'historique et dans la mise à jour groupée ;
+  - « Liquidités actuelles » pour un compte en mode positions ;
+  - comptes de la mise à jour groupée dans l'ordre de Mes comptes ;
+  - un nom propre à chaque bouton « Actualiser » ;
+  - une date future dans « Autre date » refusée avec un message, au lieu d'un blocage silencieux ;
+  - une mise de côté sans taux reste visible (« — ») ;
+  - note de valorisation réservée aux placements ;
+  - CSS orphelin retiré.
+
 Preuves :
 - `typecheck`, `test` (**259/259**, dont la date courte d'un solde), `build`.
 - Les **23** scénarios `test:e2e` rejoués individuellement, dont un nouveau, « accounts: compact rows… ». Il couvre :

@@ -988,10 +988,13 @@ details[open] > summary::after {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 12px;
   margin-bottom: 16px;
 }
+/* Écran étroit : l'action ou le total passe sous le titre plutôt que de le couper en plein mot. */
 .card-heading {
+  flex: 1 1 160px;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -1017,6 +1020,8 @@ details[open] > summary::after {
   font-weight: 600;
   letter-spacing: -0.01em;
   line-height: 1.35;
+  /* Coupé entre les mots ; au milieu d'un mot seulement s'il est plus large que la carte. */
+  overflow-wrap: break-word;
 }
 .card-action {
   min-height: var(--tap-h);
@@ -1061,13 +1066,6 @@ details[open] > summary::after {
 }
 .three-columns:has(> .goal-card) {
   align-items: stretch;
-}
-/* Colonne de cartes courtes : reprend l'espacement de la grille parente (16 px, 12 px sur mobile). */
-.card-stack {
-  display: grid;
-  gap: inherit;
-  align-content: start;
-  min-width: 0;
 }
 .stat-grid {
   display: grid;
@@ -1207,12 +1205,6 @@ details[open] > summary::after {
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
-/* Solde < 270 px (grille de deux ou trois cartes étroites) : la courbe, réduite à moins de 50 px, ne montrerait plus de tendance. */
-@container (max-width: 269px) {
-  .account-sparkline {
-    display: none;
-  }
-}
 .meta {
   color: var(--muted);
   font-size: 13px;
@@ -1262,6 +1254,7 @@ details[open] > summary::after {
   margin-top: 16px;
 }
 .account-group-total {
+  margin-left: auto;
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -1270,7 +1263,8 @@ details[open] > summary::after {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-.row.account-row {
+/* Plus précis que .row:first-child : chaque ligne garde 12 px en haut comme en bas. */
+.account-item > .row.account-row {
   flex-wrap: nowrap;
   padding-top: 12px;
   cursor: pointer;

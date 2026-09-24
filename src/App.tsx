@@ -1628,7 +1628,7 @@ export default function App() {
               <dt>Dépenses payées et prévues</dt>
               <dd className="negative">{display(monthExpense ?? 0)}</dd>
             </div>
-            {savingCohort.dueMinor !== null && savingCohort.dueMinor > 0 && (
+            {((savingCohort.dueMinor ?? 0) > 0 || savingCohort.excluded > 0) && (
               <div>
                 <dt>Mises de côté, à part</dt>
                 <dd>{display(savingCohort.dueMinor)}</dd>
@@ -1667,24 +1667,26 @@ export default function App() {
       a.currency,
       data?.fxRates ?? [],
     ).valueMinor;
-    const amount =
-      valued ??
-      (show?.amountMinor == null
-        ? null
-        : a.kind === "debt"
-          ? -Math.abs(show.amountMinor)
-          : show.amountMinor);
+    // Le repli ne vaut que pour un solde non daté : un compte daté mais impossible à valoriser
+    // (position sans valeur ou sans taux) reste « — », comme dans le total de son type.
+    const signed = (v: number | null) =>
+      v === null ? null : a.kind === "debt" ? -Math.abs(v) : v;
+    const amount = valued ?? (asOf ? null : signed(show?.amountMinor ?? null));
     // Un solde de ce mois n'a pas besoin de date ; plus ancien, sa date courte, en ambre au-delà
     // d'un mois (comme « À votre attention »).
     const note = asOf
-      ? asOf.slice(0, 7) === today().slice(0, 7)
-        ? null
-        : `au ${shortDateLabel(asOf)}`
+      ? valued === null
+        ? "À valoriser : position ou taux manquant"
+        : asOf.slice(0, 7) === today().slice(0, 7)
+          ? null
+          : `au ${shortDateLabel(asOf)}`
       : show
         ? "Non daté · à vérifier"
         : "Solde à renseigner";
     const late =
-      !asOf || Date.parse(today()) - Date.parse(asOf) > 31 * 86400000;
+      !asOf ||
+      valued === null ||
+      Date.parse(today()) - Date.parse(asOf) > 31 * 86400000;
     const detail = [a.institution, note].filter(Boolean);
     // Un point par date connue et déjà passée, le dernier saisi l'emportant comme dans latestBalance.
     const trendByDate = new Map<string, number>();
@@ -1724,6 +1726,7 @@ export default function App() {
             <button
               className="button small secondary"
               onClick={() => edit({ type: "balance", id: a.id })}
+              aria-label={`Actualiser le solde de ${a.name}`}
             >
               <Icon name="refresh" size={18} />
               Actualiser
@@ -1737,15 +1740,17 @@ export default function App() {
               Modifier
             </button>
           </div>
-          <p className="footer-note">
-            {a.valuationMode === "components"
-              ? "Liquidités et positions datées additionnées."
-              : "Solde total, positions comprises."}
-          </p>
+          {a.kind === "investment" && (
+            <p className="footer-note">
+              {a.valuationMode === "components"
+                ? "Liquidités et positions datées additionnées."
+                : "Solde total, positions comprises."}
+            </p>
+          )}
           {history.slice(0, HISTORY_SHOWN).map((v) => (
             <p className="meta account-history-line" key={v.id}>
               <span>{v.asOf && isDate(v.asOf) ? dateLabel(v.asOf) : "Date inconnue"}</span>
-              <span>{display(v.amountMinor, a.currency)}</span>
+              <span>{display(signed(v.amountMinor), a.currency)}</span>
             </p>
           ))}
           {history.length > HISTORY_SHOWN && (
@@ -2649,7 +2654,7 @@ export default function App() {
                     className="card-action"
                     onClick={() => navigate("accounts")}
                   >
-                    Tous les comptes <Icon name="chevron-right" size={18} />
+                    Voir tout <Icon name="chevron-right" size={18} />
                   </button>
                 }
               >
@@ -3687,6 +3692,9 @@ export default function App() {
           data={data}
           month={month}
           hidden={hidden}
+          accountOrder={wealthTypes.flatMap((g) =>
+            sortedAccounts.filter((a) => g.accountIds.includes(a.id)).map((a) => a.id),
+          )}
           onSave={(next) => {
             // Un tirage pendant l'édition : les champs du formulaire datent d'avant, ne pas les réécrire.
             if (pullCount.current !== editorPulls.current)

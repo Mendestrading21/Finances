@@ -96,6 +96,7 @@ export default function Editor({
   data,
   month = today().slice(0, 7),
   hidden = false,
+  accountOrder,
   onSave,
   onClose,
 }: {
@@ -105,6 +106,8 @@ export default function Editor({
   month?: string;
   /** Montants masqués : les soldes actuels ne s'affichent pas dans la mise à jour groupée. */
   hidden?: boolean;
+  /** Ordre des comptes de Mes comptes (par type, puis par valeur) pour la mise à jour groupée. */
+  accountOrder?: string[];
   onSave: (data: FinanceData) => Promise<void>;
   onClose: () => void;
 }) {
@@ -435,6 +438,8 @@ export default function Editor({
       if (spec.type === "balance") {
         const a = updated.accounts.find((a) => a.id === id);
         if (!a) throw new Error("Compte introuvable.");
+        if (get("asOf") > today())
+          throw new Error("La date du solde ne peut pas être dans le futur.");
         a.balances.push({
           id: crypto.randomUUID(),
           amountMinor: num("amountMinor"),
@@ -720,7 +725,6 @@ export default function Editor({
                 {field("Date du solde", "asOf", {
                   type: "date",
                   defaultValue: today(),
-                  max: today(),
                 })}
               </details>
             </>
@@ -731,7 +735,12 @@ export default function Editor({
                 Remplissez seulement ce qui a changé : datés d’aujourd’hui, les
                 autres soldes ne bougent pas.
               </p>
-              {data.accounts.map((a) => {
+              {[
+                ...(accountOrder ?? []).flatMap((id) =>
+                  data.accounts.filter((a) => a.id === id),
+                ),
+                ...data.accounts.filter((a) => !accountOrder?.includes(a.id)),
+              ].map((a) => {
                 const last = latestBalance(a) ?? a.balances.at(-1);
                 return (
                   <label className="field" key={a.id}>
@@ -746,7 +755,12 @@ export default function Editor({
                     <small>
                       {hidden || !last
                         ? a.currency
-                        : `Actuel ${money(last.amountMinor, a.currency)}`}
+                        : `${a.valuationMode === "components" ? "Liquidités actuelles" : "Actuel"} ${money(
+                            last.amountMinor === null || a.kind !== "debt"
+                              ? last.amountMinor
+                              : -Math.abs(last.amountMinor),
+                            a.currency,
+                          )}`}
                     </small>
                   </label>
                 );
