@@ -650,6 +650,36 @@ Preuves : `typecheck`, `test` (**241/241**, dont 18 tests Face ID, 6 du code d'a
 
 Limites : aucun essai sur appareil physique ni contre le vrai GitHub (bloqué dans l'environnement de développement). Face ID dans une PWA demande l'extension PRF : iOS/iPadOS 18 ou plus récent, Windows Hello seulement sur des versions récentes de Windows 11 (sources lues en extraits, non vérifiées) — sinon la phrase secrète reste nécessaire. La vérification accepte aussi le code de l'appareil. L'app installée et chaque navigateur gardent des données séparées (le code d'ajout sert aussi à relier l'app installée). Le code d'ajout se protège comme une sauvegarde : il permet d'essayer des phrases hors ligne et ne se révoque qu'en régénérant la clé GitHub. Une clé « All repositories » n'est pas détectable quand `finance-coffre` est le seul dépôt privé : l'étape 2 demande « Only select repositories ». Tous les projets Pages du compte partagent l'origine `mendestrading21.github.io` (risque préexistant).
 
+## Factures et revenus sans date : « Tous les mois » ou « Seulement ce mois » (développé et testé le 24 septembre 2026)
+
+Fusion précédente : connexion simplifiée dans `main` (commit `af9bf3a`, PR #52), CI et déploiement Pages vérifiés verts.
+
+Demande de l'utilisateur, capture à l'appui (« Impôts — octobre 2026 · Aucune échéance ») : plus de dates ni d'échéances pour les factures ; à l'ajout, seulement « tous les mois » ou « juste le mois sélectionné ». Cause : l'ancien formulaire demandait jour, fréquence, début et fin ; un début par défaut « aujourd'hui » après le jour choisi sautait le mois en cours, et une fin ou une fréquence mal réglée laissait une facture sans échéance.
+
+- **Ajout** (page Factures) : libellé, montant, devise, compte et « Répétition » : **Tous les mois** (dès le mois affiché) ou **Seulement {mois affiché}**. Aucun jour, début, fin, fréquence ni catégorie à saisir.
+- **Modification** d'une facture ou d'un revenu existant : même formulaire. Le jour interne et les paiements déjà enregistrés sont conservés. Une cadence réglée ailleurs (tous les 3 mois, fin datée) reste telle quelle avec « Comme maintenant ». Un seul mois a un seul montant.
+- **Page Factures** : chaque ligne indique « Tous les mois » ou « Seulement ce mois » au lieu du jour, et plus jamais « Aucune échéance ». Ce qui n'est pas dû ce mois-ci est replié dans « Factures d'autres mois » / « Revenus d'autres mois ». Tri : à payer d'abord, puis montant.
+- **Mon mois** et fenêtre « Modifier » : plus de date inventée pour une facture ou un revenu pas encore réglé. Un paiement garde sa vraie date.
+- Calcul : `simpleRepeatOf`, `monthBounds` et `withSimpleSchedule` (finance.ts). Ils ne déplacent jamais un début existant plus tard, sauf pour « un seul mois ». Un nouveau montant s'applique dès le mois affiché, via `withRecurrenceAmount`.
+
+Vérification indépendante (`finance-verification`) en cours.
+
+Preuves : `typecheck`, `test` (**250/250**, dont 9 tests « sans date » ; l'ancien défaut « début aujourd'hui = rien ce mois-ci » est reproduit dans un test), `build`, les **20** scénarios `test:e2e` rejoués individuellement. Ils couvrent notamment :
+- « bills… » :
+  - facture ajoutée sans date sur le mois précédent ;
+  - facture « Seulement ce mois » présente ce mois, absente le mois suivant et repliée le mois d'avant ;
+  - paiement des deux ;
+  - passage d'un seul mois à « Tous les mois » depuis son formulaire.
+- « bills page also lists recurring income… » ;
+- « daily entries… » : une facture créée depuis Abonnements se rouvre en « Une facture » sans date.
+
+Captures ordinateur et iPhone de la page, du formulaire et de Mon mois revues.
+
+Limites :
+- Les factures déjà créées avec l'ancien formulaire gardent leur jour et leurs dates internes, mais n'affichent plus de date. Une facture comme « Impôts », sans échéance ce mois-ci, apparaît dans « Factures d'autres mois », où le crayon permet de choisir « Tous les mois » ou « Seulement ce mois ».
+- Réactiver « Tous les mois » sur une facture terminée depuis longtemps fait réapparaître les mois intermédiaires comme non payés.
+- La page Abonnements garde son formulaire complet pour les abonnements.
+
 ## État réel
 
 | Élément                           | État                                                                                                                                                                   | Résultat et limite                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
