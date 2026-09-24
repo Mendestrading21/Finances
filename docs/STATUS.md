@@ -698,6 +698,39 @@ Limites :
 - Une facture recréée à la main (sans lien) n'est pas reconnue comme la suite d'une ancienne : deux lignes du même nom restent possibles, et visibles.
 - La page Abonnements garde son formulaire complet pour les abonnements.
 
+## « Il me reste », facture payée en avance dans son mois, plus aucune date (développé et testé le 24 septembre 2026)
+
+Fusion précédente : factures et revenus sans date dans `main` (commit `2fecfe3`, PR #53), CI et déploiement Pages vérifiés verts.
+
+Demande de l'utilisateur, captures à l'appui : son Mon mois d'octobre était vide, avec « — » sur les quatre totaux, alors que loyer, impôts et salaire sont mensuels. Un formulaire affichait encore jour, début et fin. Il voulait « pas de dates, juste le mois ou tous les mois », et savoir « combien il me reste après mes dépenses et mon salaire », sur Mon mois comme sur Factures.
+
+- **Cause du mois vide :** les échéances d'octobre avaient été payées ou reçues le 24 septembre, et Mon mois les rangeait au mois du paiement.
+  - `transactionMonth` : une échéance réglée avant son mois compte désormais dans son propre mois. Un règlement en retard compte toujours quand il est fait (exemple obligatoire février/mars intact).
+  - Utilisé par `transactionsForMonth`, donc par Mon mois, l'Accueil, « Voir les autres mois » et `recurringFlowSummary`.
+  - `calculs.md` est amendé en conséquence.
+- **« Il me reste en {mois} »** en tête de Mon mois : revenus reçus et attendus moins dépenses payées et prévues, hors transferts et mises de côté.
+  - Sans revenu saisi, ou avec une inconnue : « — » et une invite, jamais un reste négatif inventé.
+  - Sur Factures, **« Après mes factures en {mois} »** : revenus fixes moins factures.
+- **Aucune date à saisir pour toute récurrence**, abonnements et mises de côté compris : libellé, type (à l'ajout), nature, montant, compte, puis « Tous les mois » ou « Seulement {mois} ».
+  - Le formulaire complet (jour, fréquence, début, fin) est retiré.
+  - La catégorie est déduite de la nature.
+  - Un rythme existant (annuel…) est gardé avec « Comme maintenant ».
+- **Mon mois :** la carte des récurrences affiche le rythme au lieu de « Le 30 », et aucune date n'apparaît sur les lignes liées à une récurrence.
+
+Vérification indépendante (`finance-verification`), scénario de l'utilisateur rejoué :
+- Octobre : 4 000 reçus et 2 500 payés au lieu de vide. Septembre sans doublon. Factures et Mon mois concordent.
+- Argent disponible et paiement en retard inchangés.
+- Deux points corrigés : un revenu absent n'est plus traité comme zéro, et la carte de Factures a son propre titre. Plus de date non plus sur les abonnements et mises de côté.
+
+Preuves :
+- `typecheck`, `test` (**254/254** ; le paiement anticipé compté dans son mois échoue avec l'ancienne règle), `build`.
+- Les **21** scénarios `test:e2e` rejoués individuellement. Le nouveau « what is left this month… » couvre :
+  - « — » sans salaire, puis « Après mes factures » exact ;
+  - le mois suivant payé en avance : non vide, sans date ;
+  - « Il me reste » exact, et aucun doublon ce mois-ci.
+
+Limites : on ne crée plus de récurrence annuelle ou trimestrielle, ni de jour précis (conforme à « pas de dates ») ; les existantes gardent leur rythme. Un paiement anticipé dont la répétition change ensuite reste compté dans le mois de son ancienne échéance.
+
 ## État réel
 
 | Élément                           | État                                                                                                                                                                   | Résultat et limite                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
