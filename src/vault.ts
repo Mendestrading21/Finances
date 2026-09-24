@@ -236,6 +236,7 @@ async function seal(
   key: CryptoKey,
   state: Pick<KeyState, "salt" | "iterations">,
   data: FinanceData,
+  savedAt = new Date().toISOString(),
 ): Promise<string> {
   const validated = validateData(data);
   const plaintext = encoder.encode(JSON.stringify(validated));
@@ -259,7 +260,7 @@ async function seal(
     cipher: { name: "AES-GCM", iv: toBase64(iv), tagLength: 128 },
     // Authenticated, unencrypted save time. Not secret; lets a later restore warn
     // before silently replacing data saved more recently than the backup being applied.
-    savedAt: new Date().toISOString(),
+    savedAt,
   };
   try {
     const ciphertext = await crypto.subtle.encrypt(
@@ -281,6 +282,29 @@ async function seal(
   }
 }
 
+async function decryptEnvelope(
+  key: CryptoKey,
+  envelope: Envelope,
+): Promise<FinanceData> {
+  const plaintext = new Uint8Array(
+    await webCrypto().subtle.decrypt(
+      {
+        name: "AES-GCM",
+        iv: fromBase64(envelope.cipher.iv, 12, 12),
+        tagLength: 128,
+        additionalData: additionalData(envelope),
+      },
+      key,
+      fromBase64(envelope.ciphertext, 17, MAX_PLAINTEXT_BYTES + 16),
+    ),
+  );
+  try {
+    return validateData(JSON.parse(decoder.decode(plaintext)));
+  } finally {
+    plaintext.fill(0);
+  }
+}
+
 async function open(
   envelope: Envelope,
   passphrase: string,
@@ -292,24 +316,18 @@ async function open(
       envelope.kdf.salt,
       envelope.kdf.iterations,
     );
-    const plaintext = new Uint8Array(
-      await webCrypto().subtle.decrypt(
-        {
-          name: "AES-GCM",
-          iv: fromBase64(envelope.cipher.iv, 12, 12),
-          tagLength: 128,
-          additionalData: additionalData(envelope),
-        },
-        key,
-        fromBase64(envelope.ciphertext, 17, MAX_PLAINTEXT_BYTES + 16),
-      ),
-    );
-    try {
-      const data = validateData(JSON.parse(decoder.decode(plaintext)));
-      return { key, data };
-    } finally {
-      plaintext.fill(0);
-    }
+    return { key, data: await decryptEnvelope(key, envelope) };
+  } catch {
+    throw new Error(OPEN_ERROR);
+  }
+}
+
+async function openWithKey(
+  key: CryptoKey,
+  envelope: Envelope,
+): Promise<FinanceData> {
+  try {
+    return await decryptEnvelope(key, envelope);
   } catch {
     throw new Error(OPEN_ERROR);
   }
@@ -468,4 +486,178 @@ export async function importVault(
     expectedRaw: normalized,
   });
   return result;
+}
+
+export type EnvelopeInfo = {
+  savedAt?: string;
+  salt: string;
+  iterations: number;
+};
+
+/** Validated, unencrypted metadata of any Finance envelope. Never decrypts. */
+export function envelopeInfo(raw: string): EnvelopeInfo {
+  const envelope = parseEnvelope(raw);
+  return {
+    ...(envelope.savedAt === undefined ? {} : { savedAt: envelope.savedAt }),
+    salt: envelope.kdf.salt,
+    iterations: envelope.kdf.iterations,
+  };
+}
+
+/** Metadata of the envelope stored on this device, or null when there is none. */
+export function vaultEnvelopeInfo(): EnvelopeInfo | null {
+  const raw = readRaw();
+  return raw === null ? null : envelopeInfo(raw);
+}
+
+export class VaultKeyMismatchError extends Error {
+  constructor() {
+    super(
+      "Le coffre distant est chiffré avec une autre clé (autre phrase secrète ou autre coffre). Rien n’a été modifié : verrouillez le coffre, puis rouvrez-le depuis GitHub avec sa phrase secrète.",
+    );
+    this.name = "VaultKeyMismatchError";
+  }
+}
+
+/** Retryable: the local vault changed after the snapshot a sync decided on; nothing was written. */
+export class VaultChangedError extends Error {
+  constructor() {
+    super(
+      "Le coffre a été modifié pendant la synchronisation. Rien n’a été remplacé ; relancez la synchronisation.",
+    );
+    this.name = "VaultChangedError";
+  }
+}
+
+/** Replaces the open vault with a same-key remote envelope, only if the local vault is still `expectedLocalRaw` when given. */
+export async function replaceVaultFromRemote(
+  key: CryptoKey,
+  raw: string,
+  expectedLocalRaw?: string,
+): Promise<FinanceData> {
+  const state = keyStates.get(key);
+  if (!state)
+    throw new Error("Coffre verrouillé. Ouvrez-le avant de synchroniser.");
+  const expectedRaw = expectedLocalRaw ?? state.expectedRaw;
+  if (expectedLocalRaw !== undefined) {
+    if (readRaw() !== expectedLocalRaw) throw new VaultChangedError();
+    if (state.expectedRaw !== expectedLocalRaw) throw new Error(CONFLICT_ERROR);
+  }
+  const envelope = parseEnvelope(raw);
+  if (
+    envelope.kdf.salt !== state.salt ||
+    envelope.kdf.iterations !== state.iterations
+  ) {
+    throw new VaultKeyMismatchError();
+  }
+  const data = await openWithKey(key, envelope);
+  const normalized = JSON.stringify(envelope);
+  try {
+    await commit(normalized, expectedRaw);
+  } catch (error) {
+    // A save committed during decryption wins; report it as retryable rather than as another tab.
+    if (
+      expectedLocalRaw !== undefined &&
+      error instanceof Error &&
+      error.message === CONFLICT_ERROR
+    ) {
+      throw new VaultChangedError();
+    }
+    throw error;
+  }
+  state.expectedRaw = normalized;
+  return data;
+}
+
+const MAX_CLOCK_AHEAD_MS = 10 * 60_000;
+
+/** Re-encrypts the unchanged open vault with a fresh savedAt, only if it is still exactly `expectedLocalRaw`. */
+export async function resealVault(
+  key: CryptoKey,
+  expectedLocalRaw: string,
+  notBefore?: string,
+): Promise<string> {
+  const state = keyStates.get(key);
+  if (!state)
+    throw new Error("Coffre verrouillé. Ouvrez-le avant de synchroniser.");
+  if (readRaw() !== expectedLocalRaw) throw new VaultChangedError();
+  if (state.expectedRaw !== expectedLocalRaw) throw new Error(CONFLICT_ERROR);
+  const data = await openWithKey(key, parseEnvelope(expectedLocalRaw));
+  // Never earlier than a remote version this one supersedes, so a device whose clock is slightly behind still wins; capped against absurd remote dates.
+  const now = Date.now();
+  const floor = isSavedAt(notBefore) ? Date.parse(notBefore) + 1 : now;
+  const savedAt = new Date(
+    floor > now && floor <= now + MAX_CLOCK_AHEAD_MS ? floor : now,
+  ).toISOString();
+  const raw = await seal(key, state, data, savedAt);
+  try {
+    await commit(raw, expectedLocalRaw);
+  } catch (error) {
+    if (error instanceof Error && error.message === CONFLICT_ERROR) {
+      throw new VaultChangedError();
+    }
+    throw error;
+  }
+  state.expectedRaw = raw;
+  return raw;
+}
+
+// Domain separation: a sealed secret can never authenticate as a vault envelope, nor the reverse.
+const SECRET_AAD = encoder.encode("Finance/secret/v1");
+const MAX_SECRET_BYTES = 4_096;
+const LOCKED_SECRET_ERROR = "Coffre verrouillé. Ouvrez-le avant de continuer.";
+
+/** Encrypts a small secret (e.g. an access token) at rest with the open vault key. */
+export async function sealSecret(
+  key: CryptoKey,
+  text: string,
+): Promise<{ iv: string; ct: string }> {
+  if (!keyStates.has(key)) throw new Error(LOCKED_SECRET_ERROR);
+  if (typeof text !== "string" || !text.length) throw new Error("Secret vide.");
+  const bytes = encoder.encode(text);
+  try {
+    if (bytes.byteLength > MAX_SECRET_BYTES)
+      throw new Error("Secret trop long.");
+    const crypto = webCrypto();
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const ct = await crypto.subtle.encrypt(
+      { name: "AES-GCM", iv, tagLength: 128, additionalData: SECRET_AAD },
+      key,
+      bytes,
+    );
+    return { iv: toBase64(iv), ct: toBase64(new Uint8Array(ct)) };
+  } finally {
+    bytes.fill(0);
+  }
+}
+
+/** Decrypts a secret sealed by sealSecret with this same vault key; one generic error otherwise. */
+export async function openSecret(
+  key: CryptoKey,
+  sealed: { iv: string; ct: string },
+): Promise<string> {
+  if (!keyStates.has(key)) throw new Error(LOCKED_SECRET_ERROR);
+  try {
+    if (!record(sealed) || !exactKeys(sealed, ["iv", "ct"]))
+      throw new Error(INVALID_ERROR);
+    const plaintext = new Uint8Array(
+      await webCrypto().subtle.decrypt(
+        {
+          name: "AES-GCM",
+          iv: fromBase64(sealed.iv, 12, 12),
+          tagLength: 128,
+          additionalData: SECRET_AAD,
+        },
+        key,
+        fromBase64(sealed.ct, 17, MAX_SECRET_BYTES + 16),
+      ),
+    );
+    try {
+      return decoder.decode(plaintext);
+    } finally {
+      plaintext.fill(0);
+    }
+  } catch {
+    throw new Error("Secret illisible avec ce coffre.");
+  }
 }

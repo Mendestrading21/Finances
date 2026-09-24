@@ -4,9 +4,16 @@ import {
   createVault,
   exportVault,
   importVault,
+  openSecret,
+  replaceVaultFromRemote,
+  resealVault,
   saveVault,
+  sealSecret,
   unlockVault,
+  vaultEnvelopeInfo,
+  VaultChangedError,
   vaultExists,
+  VaultKeyMismatchError,
 } from "./vault";
 
 class MemoryStorage implements Storage {
@@ -554,5 +561,118 @@ describe("coffre privé avec le vrai Web Crypto", () => {
     );
     await expect(importVault(badBackup, PASSPHRASE)).rejects.toThrow();
     expect(exportVault()).toBe(before);
+  });
+});
+
+describe("remplacement depuis un coffre distant et secrets scellés", () => {
+  it("décrit l’enveloppe locale sans la déchiffrer", async () => {
+    expect(vaultEnvelopeInfo()).toBeNull();
+    await createVault(PASSPHRASE, sample());
+    const envelope = JSON.parse(exportVault());
+    const derive = vi.spyOn(crypto.subtle, "deriveKey");
+    const decrypt = vi.spyOn(crypto.subtle, "decrypt");
+    expect(vaultEnvelopeInfo()).toEqual({
+      savedAt: envelope.savedAt,
+      salt: envelope.kdf.salt,
+      iterations: 600_000,
+    });
+    expect(derive).not.toHaveBeenCalled();
+    expect(decrypt).not.toHaveBeenCalled();
+  });
+
+  it("remplace le coffre ouvert par une enveloppe de même clé et garde la session utilisable", async () => {
+    const key = await createVault(PASSPHRASE, sample());
+    const older = exportVault();
+    await saveVault(key, emptyData());
+    expect(await replaceVaultFromRemote(key, older)).toEqual(sample());
+    expect(exportVault()).toBe(older);
+    await saveVault(key, emptyData());
+    expect((await unlockVault(PASSPHRASE)).data).toEqual(emptyData());
+  });
+
+  it("n’écrit rien si le distant est altéré, d’un autre sel, ou si le coffre local a changé depuis l’instantané", async () => {
+    const key = await createVault(PASSPHRASE, sample());
+    const snapshotRaw = exportVault();
+    await saveVault(key, emptyData());
+    const current = exportVault();
+
+    const altered = JSON.parse(snapshotRaw);
+    const binary = atob(altered.ciphertext);
+    altered.ciphertext = btoa(String.fromCharCode(binary.charCodeAt(0) ^ 1) + binary.slice(1));
+    await expect(replaceVaultFromRemote(key, JSON.stringify(altered))).rejects.toThrow(
+      "Impossible d’ouvrir le coffre",
+    );
+    expect(exportVault()).toBe(current);
+
+    const foreignSalt = JSON.parse(snapshotRaw);
+    foreignSalt.kdf.salt = toB64(crypto.getRandomValues(new Uint8Array(16)));
+    await expect(replaceVaultFromRemote(key, JSON.stringify(foreignSalt))).rejects.toBeInstanceOf(
+      VaultKeyMismatchError,
+    );
+    expect(exportVault()).toBe(current);
+
+    await expect(replaceVaultFromRemote(key, snapshotRaw, snapshotRaw)).rejects.toBeInstanceOf(
+      VaultChangedError,
+    );
+    expect(exportVault()).toBe(current);
+    expect(await replaceVaultFromRemote(key, snapshotRaw, current)).toEqual(sample());
+    expect(exportVault()).toBe(snapshotRaw);
+  });
+
+  it("refuse le remplacement pour une session périmée par un autre onglet", async () => {
+    const oldKey = await createVault(PASSPHRASE, sample());
+    const remote = exportVault();
+    const other = await unlockVault(PASSPHRASE);
+    await saveVault(other.key, emptyData());
+    const current = exportVault();
+    await expect(replaceVaultFromRemote(oldKey, remote)).rejects.toThrow("autre onglet");
+    await expect(replaceVaultFromRemote(oldKey, remote, current)).rejects.toThrow("autre onglet");
+    expect(exportVault()).toBe(current);
+  });
+
+  it("ré-scelle les mêmes données avec une date fraîche, jamais antérieure au distant remplacé dans une limite de 10 minutes", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-09-05T08:00:00.000Z"));
+    const key = await createVault(PASSPHRASE, sample());
+    const first = exportVault();
+    vi.setSystemTime(new Date("2026-09-05T09:00:00.000Z"));
+    const second = await resealVault(key, first);
+    expect(exportVault()).toBe(second);
+    expect(JSON.parse(second).savedAt).toBe("2026-09-05T09:00:00.000Z");
+    expect(JSON.parse(second).cipher.iv).not.toBe(JSON.parse(first).cipher.iv);
+    const third = await resealVault(key, second, "2026-09-05T09:05:00.000Z");
+    expect(JSON.parse(third).savedAt).toBe("2026-09-05T09:05:00.001Z");
+    const fourth = await resealVault(key, third, "9999-01-01T00:00:00.000Z");
+    expect(JSON.parse(fourth).savedAt).toBe("2026-09-05T09:00:00.000Z");
+    await expect(resealVault(key, first)).rejects.toBeInstanceOf(VaultChangedError);
+    expect(exportVault()).toBe(fourth);
+    vi.useRealTimers();
+    expect((await unlockVault(PASSPHRASE)).data).toEqual(sample());
+    await saveVault(key, emptyData());
+    expect((await unlockVault(PASSPHRASE)).data).toEqual(emptyData());
+  });
+
+  it("scelle un secret avec la clé du coffre, sans le laisser en clair, et ne l’ouvre qu’avec cette clé", async () => {
+    const secret = "github_pat_FICTIF_0123456789abcdefghijklmnop";
+    const key = await createVault(PASSPHRASE, sample());
+    const first = await sealSecret(key, secret);
+    const second = await sealSecret(key, secret);
+    expect(Object.keys(first).sort()).toEqual(["ct", "iv"]);
+    expect(JSON.stringify(first)).not.toContain(secret);
+    expect(atob(first.iv)).toHaveLength(12);
+    expect(first.iv).not.toBe(second.iv);
+    expect(await openSecret(key, first)).toBe(secret);
+
+    const tampered = { ...first, ct: btoa(String.fromCharCode(atob(first.ct).charCodeAt(0) ^ 1) + atob(first.ct).slice(1)) };
+    await expect(openSecret(key, tampered)).rejects.toThrow("Secret illisible");
+    await expect(openSecret(key, { ...first, extra: 1 } as never)).rejects.toThrow("Secret illisible");
+
+    local.clear();
+    const otherKey = await createVault(PASSPHRASE, sample());
+    await expect(openSecret(otherKey, first)).rejects.toThrow("Secret illisible");
+
+    const foreign = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
+    await expect(sealSecret(foreign, secret)).rejects.toThrow("Coffre verrouillé");
+    await expect(openSecret(foreign, first)).rejects.toThrow("Coffre verrouillé");
   });
 });

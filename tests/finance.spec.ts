@@ -1,4 +1,5 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Locator, type Page, type Route } from "@playwright/test";
+import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile, cp, mkdtemp, rm } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
@@ -1539,6 +1540,7 @@ test("PWA update: after typing on the lock screen, a new deploy waits for Rechar
   }
 });
 
+// "Tous les mois" saves a new operation as a monthly recurrence: this month settled, next month due.
 test("new operation for every month becomes a recurrence, settled now and due next month", async ({
   page,
 }) => {
@@ -1588,4 +1590,161 @@ test("new operation for every month becomes a recurrence, settled now and due ne
 
   await nav.getByRole("button", { name: "Abonnements", exact: true }).click();
   await expect(page.locator(".row", { hasText: "Salaire mensuel test" }).first()).toBeVisible();
+});
+
+// Fake GitHub contents API held in memory, shared by two browser contexts ("devices").
+function fakeGitHub() {
+  const file: { raw: string | null; sha: string | null } = { raw: null, sha: null };
+  const puts: string[] = [];
+  // Origins whose requests fail as if that device had no network.
+  const offline = new Set<string>();
+  const cors = {
+    "access-control-allow-origin": "*",
+    "access-control-allow-headers": "authorization, accept, content-type, x-github-api-version",
+    "access-control-allow-methods": "GET, PUT, OPTIONS",
+  };
+  const blobSha = (raw: string) =>
+    createHash("sha1").update(`blob ${Buffer.byteLength(raw)}\0`).update(raw).digest("hex");
+  async function handle(route: Route) {
+    const request = route.request();
+    if (offline.has(request.headers()["origin"] ?? ""))
+      return route.abort("internetdisconnected");
+    if (request.method() === "OPTIONS") return route.fulfill({ status: 204, headers: cors });
+    const json = (status: number, body: unknown) =>
+      route.fulfill({
+        status,
+        headers: { ...cors, "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    const { pathname } = new URL(request.url());
+    if (pathname === "/repos/exemple-test/finance-coffre-test")
+      return json(200, { full_name: "exemple-test/finance-coffre-test", private: true });
+    if (pathname === "/repos/exemple-test/finance-coffre-test/contents/finance-coffre.json") {
+      if (request.method() === "GET")
+        return file.raw === null
+          ? json(404, { message: "Not Found" })
+          : json(200, {
+              type: "file",
+              sha: file.sha,
+              encoding: "base64",
+              content: Buffer.from(file.raw).toString("base64"),
+            });
+      if (request.method() === "PUT") {
+        const body = JSON.parse(request.postData() ?? "{}");
+        if ((body.sha ?? null) !== file.sha) return json(409, { message: "sha mismatch" });
+        file.raw = Buffer.from(body.content, "base64").toString("utf8");
+        file.sha = blobSha(file.raw);
+        puts.push(file.raw);
+        return json(200, { content: { sha: file.sha } });
+      }
+    }
+    return json(404, { message: "Not Found" });
+  }
+  return { file, puts, offline, handle };
+}
+
+test("sync: one vault on two devices through a private GitHub repository, encrypted only", async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  const github = fakeGitHub();
+  const token = `github_pat_${"EXEMPLEFICTIF".repeat(3)}`; // Synthetic, never a real token.
+  const syncPassphrase = "Exemple-test-Finance-sync-2026";
+  const fillRepo = async (scope: Page | Locator) => {
+    await scope.getByLabel("Propriétaire GitHub").fill("exemple-test");
+    await scope.getByLabel("Dépôt privé").fill("finance-coffre-test");
+    await scope.getByLabel("Jeton d’accès").fill(token);
+  };
+  const addExpense = async (p: Page, label: string) => {
+    await p
+      .getByRole("navigation", { name: "Navigation principale", exact: true })
+      .getByRole("button", { name: "Mon mois", exact: true })
+      .click();
+    await p.getByRole("button", { name: "Ajouter", exact: true }).click();
+    const dialog = p.getByRole("dialog");
+    await dialog.getByLabel("Libellé").fill(label);
+    await dialog.getByLabel("Montant", { exact: true }).fill("55");
+    await dialog.getByRole("button", { name: "Enregistrer", exact: true }).click();
+    await expect(p.getByRole("dialog")).toHaveCount(0);
+  };
+  const wake = async (p: Page) => {
+    await p.bringToFront();
+    await p.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+  };
+
+  // Device A: new vault, then sync switched on from Documents et réglages.
+  await page.context().route("https://api.github.com/**", github.handle);
+  await page.goto("/");
+  await page.getByLabel("Phrase secrète", { exact: true }).fill(syncPassphrase);
+  await page.getByLabel("Confirmer la phrase secrète").fill(syncPassphrase);
+  await page.getByRole("button", { name: "Créer mon coffre" }).click();
+  await page
+    .getByRole("navigation", { name: "Navigation principale", exact: true })
+    .getByRole("button", { name: "Documents et réglages", exact: true })
+    .click();
+  const syncCard = page.locator(".card", {
+    has: page.locator(".card-title", { hasText: "Synchronisation entre appareils" }),
+  });
+  await fillRepo(syncCard);
+  await syncCard.getByRole("button", { name: "Activer la synchronisation" }).click();
+  await expect(syncCard.getByRole("status")).toContainText("Synchronisé");
+  expect(github.puts).toHaveLength(1);
+
+  // A change on A is sent by itself, encrypted.
+  await addExpense(page, "Courses synchro test");
+  await expect.poll(() => github.puts.length).toBe(2);
+  for (const raw of github.puts) {
+    expect(JSON.parse(raw).format).toBe("Finance");
+    expect(raw).not.toContain("Courses synchro test");
+    expect(raw).not.toContain(token);
+  }
+  expect(await page.evaluate(() => Object.values(localStorage).join(""))).not.toContain(token);
+
+  // Device B: another origin, so its own empty storage; same vault opened from GitHub.
+  const originA = new URL(page.url()).origin;
+  const originB = originA.replace("127.0.0.1", "localhost");
+  const pageB = await page.context().newPage();
+  pageB.on("pageerror", (e) => errors.push(e.message));
+  await pageB.goto(`${originB}/`);
+  await expect(pageB.getByRole("heading", { name: "Créer mon espace privé" })).toBeVisible();
+  await pageB.getByRole("button", { name: "Ouvrir depuis GitHub", exact: true }).click();
+  await pageB.getByLabel("Phrase secrète", { exact: true }).fill(syncPassphrase);
+  await fillRepo(pageB);
+  await pageB.getByRole("button", { name: "Ouvrir depuis GitHub", exact: true }).click();
+  await pageB
+    .getByRole("navigation", { name: "Navigation principale", exact: true })
+    .getByRole("button", { name: "Mon mois", exact: true })
+    .click();
+  await expect(pageB.getByText("Courses synchro test", { exact: true })).toBeVisible();
+
+  // B changes something; A picks it up when it comes back to the foreground.
+  const before = github.puts.length;
+  await addExpense(pageB, "Pharmacie synchro test");
+  await expect.poll(() => github.puts.length).toBe(before + 1);
+  await wake(page);
+  await expect(page.getByText("Pharmacie synchro test", { exact: true })).toBeVisible();
+
+  // Both change while A is offline: A must ask which version to keep, writing nothing meanwhile.
+  github.offline.add(originA);
+  await addExpense(page, "Loyer hors ligne A");
+  await addExpense(pageB, "Cadeau distant B");
+  await expect.poll(() => github.puts.length).toBe(before + 2);
+  const remoteBeforeChoice = github.file.raw;
+  github.offline.delete(originA);
+  await wake(page);
+  const conflict = page.getByRole("alertdialog");
+  await expect(conflict).toContainText("Deux versions différentes");
+  expect(github.file.raw).toBe(remoteBeforeChoice);
+  await conflict.getByRole("button", { name: "Garder cet appareil", exact: true }).click();
+  await expect(conflict).toHaveCount(0);
+  await expect.poll(() => github.puts.length).toBe(before + 3);
+
+  // B follows A's choice.
+  await wake(pageB);
+  await expect(pageB.getByText("Loyer hors ligne A", { exact: true })).toBeVisible();
+  await expect(pageB.getByText("Cadeau distant B", { exact: true })).toHaveCount(0);
+  await pageB.close();
+  expect(errors).toEqual([]);
 });
