@@ -1745,6 +1745,12 @@ test("sync: one vault on two devices through a private GitHub repository, encryp
   await wake(pageB);
   await expect(pageB.getByText("Loyer hors ligne A", { exact: true })).toBeVisible();
   await expect(pageB.getByText("Cadeau distant B", { exact: true })).toHaveCount(0);
+
+  // Settled: further syncs on both devices send nothing (no ping-pong after a pull).
+  await wake(page);
+  await wake(pageB);
+  await page.waitForTimeout(3000);
+  expect(github.puts).toHaveLength(before + 3);
   await pageB.close();
   expect(errors).toEqual([]);
 });
