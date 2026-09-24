@@ -1618,6 +1618,12 @@ function fakeGitHub() {
         body: JSON.stringify(body),
       });
     const { pathname } = new URL(request.url());
+    // Connexion simplifiée : identifiant et dépôts privés retrouvés depuis la seule clé.
+    if (pathname === "/user") return json(200, { login: "exemple-test" });
+    if (pathname === "/user/repos")
+      return json(200, [
+        { name: "finance-coffre-test", private: true, owner: { login: "exemple-test" } },
+      ]);
     if (pathname === "/repos/exemple-test/finance-coffre-test")
       return json(200, { full_name: "exemple-test/finance-coffre-test", private: true });
     if (pathname === "/repos/exemple-test/finance-coffre-test/contents/finance-coffre.json") {
@@ -1654,9 +1660,7 @@ test("sync: one vault on two devices through a private GitHub repository, encryp
   const token = `github_pat_${"EXEMPLEFICTIF".repeat(3)}`; // Synthetic, never a real token.
   const syncPassphrase = "Exemple-test-Finance-sync-2026";
   const fillRepo = async (scope: Page | Locator) => {
-    await scope.getByLabel("Propriétaire GitHub").fill("exemple-test");
-    await scope.getByLabel("Dépôt privé").fill("finance-coffre-test");
-    await scope.getByLabel("Jeton d’accès").fill(token);
+    await scope.getByLabel("3. Clé d’accès").fill(token);
   };
   const addExpense = async (p: Page, label: string) => {
     await p
@@ -1710,7 +1714,8 @@ test("sync: one vault on two devices through a private GitHub repository, encryp
   pageB.on("pageerror", (e) => errors.push(e.message));
   await pageB.goto(`${originB}/`);
   await expect(pageB.getByRole("heading", { name: "Créer mon espace privé" })).toBeVisible();
-  await pageB.getByRole("button", { name: "Ouvrir depuis GitHub", exact: true }).click();
+  await pageB.getByText("Autres options", { exact: true }).click();
+  await pageB.getByRole("button", { name: "Ouvrir avec la clé GitHub", exact: true }).click();
   await pageB.getByLabel("Phrase secrète", { exact: true }).fill(syncPassphrase);
   await fillRepo(pageB);
   await pageB.getByRole("button", { name: "Ouvrir depuis GitHub", exact: true }).click();
@@ -1791,9 +1796,7 @@ test("sync: a separately created vault in the repository is never merged or over
     const card = p.locator(".card", {
       has: p.locator(".card-title", { hasText: "Synchronisation entre appareils" }),
     });
-    await card.getByLabel("Propriétaire GitHub").fill("exemple-test");
-    await card.getByLabel("Dépôt privé").fill("finance-coffre-test");
-    await card.getByLabel("Jeton d’accès").fill(token);
+    await card.getByLabel("3. Clé d’accès").fill(token);
     await card.getByRole("button", { name: "Activer la synchronisation" }).click();
     return card;
   };
@@ -2044,5 +2047,133 @@ test("bills page also lists recurring income: received, left to receive, changed
   await nav.getByRole("button", { name: "Factures", exact: true }).click();
   await expect(incomeRow).toContainText("350.00");
   await expect(incomeRow.getByRole("button", { name: "Reçu", exact: true })).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test("add a device with a link: the new device only needs the link and the passphrase", async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  const github = fakeGitHub();
+  const token = `github_pat_${"EXEMPLEFICTIF".repeat(3)}`; // Synthetic, never a real token.
+  const secret = "Exemple-test-Finance-lien-2026";
+  const nav = (p: Page) =>
+    p.getByRole("navigation", { name: "Navigation principale", exact: true });
+
+  // Device A: vault, one operation, sync on, then « Ajouter un appareil ».
+  await page.context().route("https://api.github.com/**", github.handle);
+  await page.goto("/");
+  await page.getByLabel("Phrase secrète", { exact: true }).fill(secret);
+  await page.getByLabel("Confirmer la phrase secrète").fill(secret);
+  await page.getByRole("button", { name: "Créer mon coffre" }).click();
+  await nav(page).getByRole("button", { name: "Mon mois", exact: true }).click();
+  await page.getByRole("button", { name: "Ajouter", exact: true }).click();
+  const add = page.getByRole("dialog");
+  await add.getByLabel("Libellé").fill("Achat lien test");
+  await add.getByLabel("Montant", { exact: true }).fill("42");
+  await add.getByRole("button", { name: "Enregistrer", exact: true }).click();
+  await nav(page).getByRole("button", { name: "Documents et réglages", exact: true }).click();
+  const syncCard = page.locator(".card", {
+    has: page.locator(".card-title", { hasText: "Synchronisation entre appareils" }),
+  });
+  await syncCard.getByLabel("3. Clé d’accès").fill(token);
+  await syncCard.getByRole("button", { name: "Activer la synchronisation" }).click();
+  await expect(syncCard.getByRole("status").first()).toContainText("Synchronisé");
+  await syncCard.getByRole("button", { name: "Ajouter un appareil", exact: true }).click();
+  const link = await syncCard.getByLabel("Lien d’ajout d’appareil").inputValue();
+  expect(link).toContain("#ajouter=FIN1.");
+  expect(link).not.toContain(token);
+  expect(link).not.toContain("exemple-test");
+
+  // Device B (own storage): paste the link, type the passphrase — nothing else.
+  const originA = new URL(page.url()).origin;
+  const originB = originA.replace("127.0.0.1", "localhost");
+  const pageB = await page.context().newPage();
+  pageB.on("pageerror", (e) => errors.push(e.message));
+  await pageB.goto(`${originB}/`);
+  await pageB
+    .getByRole("button", { name: "J’ai déjà un compte sur un autre appareil", exact: true })
+    .click();
+  await pageB.getByLabel("Lien d’ajout", { exact: true }).fill(link);
+  await pageB.getByLabel("Phrase secrète", { exact: true }).fill("phrase-incorrecte-test");
+  await pageB.getByRole("button", { name: "Ajouter cet appareil", exact: true }).click();
+  await expect(pageB.getByRole("alert")).toContainText("Phrase secrète incorrecte");
+  await pageB.getByLabel("Phrase secrète", { exact: true }).fill(secret);
+  await pageB.getByRole("button", { name: "Ajouter cet appareil", exact: true }).click();
+  await nav(pageB).getByRole("button", { name: "Mon mois", exact: true }).click();
+  await expect(pageB.getByText("Achat lien test", { exact: true })).toBeVisible();
+  await pageB.close();
+
+  // Device C (B's origin, storage emptied): the link opened directly fills the form, and the
+  // fragment leaves the address bar.
+  const pageC = await page.context().newPage();
+  pageC.on("pageerror", (e) => errors.push(e.message));
+  await pageC.goto(`${originB}/`);
+  await pageC.evaluate(() => localStorage.clear());
+  await pageC.goto(link.replace(originA, originB));
+  await pageC.reload();
+  await expect(pageC.getByRole("heading", { name: "Ajouter cet appareil" })).toBeVisible();
+  expect(pageC.url()).not.toContain("#ajouter=");
+  await pageC.getByLabel("Phrase secrète", { exact: true }).fill(secret);
+  await pageC.getByRole("button", { name: "Ajouter cet appareil", exact: true }).click();
+  await nav(pageC).getByRole("button", { name: "Mon mois", exact: true }).click();
+  await expect(pageC.getByText("Achat lien test", { exact: true })).toBeVisible();
+  await pageC.close();
+  expect(errors).toEqual([]);
+});
+
+test("quick unlock: Face ID or fingerprint opens the vault without typing the passphrase", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  const secret = "Exemple-test-Finance-faceid";
+  // WebAuthn needs a domain, not an IP: same server, reached as localhost.
+  const origin = test.info().project.use.baseURL!.replace("127.0.0.1", "localhost");
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("WebAuthn.enable");
+  await cdp.send("WebAuthn.addVirtualAuthenticator", {
+    options: {
+      protocol: "ctap2",
+      ctap2Version: "ctap2_1",
+      transport: "internal",
+      hasResidentKey: true,
+      hasUserVerification: true,
+      isUserVerified: true,
+      hasPrf: true,
+      automaticPresenceSimulation: true,
+    },
+  });
+  await page.goto(`${origin}/`);
+  await page.getByLabel("Phrase secrète", { exact: true }).fill(secret);
+  await page.getByLabel("Confirmer la phrase secrète").fill(secret);
+  await page.getByRole("button", { name: "Créer mon coffre" }).click();
+  await page
+    .getByRole("navigation", { name: "Navigation principale", exact: true })
+    .getByRole("button", { name: "Documents et réglages", exact: true })
+    .click();
+  const card = page.locator(".card", {
+    has: page.locator(".card-title", { hasText: "Connexion rapide" }),
+  });
+  await card.getByLabel("Phrase secrète").fill(secret);
+  await card.getByRole("button", { name: "Activer Face ID ou l’empreinte" }).click();
+  await expect(card.getByRole("status")).toContainText("Activé sur cet appareil");
+  expect(await page.evaluate(() => Object.values(localStorage).join(""))).not.toContain(secret);
+
+  await page.getByRole("button", { name: "Verrouiller l’espace", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Déverrouiller avec Face ID ou l’empreinte", exact: true })
+    .click();
+  // Back where it was locked, without typing anything.
+  await expect(page.getByRole("heading", { name: "Documents et réglages", exact: true })).toBeVisible();
+
+  // After a reload too, one touch is enough.
+  await page.reload();
+  await page
+    .getByRole("button", { name: "Déverrouiller avec Face ID ou l’empreinte", exact: true })
+    .click();
+  await expect(page.getByRole("heading", { name: "Une vue sur l’essentiel." })).toBeVisible();
   expect(errors).toEqual([]);
 });

@@ -66,6 +66,7 @@ import {
   SyncFields,
   dateTimeLabel,
   readSyncInput,
+  resolveSyncInput,
   type SyncInput,
   type SyncView,
 } from "./components/SyncPanel";
@@ -80,6 +81,14 @@ import {
   VaultChangedError,
 } from "./sync";
 import { vaultRevision } from "./vault";
+import { quickUnlock, quickUnlockEnabled } from "./quickUnlock";
+import {
+  createDeviceLink,
+  openFromDeviceLink,
+  readDeviceLink,
+  type DeviceLink,
+} from "./deviceLink";
+import { QuickUnlockCard } from "./components/QuickUnlockCard";
 import { UPDATE_READY_EVENT } from "./swUpdateEvent";
 const pages = [
   { id: "overview", name: "Vue d’ensemble", short: "Accueil", icon: "home" },
@@ -218,12 +227,24 @@ const OLDER_BACKUP_ERROR_PREFIX = "Cette sauvegarde est plus ancienne";
 function isOlderBackupError(message: string): boolean {
   return message.startsWith(OLDER_BACKUP_ERROR_PREFIX);
 }
+// Lien d'ajout d'appareil ouvert directement (#ajouter=…) : lu une fois, puis retiré de l'URL.
+function takeDeviceLinkFromUrl(): string {
+  if (!window.location.hash.startsWith("#ajouter=")) return "";
+  const value = window.location.href;
+  history.replaceState(null, "", window.location.pathname + window.location.search);
+  return value;
+}
+type InstallPromptEvent = Event & { prompt: () => Promise<void> };
 function Auth({
   onOpen,
   onDemo,
+  installPrompt,
+  onInstall,
 }: {
   onOpen: (data: FinanceData, key: CryptoKey) => void;
   onDemo: () => void;
+  installPrompt: InstallPromptEvent | null;
+  onInstall: () => void;
 }) {
   const [exists, setExists] = useState(vaultExists),
     [error, setError] = useState(""),
@@ -246,7 +267,31 @@ function Auth({
     // Nouvel appareil : ouvrir le coffre chiffré conservé dans le dépôt GitHub privé.
     [fromGitHub, setFromGitHub] = useState(false),
     // Réglages GitHub (jeton compris) gardés hors de l'état React, le temps d'une confirmation « plus ancien ».
-    pendingGitHubRef = useRef<SyncInput | null>(null);
+    pendingGitHubRef = useRef<SyncInput | null>(null),
+    // Nouvel appareil par un lien créé sur un appareil déjà configuré : lien + phrase secrète.
+    [linkInput] = useState(takeDeviceLinkFromUrl),
+    [fromLink, setFromLink] = useState(() => linkInput !== ""),
+    pendingLinkRef = useRef<DeviceLink | null>(null),
+    [quick, setQuick] = useState(quickUnlockEnabled);
+  const standalone =
+    window.matchMedia?.("(display-mode: standalone)").matches ||
+    (navigator as Navigator & { standalone?: boolean }).standalone === true;
+  const ios =
+    /iPhone|iPad|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  async function unlockQuick() {
+    setError("");
+    setBusy(true);
+    try {
+      const r = await quickUnlock();
+      onOpen(r.data, r.key);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Déverrouillage impossible.");
+      setQuick(quickUnlockEnabled());
+    } finally {
+      setBusy(false);
+    }
+  }
   useEffect(() => {
     // Default focus lands on the safer action so a stray Enter/Space never replaces
     // newer data by accident.
@@ -260,12 +305,22 @@ function Auth({
     try {
       const f = new FormData(e.currentTarget);
       password = String(f.get("password") || "");
-      if (fromGitHub) {
+      if (fromLink) {
+        const link = readDeviceLink(String(f.get("link") || ""));
         if (exists && !f.get("replace"))
           throw new Error(
             "Confirmez le remplacement du coffre présent sur cet appareil.",
           );
-        const settings = readSyncInput(f);
+        pendingLinkRef.current = link;
+        const r = await openFromDeviceLink(link, password);
+        pendingLinkRef.current = null;
+        onOpen(r.data, r.key);
+      } else if (fromGitHub) {
+        if (exists && !f.get("replace"))
+          throw new Error(
+            "Confirmez le remplacement du coffre présent sur cet appareil.",
+          );
+        const settings = await resolveSyncInput(readSyncInput(f));
         pendingGitHubRef.current = settings;
         const r = await openFromGitHub(settings, password);
         pendingGitHubRef.current = null;
@@ -289,16 +344,20 @@ function Auth({
       }
     } catch (e) {
       if (
-        (backup || fromGitHub) &&
+        (backup || fromGitHub || fromLink) &&
         e instanceof Error &&
         isOlderBackupError(e.message)
       ) {
         // Nothing was written (importVault fails closed before touching the vault):
         // ask for an explicit, conscious confirmation instead of a dead-end error.
         pendingOlderBackupPasswordRef.current = password;
-        setOlderBackup({ raw: fromGitHub ? "" : (backup ?? ""), message: e.message });
+        setOlderBackup({
+          raw: fromGitHub || fromLink ? "" : (backup ?? ""),
+          message: e.message,
+        });
       } else {
         pendingGitHubRef.current = null;
+        pendingLinkRef.current = null;
         setError(
           e instanceof Error ? e.message : "Impossible d’ouvrir le coffre.",
         );
@@ -313,10 +372,13 @@ function Auth({
     setError("");
     const password = pendingOlderBackupPasswordRef.current;
     const github = pendingGitHubRef.current;
+    const link = pendingLinkRef.current;
     try {
-      const r = github
-        ? await openFromGitHub(github, password, true)
-        : await importVault(olderBackup.raw, password, true);
+      const r = link
+        ? await openFromDeviceLink(link, password, true)
+        : github
+          ? await openFromGitHub(github, password, true)
+          : await importVault(olderBackup.raw, password, true);
       setOlderBackup(null);
       onOpen(r.data, r.key);
     } catch (e) {
@@ -329,6 +391,7 @@ function Auth({
     } finally {
       pendingOlderBackupPasswordRef.current = "";
       pendingGitHubRef.current = null;
+      pendingLinkRef.current = null;
       setBusy(false);
     }
   }
@@ -336,6 +399,7 @@ function Auth({
     // Nothing was ever written for this refusal, so canceling is a pure UI reset.
     pendingOlderBackupPasswordRef.current = "";
     pendingGitHubRef.current = null;
+    pendingLinkRef.current = null;
     setOlderBackup(null);
     setError("");
   }
@@ -383,6 +447,8 @@ function Auth({
         <h2 id="auth-heading">
           {olderBackup
             ? "Confirmer la restauration"
+            : fromLink
+              ? "Ajouter cet appareil"
             : fromGitHub
               ? "Ouvrir depuis GitHub"
               : backup
@@ -394,6 +460,8 @@ function Auth({
         <p className="subtitle">
           {olderBackup
             ? "Cette sauvegarde est plus ancienne que les données déjà présentes sur cet appareil."
+            : fromLink
+              ? "Collez le lien créé sur votre autre appareil (Documents et réglages → Ajouter un appareil), puis tapez votre phrase secrète."
             : fromGitHub
               ? "Récupérez le coffre chiffré de vos autres appareils, puis déverrouillez-le avec la même phrase secrète."
               : exists
@@ -441,28 +509,56 @@ function Auth({
           </div>
         ) : (
           <>
+            {exists && quick && !backup && !fromGitHub && !fromLink && (
+              <div className="auth-quick">
+                <button
+                  type="button"
+                  className="button primary full-width"
+                  disabled={busy}
+                  onClick={unlockQuick}
+                >
+                  <Icon name="lock" />
+                  {busy ? "Ouverture…" : "Déverrouiller avec Face ID ou l’empreinte"}
+                </button>
+                <p className="meta">ou avec votre phrase secrète :</p>
+              </div>
+            )}
             <form onSubmit={submit}>
+              {fromLink && (
+                <label className="field">
+                  <span>Lien d’ajout</span>
+                  <input
+                    name="link"
+                    autoComplete="off"
+                    autoCapitalize="none"
+                    spellCheck={false}
+                    defaultValue={linkInput}
+                    placeholder="Collez le lien ici"
+                    required
+                  />
+                </label>
+              )}
               <label className="field">
                 <span>Phrase secrète</span>
                 <input
                   type="password"
                   name="password"
                   autoComplete={
-                    exists || fromGitHub ? "current-password" : "new-password"
+                    exists || fromGitHub || fromLink ? "current-password" : "new-password"
                   }
-                  minLength={exists || backup || fromGitHub ? 1 : 12}
+                  minLength={exists || backup || fromGitHub || fromLink ? 1 : 12}
                   required
                 />
               </label>
               {fromGitHub && <SyncFields idPrefix="auth-sync" />}
-              {fromGitHub && exists && (
+              {(fromGitHub || fromLink) && exists && (
                 <label className="notice">
                   <input type="checkbox" name="replace" /> Remplacer le
                   coffre de cet appareil par celui du dépôt. Exportez d’abord
                   une sauvegarde chiffrée de celui-ci pour le garder.
                 </label>
               )}
-              {!exists && !backup && !fromGitHub && (
+              {!exists && !backup && !fromGitHub && !fromLink && (
                 <label className="field">
                   <span>Confirmer la phrase secrète</span>
                   <input
@@ -488,6 +584,8 @@ function Auth({
               <button className="button primary full-width" disabled={busy}>
                 {busy
                   ? "Ouverture…"
+                  : fromLink
+                    ? "Ajouter cet appareil"
                   : fromGitHub
                     ? "Ouvrir depuis GitHub"
                     : backup
@@ -502,30 +600,23 @@ function Auth({
               La phrase secrète ne peut pas être récupérée. Gardez-la et
               exportez régulièrement une sauvegarde chiffrée.
             </p>
-            {!fromGitHub && (
+            {!fromGitHub && !fromLink && (
               <div className="auth-links">
-                <button
-                  className="button secondary"
-                  disabled={busy}
-                  onClick={() => {
-                    pendingOlderBackupPasswordRef.current = "";
-                    setBackup(null);
-                    setOlderBackup(null);
-                    setError("");
-                    setFromGitHub(true);
-                  }}
-                >
-                  Ouvrir depuis GitHub
-                </button>
-                <label className="button secondary">
-                  Restaurer une sauvegarde
-                  <input
-                    className="sr-only"
-                    type="file"
-                    accept=".finance-vault,.json"
-                    onChange={restore}
-                  />
-                </label>
+                {!exists && (
+                  <button
+                    className="button secondary"
+                    disabled={busy}
+                    onClick={() => {
+                      pendingOlderBackupPasswordRef.current = "";
+                      setBackup(null);
+                      setOlderBackup(null);
+                      setError("");
+                      setFromLink(true);
+                    }}
+                  >
+                    J’ai déjà un compte sur un autre appareil
+                  </button>
+                )}
                 <button
                   className="button secondary"
                   disabled={busy}
@@ -533,19 +624,92 @@ function Auth({
                 >
                   Voir la démonstration
                 </button>
+                <details className="auth-more">
+                  <summary>Autres options</summary>
+                  {exists && (
+                    <button
+                      className="button secondary"
+                      disabled={busy}
+                      onClick={() => {
+                        pendingOlderBackupPasswordRef.current = "";
+                        setBackup(null);
+                        setOlderBackup(null);
+                        setError("");
+                        setFromLink(true);
+                      }}
+                    >
+                      Remplacer par le compte d’un autre appareil
+                    </button>
+                  )}
+                  <button
+                    className="button secondary"
+                    disabled={busy}
+                    onClick={() => {
+                      pendingOlderBackupPasswordRef.current = "";
+                      setBackup(null);
+                      setOlderBackup(null);
+                      setError("");
+                      setFromGitHub(true);
+                    }}
+                  >
+                    Ouvrir avec la clé GitHub
+                  </button>
+                  <label className="button secondary">
+                    Restaurer une sauvegarde
+                    <input
+                      className="sr-only"
+                      type="file"
+                      accept=".finance-vault,.json"
+                      onChange={restore}
+                    />
+                  </label>
+                </details>
               </div>
             )}
-            {fromGitHub && (
-              <button
-                className="text-button"
-                disabled={busy}
-                onClick={() => {
-                  setFromGitHub(false);
-                  setError("");
-                }}
-              >
-                Retour
-              </button>
+            {(fromGitHub || fromLink) && (
+              <div className="auth-links">
+                {fromLink && (
+                  <button
+                    className="text-button"
+                    disabled={busy}
+                    onClick={() => {
+                      setFromLink(false);
+                      setFromGitHub(true);
+                      setError("");
+                    }}
+                  >
+                    Pas de lien ? Utiliser la clé GitHub
+                  </button>
+                )}
+                <button
+                  className="text-button"
+                  disabled={busy}
+                  onClick={() => {
+                    setFromGitHub(false);
+                    setFromLink(false);
+                    setError("");
+                  }}
+                >
+                  Retour
+                </button>
+              </div>
+            )}
+            {!standalone && (
+              <p className="notice auth-install">
+                <span>
+                  {installPrompt
+                    ? "Installez Finance comme une app sur cet appareil."
+                    : ios
+                      ? "Pour l’installer : ouvrez ce lien dans Safari, touchez Partager puis « Sur l’écran d’accueil »."
+                      : "Pour l’installer : menu du navigateur, puis « Installer l’application »."}{" "}
+                  Chaque navigateur et l’app installée gardent leurs propres données.
+                </span>
+                {installPrompt && (
+                  <button className="text-button" onClick={onInstall}>
+                    Installer
+                  </button>
+                )}
+              </p>
             )}
             {backup && (
               <button
@@ -611,7 +775,9 @@ export default function App() {
       remoteSha?: string;
       confirming?: boolean;
     } | null>(null),
-    [syncBusy, setSyncBusy] = useState(false);
+    [syncBusy, setSyncBusy] = useState(false),
+    // La configuration de synchro a été lue au moins une fois (évite un rappel qui clignote).
+    [syncChecked, setSyncChecked] = useState(false);
   const session = useRef(0);
   const fileInput = useRef<HTMLInputElement>(null);
   const moreButton = useRef<HTMLButtonElement>(null);
@@ -636,6 +802,7 @@ export default function App() {
     setMessage("");
     setError("");
     setSync({ state: "off" });
+    setSyncChecked(false);
     setSyncConflict(null);
     setSyncForeign(null);
   }, []);
@@ -684,9 +851,12 @@ export default function App() {
     };
     document.addEventListener("input", used, true);
     document.addEventListener("submit", used, true);
+    // Un toucher (Face ID en cours, lien, restauration) compte aussi : pas de rechargement silencieux.
+    document.addEventListener("click", used, true);
     return () => {
       document.removeEventListener("input", used, true);
       document.removeEventListener("submit", used, true);
+      document.removeEventListener("click", used, true);
     };
   }, [data]);
   useEffect(() => {
@@ -701,6 +871,21 @@ export default function App() {
   // Synchronisation : une seule exécution à la fois, jamais lancée pendant un enregistrement.
   // Un enregistrement n'attend pas le réseau : le coffre refuse une modification calculée avant
   // un tirage (révision), et un tirage refuse de remplacer une modification locale concurrente.
+  // Chrome et Edge proposent l'installation par cet évènement ; Safari n'en a pas (conseil affiché).
+  const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
+  useEffect(() => {
+    const offer = (e: Event) => {
+      e.preventDefault();
+      setInstallPrompt(e as InstallPromptEvent);
+    };
+    const installed = () => setInstallPrompt(null);
+    window.addEventListener("beforeinstallprompt", offer);
+    window.addEventListener("appinstalled", installed);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", offer);
+      window.removeEventListener("appinstalled", installed);
+    };
+  }, []);
   const syncRun = useRef<Promise<void> | null>(null);
   const syncAgain = useRef(false);
   const syncTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -751,6 +936,7 @@ export default function App() {
           () => ({ state: "reconfigure" }) as const,
         );
         if (stale()) return;
+        setSyncChecked(true);
         if (stored.state !== "ready") {
           setSync({ state: stored.state });
           return;
@@ -878,7 +1064,7 @@ export default function App() {
     if (!key) throw new Error("Coffre verrouillé.");
     setSyncBusy(true);
     try {
-      await configureSync(key, input);
+      await configureSync(key, await resolveSyncInput(input));
       syncEpoch.current++;
       conflictPending.current = false;
       await runSync({ kind: "manual" });
@@ -1101,6 +1287,11 @@ export default function App() {
             setData(demoData());
             setDemo(true);
             setCurrency("CHF");
+          }}
+          installPrompt={installPrompt}
+          onInstall={() => {
+            void installPrompt?.prompt();
+            setInstallPrompt(null);
           }}
         />
       </>
@@ -2260,7 +2451,7 @@ export default function App() {
             <p className="meta">
               Pour utiliser celui du dépôt sur cet appareil : exportez d’abord
               une sauvegarde chiffrée de ce coffre-ci (Documents et réglages),
-              verrouillez, puis choisissez « Ouvrir depuis GitHub ».
+              verrouillez, puis choisissez « Autres options » → « Ouvrir avec la clé GitHub ».
             </p>
             {syncForeign.confirming ? (
               <>
@@ -2350,6 +2541,19 @@ export default function App() {
         </div>
         {page === "overview" && (
           <>
+            {!demo && syncChecked && sync.state === "off" && (
+              // Un seul compte partout : même phrase secrète, synchronisation, Face ID sur chaque appareil.
+              <div className="notice onboarding-notice">
+                <span>
+                  Un seul compte sur tous vos appareils : activez la
+                  synchronisation, puis ajoutez vos autres appareils avec un
+                  lien. Face ID ou l’empreinte évitent de retaper la phrase.
+                </span>
+                <button className="text-button" onClick={() => navigate("documents")}>
+                  Relier mes appareils
+                </button>
+              </div>
+            )}
             <div className="dashboard-grid">
               <section className="hero-card">
                 <div className="hero-foot">
@@ -3307,7 +3511,17 @@ export default function App() {
                   onConfigure={enableSync}
                   onSyncNow={() => void manualSync({ kind: "manual" })}
                   onDisable={stopSync}
+                  onCreateLink={async () => {
+                    if (!key) throw new Error("Coffre verrouillé.");
+                    const stored = await loadSyncState(key);
+                    if (stored.state !== "ready")
+                      throw new Error("Synchronisation à reconfigurer sur cet appareil.");
+                    return (await createDeviceLink(key, stored.config)).url;
+                  }}
                 />
+              </Card>
+              <Card title="Connexion rapide" icon="lock">
+                <QuickUnlockCard demo={demo} />
               </Card>
             </div>
             {pendingImport && (

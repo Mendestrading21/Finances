@@ -633,6 +633,23 @@ Relecture indépendante (`finance-verification`) : fusionnable, aucun bloquant ;
 
 Preuves : `typecheck`, `test` (**211/211** ; le test des revenus échoue avec l'ancien filtre, vérifié), `build`, les **18** scénarios `test:e2e` rejoués individuellement, dont « bills page also lists recurring income… » ; capture iPhone revue.
 
+## Connexion simplifiée : Face ID, lien d'ajout d'appareil, clé GitHub seule (développé et testé le 24 septembre 2026)
+
+Fusion précédente : revenus sur la page Factures dans `main` (commit `90fbc4a`, PR #51), CI et déploiement Pages vérifiés verts.
+
+Demande de l'utilisateur : se connecter le plus simplement possible, avec un seul compte et la même phrase secrète sur tous ses appareils, Face ID ou l'empreinte, toujours synchronisé, et une connexion GitHub sans formulaire à rallonge. Un compte serveur avec e-mail et mot de passe demanderait un service externe (exclu) : « un seul compte » = même phrase secrète + même dépôt GitHub privé.
+
+- **Face ID / empreinte / Windows Hello** (`quickUnlock.ts`, carte « Connexion rapide » dans Documents et réglages) : activé par appareil après la phrase secrète ; la phrase est chiffrée avec une clé dérivée (HKDF) de l'extension WebAuthn PRF, qui n'est rendue qu'après la vérification biométrique. Sans PRF (navigateur ou appareil non compatible), la carte le dit et la phrase secrète reste le seul moyen.
+- **Lien d'ajout d'appareil** (`deviceLink.ts`, bouton « Ajouter un appareil » de la carte de synchronisation) : lien `…/Finances/#ajouter=FIN1.…` à partager ou copier ; les réglages de synchronisation (clé GitHub comprise) y sont chiffrés avec la clé du coffre, dans le fragment d'URL (jamais envoyé au serveur, effacé de la barre d'adresse à l'ouverture). Le nouvel appareil a besoin du lien **et** de la phrase secrète.
+- **Clé GitHub seule** : trois étapes (« 1. Créer le dépôt privé » et « 2. Créer la clé d'accès » ouvrent GitHub pré-rempli, « 3. Clé d'accès ») ; Finance retrouve seul l'identifiant et le dépôt (`detectSyncRepos` : dépôts privés du titulaire de la clé, `finance-coffre` en priorité, jamais les dépôts de l'application ; plusieurs candidats → demande laquelle). Propriétaire, dépôt et fichier restent dans « Options avancées ».
+- **Écran d'accès** : sur un nouvel appareil, « J'ai déjà un compte sur un autre appareil » (lien + phrase) ; le reste (clé GitHub, restauration d'une sauvegarde, remplacer le compte) sous « Autres options » ; bouton Face ID quand il est activé ; indication d'installation adaptée (Safari → Partager → « Sur l'écran d'accueil » sur iPhone/iPad, bouton « Installer » quand le navigateur le propose) avec le rappel que chaque navigateur garde ses propres données. Sur l'Accueil, une notice propose « Relier mes appareils » tant que la synchronisation n'est pas configurée.
+
+__REVIEW__
+
+Preuves : `typecheck`, `test` (__UNIT__), `build`, les **20** scénarios `test:e2e` rejoués individuellement, dont « add a device with a link… » (lien créé sur l'appareil A, phrase fausse refusée, ajout réussi sur B, ouverture directe du lien sur C avec fragment effacé) et « quick unlock: Face ID or fingerprint… » (authentificateur virtuel Chromium avec PRF : activation, verrouillage, déverrouillage sans phrase, après rechargement). Contrôles négatifs de la détection du dépôt (filtre privé, titulaire, dépôts de l'application) : chaque mutation fait échouer les tests. Captures iPhone des écrans d'accès et des cartes revues.
+
+Limites : aucun essai sur appareil physique ni contre le vrai GitHub (bloqué dans l'environnement de développement) ; Face ID dans une PWA demande l'extension PRF (iOS/iPadOS 18 ou plus récent, Windows Hello selon le navigateur) — sinon la phrase secrète reste nécessaire ; l'activation se fait sur chaque appareil ; l'app installée et chaque navigateur gardent des données séparées (le lien d'ajout sert aussi à relier l'app installée).
+
 ## État réel
 
 | Élément                           | État                                                                                                                                                                   | Résultat et limite                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
