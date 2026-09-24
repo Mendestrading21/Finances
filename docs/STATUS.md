@@ -851,6 +851,17 @@ Preuves :
   - aucun « Ajouter » dans les réglages.
 - « Remettre à payer » puis « Annuler » est vérifié dans le scénario des abonnements.
 
+Relecture indépendante (`finance-verification`) :
+- aucun défaut sur les calculs ni sur les données. Totaux vérifiés à la main, dont 5 300 puis 6 070 après l'ajout d'un taux. L'annulation restaure l'opération à l'octet près. Import idempotent, aucune fuite de montant en mode masqué ;
+- **défaut bloquant, corrigé** : fermer le choix « Ajouter » (Échap, croix, ou formulaire ouvert depuis un choix) laissait le focus sur la page au lieu du bouton ; il y revient désormais, comme pour l'éditeur ;
+- défauts mineurs corrigés :
+  - une position dans une devise sans taux est nommée « taux … manquant » et comptée dans « À votre attention » ;
+  - singulier et pluriel exacts ;
+  - dates courtes aussi dans le libellé de la mini-courbe lu par les lecteurs d'écran ;
+  - lien « Ajouter un taux » aligné à droite ;
+  - défilement vers l'import qui respecte la préférence « mouvement réduit » ;
+  - double point du pied de page.
+
 ## État réel
 
 | Élément                           | État                                                                                                                                                                   | Résultat et limite                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |

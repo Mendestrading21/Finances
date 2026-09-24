@@ -1009,7 +1009,8 @@ details[open] > summary::after {
   flex-basis: auto;
 }
 /* Une action passée sous le titre reste au bord droit, comme les totaux. */
-.card-header > .card-action {
+.card-header > .card-action,
+.row > .card-action {
   margin-left: auto;
 }
 /* Tuiles d'icônes décoratives : sans cadre, seul ce qui est actionnable est encadré. */

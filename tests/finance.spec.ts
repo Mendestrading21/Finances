@@ -2399,8 +2399,15 @@ test("simpler screens: add chooser, no ISO date on daily pages, uncounted accoun
   await expect(hero).toContainText("Ajoutez un compte pour voir votre patrimoine.");
   await expect(hero.locator(".tag")).toHaveCount(0);
 
-  // Accueil « Ajouter »: choose what, then the matching short form.
-  await page.getByRole("button", { name: "Ajouter", exact: true }).click();
+  // Accueil « Ajouter »: choose what, then the matching short form. Closing it gives the
+  // focus back to the button, as the editor does.
+  const addButton = page.getByRole("button", { name: "Ajouter", exact: true });
+  await addButton.click();
+  await expect(page.getByRole("dialog", { name: "Ajouter" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(addButton).toBeFocused();
+  await addButton.click();
   const chooser = page.getByRole("dialog", { name: "Ajouter" });
   await expect(chooser.locator(".add-choice")).toHaveText([
     /Une facture/,
@@ -2420,7 +2427,7 @@ test("simpler screens: add chooser, no ISO date on daily pages, uncounted accoun
   await expect(hero.locator(".tag")).toHaveText("Partiel");
   await expect(hero).toContainText("Non compté : Courtier USD test (taux USD → CHF manquant).");
   const attention = page.locator(".card", { has: page.locator(".card-title", { hasText: "À votre attention" }) });
-  await expect(attention).toContainText("1 compte(s) en devise sans taux de change");
+  await expect(attention).toContainText("1 compte en devise sans taux de change");
   await hero.getByRole("button", { name: "Ajouter un taux de change", exact: true }).click();
   await expect(page.getByRole("dialog", { name: "Un taux de change" })).toBeVisible();
   await page.keyboard.press("Escape");

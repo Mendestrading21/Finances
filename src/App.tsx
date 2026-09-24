@@ -237,8 +237,14 @@ function AddChooser({
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const d = dialog.current;
+    // Comme l'éditeur : le focus revient au bouton « Ajouter » (Échap, croix ou choix).
+    const trigger =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
     d?.showModal();
-    return () => d?.close();
+    return () => {
+      d?.close();
+      if (trigger && document.body.contains(trigger)) trigger.focus();
+    };
   }, []);
   return (
     <dialog
@@ -875,7 +881,7 @@ export default function App() {
   // Un import à vérifier s'affiche plus bas que le bouton : on l'amène à l'écran.
   useEffect(() => {
     if (pendingImport)
-      pendingImportRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      pendingImportRef.current?.scrollIntoView({ block: "start" });
   }, [pendingImport]);
   const mutating = useRef(false);
   const [preview, setPreview] = useState<{
@@ -1461,6 +1467,14 @@ export default function App() {
     if (!b || b.amountMinor === null) return "solde à compléter";
     if (convertMinor(100, a.currency, currency, data.fxRates, today()) === null)
       return `taux ${a.currency} → ${currency} manquant`;
+    // Une position dans une devise sans taux : c'est aussi un taux qui manque.
+    const noRate = data.positions.find(
+      (p) =>
+        a.valuationMode === "components" &&
+        p.accountId === a.id &&
+        convertMinor(100, p.currency, currency, data.fxRates, today()) === null,
+    );
+    if (noRate) return `taux ${noRate.currency} → ${currency} manquant`;
     return "position à valoriser";
   };
   const excludedAccounts = wealth.items
@@ -2856,10 +2870,13 @@ export default function App() {
                     <Icon name="alert" />
                     <div className="row-main">
                       <span className="row-title">
-                        {missingRate} compte(s) en devise sans taux de change
+                        {missingRate === 1
+                          ? "1 compte en devise sans taux de change"
+                          : `${missingRate} comptes en devise sans taux de change`}
                       </span>
                       <span className="row-detail">
-                        Ils ne sont pas inclus dans le total.
+                        {missingRate === 1 ? "Il n’est" : "Ils ne sont"} pas
+                        inclus dans le total.
                       </span>
                     </div>
                     <button
