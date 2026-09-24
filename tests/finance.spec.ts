@@ -385,14 +385,16 @@ test("daily entries: income, currency-synced transfer, recurrence, investment-on
   await expect(
     page.getByText("Assurance test", { exact: false }).first(),
   ).toBeVisible();
-  // Reopening confirms "bill" was actually saved, not just held in form state.
+  // Reopening confirms "bill" was actually saved, not just held in form state: a bill
+  // always reopens as « Une facture », without any date to choose.
   await page
     .getByRole("button", { name: "Modifier Assurance test", exact: true })
     .click();
-  dialog = page.getByRole("dialog");
-  await expect(dialog.getByLabel("Nature", { exact: true })).toHaveValue(
-    "bill",
-  );
+  dialog = page.getByRole("dialog", { name: "Une facture" });
+  await expect(dialog.getByLabel("Jour du mois", { exact: true })).toHaveCount(0);
+  await expect(
+    dialog.getByRole("button", { name: "Tous les mois", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
   await dialog.getByRole("button", { name: "Fermer" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
 
@@ -1889,20 +1891,52 @@ test("bills: a monthly bill shows on Factures and Mon mois; a small change appli
   await nav.getByRole("button", { name: "Factures", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Factures", exact: true })).toBeVisible();
 
-  // Added from Factures: the editor is already set to a bill.
+  // Added from Factures, on last month: a bill with no date to choose, every month from there.
+  await goToMonth(-1);
   await page.getByRole("button", { name: "Ajouter", exact: true }).click();
   let dialog = page.getByRole("dialog", { name: "Une facture" });
-  await expect(dialog.getByLabel("Nature", { exact: true })).toHaveValue("bill");
+  for (const hidden of ["Nature", "Jour du mois", "Début", "Fin (facultative)", "Catégorie"])
+    await expect(dialog.getByLabel(hidden, { exact: true })).toHaveCount(0);
+  await expect(dialog.getByRole("button", { name: "Tous les mois", exact: true })).toHaveAttribute("aria-pressed", "true");
   await dialog.getByLabel("Libellé", { exact: true }).fill("Électricité test");
   await dialog.getByLabel("Montant", { exact: true }).fill("80");
-  await dialog.getByLabel("Jour du mois", { exact: true }).fill("5");
-  await dialog.getByLabel("Début", { exact: true }).fill(`${now.getFullYear() - 1}-01-01`);
   await dialog.getByRole("button", { name: "Enregistrer", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   const billRow = page.locator(".row", { hasText: "Électricité test" });
   await expect(billRow).toHaveCount(1);
   await expect(billRow).toContainText("80.00");
+  await expect(billRow).toContainText("Tous les mois");
   await expect(billRow).toContainText("Pas encore payé");
+  // No day shown anywhere on the row, and never "Aucune échéance".
+  await expect(billRow).not.toContainText(/\ble \d{1,2}\b/);
+  await expect(page.getByText("Aucune échéance")).toHaveCount(0);
+  await goToMonth(0);
+  await expect(billRow).toContainText("80.00");
+
+  // « Seulement ce mois » : only this month, nowhere after; before it, kept aside, folded.
+  await page.getByRole("button", { name: "Ajouter une facture", exact: true }).click();
+  dialog = page.getByRole("dialog", { name: "Une facture" });
+  await dialog.getByLabel("Libellé", { exact: true }).fill("Impôts test");
+  await dialog.getByLabel("Montant", { exact: true }).fill("400");
+  await dialog.getByRole("button", { name: /^Seulement / }).click();
+  await dialog.getByRole("button", { name: "Enregistrer", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  const billsCard = page.locator(".card", {
+    has: page.locator(".card-title", { hasText: "Mes factures" }),
+  });
+  const taxRow = page.locator(".row", { hasText: "Impôts test" });
+  await expect(billsCard.locator(".row", { hasText: "Impôts test" })).toContainText("400.00");
+  await expect(taxRow).toContainText("Seulement ce mois");
+  await expect(page.locator(".stat-card", { hasText: "Factures de" })).toContainText("480.00");
+  await goToMonth(1);
+  await expect(taxRow).toHaveCount(0);
+  await expect(page.locator(".stat-card", { hasText: "Factures de" })).toContainText("80.00");
+  await goToMonth(-1);
+  await expect(billsCard.locator(".row", { hasText: "Impôts test" })).toHaveCount(0);
+  await page.getByText(/^Factures d’autres mois \(1\)$/).click();
+  await expect(taxRow).toContainText(/^.*Seulement \S+ \d{4}/);
+  await expect(taxRow).not.toContainText("400.00");
+  await goToMonth(0);
 
   // This month only: 85 here, the usual 80 elsewhere.
   await page.getByRole("button", { name: "Modifier Électricité test", exact: true }).click();
@@ -1972,9 +2006,12 @@ test("bills: a monthly bill shows on Factures and Mon mois; a small change appli
   await billRow.getByRole("button", { name: "Payer", exact: true }).click();
   await expect(billRow.getByRole("button", { name: "Payer", exact: true })).toHaveCount(0);
   await expect(billRow).toContainText("Payé");
-  await expect(
-    page.locator(".stat-card", { hasText: "Reste à payer" }).locator(".metric-value"),
-  ).toHaveText(/^0\.00\s*CHF$/);
+  // Only the single-month tax is left, then nothing once it is paid too.
+  const leftToPay = page.locator(".stat-card", { hasText: "Reste à payer" }).locator(".metric-value");
+  await expect(leftToPay).toHaveText(/^400\.00\s*CHF$/);
+  await taxRow.getByRole("button", { name: "Payer", exact: true }).click();
+  await expect(taxRow).toContainText("Payé");
+  await expect(leftToPay).toHaveText(/^0\.00\s*CHF$/);
   await nav.getByRole("button", { name: "Mon mois", exact: true }).click();
   await expect(monthRow).toHaveCount(1);
   await expect(monthRow).toContainText("85.00");
@@ -1988,6 +2025,129 @@ test("bills: a monthly bill shows on Factures and Mon mois; a small change appli
   await expect(billRow).toContainText("Payé");
   await goToMonth(1);
   await expect(billRow).toContainText("100.00");
+  await expect(taxRow).toHaveCount(0);
+
+  // The single-month tax becomes monthly from its own simple editor: no date there either.
+  await goToMonth(0);
+  await page.getByRole("button", { name: "Modifier Impôts test", exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "Modifier Impôts test" })
+    .getByRole("button", { name: "Modifier le nom, le compte, la répétition ou l’arrêter", exact: true })
+    .click();
+  dialog = page.getByRole("dialog", { name: "Une facture" });
+  await expect(dialog.getByLabel("Jour du mois", { exact: true })).toHaveCount(0);
+  await expect(dialog.getByRole("button", { name: /^Seulement / })).toHaveAttribute("aria-pressed", "true");
+  await dialog.getByRole("button", { name: "Tous les mois", exact: true }).click();
+  await dialog.getByRole("button", { name: "Enregistrer", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(taxRow).toContainText("Payé");
+  await goToMonth(1);
+  await expect(taxRow).toContainText("Tous les mois");
+  await expect(taxRow).toContainText("400.00");
+  await expect(taxRow).toContainText("Pas encore payé");
+
+  // Stopping cleanly: « Jusqu'en {mois} » keeps every month before, nothing after.
+  await page.getByRole("button", { name: "Modifier Électricité test", exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "Modifier Électricité test" })
+    .getByRole("button", { name: "Modifier le nom, le compte, la répétition ou l’arrêter", exact: true })
+    .click();
+  dialog = page.getByRole("dialog", { name: "Une facture" });
+  await expect(dialog.getByRole("button", { name: /^Seulement / })).toHaveCount(0);
+  await dialog.getByRole("button", { name: /^Jusqu’en / }).click();
+  await dialog.getByRole("button", { name: "Enregistrer", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(billRow).toContainText("100.00");
+  await goToMonth(2);
+  await expect(billRow).toHaveCount(0);
+  await goToMonth(-1);
+  await expect(billRow).toContainText("80.00");
+  expect(errors).toEqual([]);
+});
+
+test("bills: a yearly bill made monthly from this month never brings back past months as unpaid", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  const monthNames = [
+    "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
+    "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre",
+  ];
+  const now = new Date();
+  const goToMonth = async (offset: number) => {
+    const target = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+    await page.locator(".month-picker-trigger").click();
+    const panelYear = Number(
+      (await page.locator(".month-picker-panel").innerText()).match(/\b(20\d\d)\b/)![1],
+    );
+    for (let y = panelYear; y < target.getFullYear(); y++)
+      await page.getByRole("button", { name: "Année suivante" }).click();
+    for (let y = panelYear; y > target.getFullYear(); y--)
+      await page.getByRole("button", { name: "Année précédente" }).click();
+    await page
+      .getByRole("button", {
+        name: `${monthNames[target.getMonth()]} ${target.getFullYear()}`,
+        exact: true,
+      })
+      .click();
+  };
+  const nav = page.getByRole("navigation", { name: "Navigation principale", exact: true });
+  await page.goto("/");
+  await page.getByLabel("Phrase secrète", { exact: true }).fill("Exemple-test-Finance-annuel");
+  await page.getByLabel("Confirmer la phrase secrète").fill("Exemple-test-Finance-annuel");
+  await page.getByRole("button", { name: "Créer mon coffre" }).click();
+
+  // A yearly bill due three months ago (full form, from Abonnements).
+  const due = new Date(now.getFullYear(), now.getMonth() - 3, 15);
+  const iso = `${due.getFullYear()}-${String(due.getMonth() + 1).padStart(2, "0")}-15`;
+  await nav.getByRole("button", { name: "Abonnements", exact: true }).click();
+  await page.getByRole("button", { name: "Ajouter", exact: true }).click();
+  let dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Libellé", { exact: true }).fill("Impôts annuels test");
+  await dialog.getByLabel("Nature", { exact: true }).selectOption("bill");
+  await dialog.getByLabel("Montant", { exact: true }).fill("1200");
+  await dialog.getByLabel("Catégorie", { exact: true }).fill("Impôts");
+  await dialog.getByLabel("Jour du mois", { exact: true }).fill("15");
+  await dialog.getByLabel("Tous les… mois", { exact: true }).selectOption("12");
+  await dialog.getByLabel("Début", { exact: true }).fill(iso);
+  await dialog.getByRole("button", { name: "Enregistrer", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+
+  // On Factures this month: not due, folded aside, with its real rhythm.
+  await nav.getByRole("button", { name: "Factures", exact: true }).click();
+  const billsCard = page.locator(".card", {
+    has: page.locator(".card-title", { hasText: "Mes factures" }),
+  });
+  const row = page.locator(".row", { hasText: "Impôts annuels test" });
+  await expect(billsCard.locator(".row", { hasText: "Impôts annuels test" })).toHaveCount(0);
+  await page.getByText(/^Factures d’autres mois \(1\)$/).click();
+  await expect(row).toContainText("Tous les ans");
+  await row.getByRole("button", { name: "Modifier Impôts annuels test", exact: true }).click();
+  dialog = page.getByRole("dialog", { name: "Une facture" });
+  await expect(dialog.getByRole("button", { name: "Comme maintenant", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(dialog.getByLabel("Montant", { exact: true })).toHaveValue("1200");
+  await dialog.getByRole("button", { name: "Tous les mois", exact: true }).click();
+  await expect(dialog).toContainText("Les mois d’avant ne changent pas.");
+  await dialog.getByLabel("Montant", { exact: true }).fill("100");
+  await dialog.getByRole("button", { name: "Enregistrer", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  const dueRow = billsCard.locator(".row", { hasText: "Impôts annuels test" });
+  await expect(dueRow).toContainText("100.00");
+  await expect(dueRow).toContainText("Tous les mois");
+  await goToMonth(1);
+  await expect(dueRow).toContainText("100.00");
+
+  // The months before stay as they were: nothing due in between, the yearly one where it was.
+  const leftToPay = page.locator(".stat-card", { hasText: "Reste à payer" }).locator(".metric-value");
+  for (const offset of [-1, -2]) {
+    await goToMonth(offset);
+    await expect(dueRow).toHaveCount(0);
+    await expect(leftToPay).toHaveText(/^0\.00\s*CHF$/);
+  }
+  await goToMonth(-3);
+  await expect(dueRow).toContainText("1 200.00");
   expect(errors).toEqual([]);
 });
 
@@ -1997,7 +2157,6 @@ test("bills page also lists recurring income: received, left to receive, changed
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   const nav = page.getByRole("navigation", { name: "Navigation principale", exact: true });
-  const now = new Date();
   await page.goto("/");
   await page.getByLabel("Phrase secrète", { exact: true }).fill("Exemple-test-Finance-revenus");
   await page.getByLabel("Confirmer la phrase secrète").fill("Exemple-test-Finance-revenus");
@@ -2009,16 +2168,16 @@ test("bills page also lists recurring income: received, left to receive, changed
   });
   await incomeCard.getByRole("button", { name: "Ajouter un revenu", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Un revenu" });
-  await expect(dialog.getByLabel("Type", { exact: true })).toHaveValue("income");
+  await expect(dialog.getByLabel("Jour du mois", { exact: true })).toHaveCount(0);
+  await expect(dialog.getByRole("button", { name: "Tous les mois", exact: true })).toHaveAttribute("aria-pressed", "true");
   await dialog.getByLabel("Libellé", { exact: true }).fill("Prime test");
   await dialog.getByLabel("Montant", { exact: true }).fill("300");
-  await dialog.getByLabel("Jour du mois", { exact: true }).fill("1");
-  await dialog.getByLabel("Début", { exact: true }).fill(`${now.getFullYear() - 1}-01-01`);
   await dialog.getByRole("button", { name: "Enregistrer", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
 
   const incomeRow = incomeCard.locator(".row", { hasText: "Prime test" });
   await expect(incomeRow).toContainText("300.00");
+  await expect(incomeRow).toContainText("Tous les mois");
   await expect(incomeRow).toContainText("Pas encore reçu");
   await expect(page.locator(".stat-card", { hasText: "Revenus de" })).toContainText("300.00");
   // The bills card never shows an income.

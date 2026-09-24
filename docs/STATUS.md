@@ -650,6 +650,54 @@ Preuves : `typecheck`, `test` (**241/241**, dont 18 tests Face ID, 6 du code d'a
 
 Limites : aucun essai sur appareil physique ni contre le vrai GitHub (bloqué dans l'environnement de développement). Face ID dans une PWA demande l'extension PRF : iOS/iPadOS 18 ou plus récent, Windows Hello seulement sur des versions récentes de Windows 11 (sources lues en extraits, non vérifiées) — sinon la phrase secrète reste nécessaire. La vérification accepte aussi le code de l'appareil. L'app installée et chaque navigateur gardent des données séparées (le code d'ajout sert aussi à relier l'app installée). Le code d'ajout se protège comme une sauvegarde : il permet d'essayer des phrases hors ligne et ne se révoque qu'en régénérant la clé GitHub. Une clé « All repositories » n'est pas détectable quand `finance-coffre` est le seul dépôt privé : l'étape 2 demande « Only select repositories ». Tous les projets Pages du compte partagent l'origine `mendestrading21.github.io` (risque préexistant).
 
+## Factures et revenus sans date : « Tous les mois » ou « Seulement ce mois » (développé et testé le 24 septembre 2026)
+
+Fusion précédente : connexion simplifiée dans `main` (commit `af9bf3a`, PR #52), CI et déploiement Pages vérifiés verts.
+
+Demande de l'utilisateur, capture à l'appui (« Impôts — octobre 2026 · Aucune échéance ») : plus de dates ni d'échéances pour les factures ; à l'ajout, seulement « tous les mois » ou « juste le mois sélectionné ». Cause : l'ancien formulaire demandait jour, fréquence, début et fin ; un début par défaut « aujourd'hui » après le jour choisi sautait le mois en cours, et une fin ou une fréquence mal réglée laissait une facture sans échéance.
+
+- **Ajout** (page Factures) : libellé, montant, devise, compte et « Répétition » : **Tous les mois** (dès le mois affiché) ou **Seulement {mois affiché}**. Aucun jour, début, fin, fréquence ni catégorie à saisir.
+- **Modification** d'une facture ou d'un revenu existant : même formulaire, sans jamais toucher aux mois passés.
+  - « Tous les mois » sur une facture annuelle, terminée ou d'un seul mois plus ancien : l'ancienne règle s'arrête avant le mois affiché, et une nouvelle règle mensuelle prend le relais. Aucun mois passé ne revient comme impayé.
+  - « Jusqu'en {mois} » arrête proprement la facture.
+  - « Seulement {mois} » n'est proposé que s'il n'y a rien avant ce mois.
+  - « Comme maintenant » garde un rythme que les choix simples n'expriment pas : début plus tard, tous les 3 mois… Renommer ne déplace aucune date.
+  - Le montant prérempli est celui du mois affiché. Un lien « Plus d'options » ouvre le formulaire complet.
+- **Page Factures** : chaque ligne indique « Tous les mois » ou « Seulement ce mois » au lieu du jour, et plus jamais « Aucune échéance ». Ce qui n'est pas dû ce mois-ci est replié dans « Factures d'autres mois » / « Revenus d'autres mois ». Tri : à payer d'abord, puis montant.
+- **Mon mois** et fenêtre « Modifier » : plus de date inventée pour une facture ou un revenu pas encore réglé. Un paiement garde sa vraie date.
+- Calcul : `simpleEditOptions`, `applySimpleEdit`, `rhythmLabel` et `firstOccurrenceDate` (finance.ts). Une échéance ajustée d'un mois qui n'est plus due est retirée si elle n'est qu'une projection de l'app ; un paiement reste. Le rythme affiché part de la vraie première échéance : « Répétition à choisir » pour un ancien enregistrement jamais dû. Le total mensuel de l'Accueil et la liste Abonnements ignorent les règles d'un seul mois ou terminées.
+
+Vérification indépendante (`finance-verification`) : calculs justes pour une nouvelle facture (cohorte, Mon mois, disponible, jour 31). Deux défauts bloquants dans l'éditeur simple, tous deux corrigés, avec tests et contrôles négatifs :
+- « Tous les mois » sur des impôts annuels payés en mars créait six faux impayés, d'avril à septembre ;
+- renommer une facture qui commence plus tard avançait son début.
+
+Corrigés aussi : échéance fantôme, montant prérempli après un changement prévu, nouveau montant d'un seul mois plus ancien, message d'erreur, fin propre, rythme des anciens enregistrements, tri, totaux mensuels, accès aux options complètes et textes.
+
+Trois contre-vérifications par le même relecteur :
+- 1re : les onze constats tiennent. Un bloquant restait : la scission d'une facture importée de Notion était refusée (« source en doublon »), car la nouvelle règle reprenait son identifiant Notion. S'y ajoutaient la possibilité de doubler une facture en retouchant l'ancienne partie, un montant daté trop tôt et le texte du premier mois. Tout est corrigé.
+- 2e : la « suite » d'une facture était devinée par son nom ; deux factures homonymes (deux salaires, électricité et son décompte) pouvaient être coupées en silence. La suite est désormais liée par son identifiant (`{racine}:suite:{mois}`) ; les homonymes ne sont jamais touchés, et l'ancienne détection échoue au nouveau test.
+- 3e : **publiable côté calculs**, aucun bloquant, 36 sondes vertes (chaînes de deux scissions, trou comblé, import et sauvegarde d'une chaîne Notion). Sa note sur les identifiants importés contenant « :suite: » est corrigée (forme exacte seulement).
+
+Preuves : `typecheck`, `test` (**256/256**, dont 15 tests « sans date » ; l'ancien défaut « début aujourd'hui = rien ce mois-ci » est reproduit dans un test ; huit mutations — scission, choix par défaut, retrait des projections, montant prérempli, identifiant Notion, passation, arrêt à la suite, date du montant — font échouer les tests), `build`, les **21** scénarios `test:e2e` rejoués individuellement. Ils couvrent notamment :
+- « bills… » :
+  - facture ajoutée sans date sur le mois précédent ;
+  - facture « Seulement ce mois » présente ce mois, absente le mois suivant et repliée le mois d'avant ;
+  - paiement des deux ;
+  - passage d'un seul mois à « Tous les mois » depuis son formulaire ;
+  - arrêt avec « Jusqu'en {mois} » (mois d'avant intacts, plus rien après).
+- « bills: a yearly bill made monthly from this month… » : facture annuelle créée depuis Abonnements, passée à « Tous les mois » depuis Factures ; mois intermédiaires vides, échéance annuelle intacte ;
+- « bills page also lists recurring income… » ;
+- « daily entries… » : une facture créée depuis Abonnements se rouvre en « Une facture » sans date.
+
+Captures ordinateur et iPhone de la page, du formulaire et de Mon mois revues.
+
+Limites :
+- Les factures déjà créées avec l'ancien formulaire gardent leur jour et leurs dates internes, mais n'affichent plus de date. Une facture comme « Impôts », sans échéance ce mois-ci, apparaît dans « Factures d'autres mois », où le crayon permet de choisir « Tous les mois » ou « Seulement ce mois ».
+- Une échéance modifiée à la main (note, justificatif) dans un mois qui n'est plus dû est gardée : elle reste visible dans Mon mois.
+- Réimporter l'original Notion d'une facture scindée crée un élément « à rapprocher », comme pour tout import modifié sur l'appareil.
+- Une facture recréée à la main (sans lien) n'est pas reconnue comme la suite d'une ancienne : deux lignes du même nom restent possibles, et visibles.
+- La page Abonnements garde son formulaire complet pour les abonnements.
+
 ## État réel
 
 | Élément                           | État                                                                                                                                                                   | Résultat et limite                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
