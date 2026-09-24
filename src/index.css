@@ -742,7 +742,7 @@ img.brand-mark {
 .dashboard-grid > * {
   min-width: 0;
 }
-/* Étirée à la hauteur de « Votre mois » : la place libre revient à la zone du graphique, pas à un vide en bas. */
+/* Étirée à la hauteur de « Patrimoine par type » : la place libre revient au graphique, pas à un vide en bas. */
 .hero-card {
   position: relative;
   display: flex;
@@ -926,13 +926,6 @@ details[open] > summary::after {
   padding: 8px 4px;
   border-bottom: 1px solid var(--line);
 }
-.flow-chart {
-  width: 100%;
-  min-width: 0;
-}
-.flow-chart > div + div {
-  margin-top: 18px;
-}
 .rates {
   margin-top: 16px;
 }
@@ -1101,8 +1094,72 @@ details[open] > summary::after {
 .left-card {
   margin-bottom: 16px;
 }
-.left-card .metric-value {
-  font-size: 32px;
+/* Accueil : « Il me reste » et « À régler » côte à côte, empilés sur téléphone. */
+.overview-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  gap: 16px;
+  align-items: start;
+  margin-bottom: 16px;
+}
+.overview-top > .left-card {
+  margin-bottom: 0;
+}
+.left-card .progress {
+  margin-top: 12px;
+}
+/* Part des revenus déjà engagée : la couleur des dépenses, pas l'accent. */
+.left-card .left-spent {
+  background: var(--negative);
+}
+.left-breakdown {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0 0;
+}
+.left-breakdown > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 14px;
+}
+.left-breakdown dt {
+  color: var(--muted);
+}
+.left-breakdown dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  white-space: nowrap;
+}
+/* Une ligne par type, montant compris, même dans la colonne étroite de l'Accueil. */
+.row.type-row {
+  flex-wrap: nowrap;
+}
+.type-row > .row-main {
+  min-width: 0;
+}
+.type-row > .row-value {
+  flex-shrink: 0;
+}
+/* Part du patrimoine de chaque type : une fine barre sous le libellé. */
+.type-share {
+  display: block;
+  height: 4px;
+  margin-top: 6px;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.06);
+}
+.type-share > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+/* Plus spécifique que les tailles réduites des indicateurs sur téléphone : le chiffre du mois reste grand. */
+.stat-card.left-card .metric-value {
+  font-size: clamp(26px, 8vw, 32px);
 }
 .action-stack {
   display: grid;
@@ -1581,64 +1638,6 @@ details[open] > summary::after {
 }
 .goal-card .progress {
   margin: 18px 0 12px;
-}
-.donut-layout {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 24px;
-  flex-wrap: wrap;
-}
-.donut {
-  position: relative;
-  width: 150px;
-  height: 150px;
-  flex-shrink: 0;
-  display: grid;
-  place-items: center;
-  margin: 2px auto 12px;
-  border-radius: 50%;
-}
-.donut > svg {
-  width: 100%;
-  height: 100%;
-}
-/* Remplissage par jetons : l'impression les assombrit, un attribut fill resterait clair. */
-.donut-count {
-  fill: var(--text);
-}
-.donut-unit {
-  fill: var(--muted);
-}
-.legend {
-  display: grid;
-  gap: 10px;
-  width: 100%;
-}
-.legend-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--muted);
-  font-size: 13px;
-  line-height: 1.45;
-}
-.legend-swatch {
-  display: block;
-  flex-shrink: 0;
-}
-.legend-item > div {
-  min-width: 0;
-  color: var(--text-soft);
-  overflow-wrap: anywhere;
-}
-.legend-item small {
-  display: block;
-  margin-top: 2px;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.5;
-  font-variant-numeric: tabular-nums;
 }
 
 /* États : vide, information, erreur */
@@ -2399,9 +2398,6 @@ input::file-selector-button {
   .account-grid > .account-card:last-child:nth-child(odd) {
     grid-column: 1 / -1;
   }
-  .donut-layout {
-    gap: 16px;
-  }
 }
 @media (max-width: 900px) {
   .auth-screen {
@@ -2440,6 +2436,11 @@ input::file-selector-button {
   .account-grid {
     grid-template-columns: 1fr;
   }
+  .overview-top {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+    margin-bottom: 12px;
+  }
   .account-groups {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -2458,18 +2459,6 @@ input::file-selector-button {
   }
   .stat-card .metric-value {
     font-size: 20px;
-  }
-  .donut-layout {
-    flex-wrap: nowrap;
-  }
-  .donut-layout .donut {
-    width: 140px;
-    height: 140px;
-    margin: 0;
-  }
-  .donut-layout .legend {
-    width: auto;
-    flex: 1;
   }
   .toast {
     left: calc(50% + 108px);
@@ -2761,16 +2750,6 @@ input::file-selector-button {
   .stat-card .metric-value {
     font-size: 18px;
   }
-  .donut-layout {
-    gap: 16px;
-  }
-  .donut-layout .donut {
-    width: 128px;
-    height: 128px;
-  }
-  .legend-item {
-    gap: 6px;
-  }
   .notice {
     gap: 8px;
     margin-bottom: 16px;
@@ -2988,12 +2967,6 @@ input::file-selector-button {
   }
   .hero-value {
     font-size: 30px;
-  }
-  .donut-layout {
-    flex-wrap: wrap;
-  }
-  .donut-layout .legend {
-    flex-basis: 100%;
   }
   .period-bar .currency-picker > span {
     display: none;

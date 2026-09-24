@@ -915,9 +915,8 @@ test("subscriptions: a status change made on Abonnements updates Mon mois and Ac
     .filter({ hasNotText: "tous les" });
   await expect(monthOccurrenceRow).toHaveCount(1);
   await expect(monthOccurrenceRow).toContainText("Payé");
-  // Item 4: "Le mouvement du mois" and "Projection nette" were removed from Mon mois (they
-  // still exist on Accueil, checked just below) — confirm Mon mois genuinely lost them, not
-  // merely that no earlier test happened to look for them here.
+  // "Le mouvement du mois" and "Projection nette" are gone from every page: a single
+  // « Il me reste » replaces them (checked here on Mon mois, then on Accueil below).
   const mouvementDuMoisHeading = page.getByRole("heading", {
     name: "Le mouvement du mois",
     exact: true,
@@ -926,15 +925,17 @@ test("subscriptions: a status change made on Abonnements updates Mon mois and Ac
   await expect(mouvementDuMoisHeading).toHaveCount(0);
   await expect(projectionNette).toHaveCount(0);
 
-  // Accueil: the settlement is reflected in the month's confirmed figures, and this is where
-  // the two cards above actually still live.
+  // Accueil: the paid occurrence no longer waits in « À régler », the one « Il me reste » is
+  // there, and the old duplicate month figures are not.
   await nav.getByRole("button", { name: "Vue d’ensemble", exact: true }).click();
-  const expensesConfirmed = page
-    .locator(".metric", { hasText: "Dépenses confirmées" })
-    .locator(".metric-value");
-  await expect(expensesConfirmed).toContainText("77.70");
-  await expect(mouvementDuMoisHeading).toBeVisible();
-  await expect(projectionNette).toBeVisible();
+  const toSettle = page.locator(".card", {
+    has: page.locator(".card-title", { hasText: "À régler" }),
+  });
+  await expect(toSettle).toBeVisible();
+  await expect(toSettle.locator(".row", { hasText: "Charge test abo" })).toHaveCount(0);
+  await expect(page.locator(".left-card")).toContainText("Il me reste en");
+  await expect(mouvementDuMoisHeading).toHaveCount(0);
+  await expect(projectionNette).toHaveCount(0);
 
   // Reload and unlock: everything above survives, still no duplicate.
   await page.reload();
@@ -951,9 +952,8 @@ test("subscriptions: a status change made on Abonnements updates Mon mois and Ac
   await expect(
     page.getByRole("heading", { name: "Une vue sur l’essentiel.", exact: true }),
   ).toBeVisible();
-  await expect(expensesConfirmed).toContainText("77.70");
-  await expect(mouvementDuMoisHeading).toBeVisible();
-  await expect(projectionNette).toBeVisible();
+  await expect(toSettle).toBeVisible();
+  await expect(toSettle.locator(".row", { hasText: "Charge test abo" })).toHaveCount(0);
   await nav.getByRole("button", { name: "Mon mois", exact: true }).click();
   await expect(monthOccurrenceRow).toHaveCount(1);
   await expect(monthOccurrenceRow).toContainText("Payé");
@@ -2109,10 +2109,12 @@ test("what is left this month: a bill paid ahead counts in its own month, on Mon
   await expect(left).toContainText("Ajoutez votre salaire");
   await add("Ajouter un revenu", "Un revenu", "Salaire test", "5000");
 
-  // Factures: what is left after the fixed bills, this month.
-  await expect(left).toContainText(`Après mes factures en ${monthNames[now.getMonth()].toLowerCase()}`);
+  // Factures: the same « Il me reste » as Mon mois and the Accueil, for this month.
+  await expect(left).toContainText(`Il me reste en ${monthNames[now.getMonth()].toLowerCase()}`);
   await expect(left.locator(".metric-value")).toHaveText(/^2\s?500\.00\s*CHF$/);
-  await expect(left).toContainText("Revenus fixes 5 000.00 CHF − factures 2 500.00 CHF");
+  const breakdown = (label: string) => left.locator(".left-breakdown div", { hasText: label }).locator("dd");
+  await expect(breakdown("Revenus")).toHaveText(/^5\s?000\.00\s*CHF$/);
+  await expect(breakdown("Dépenses")).toHaveText(/^2\s?500\.00\s*CHF$/);
 
   // Next month's rent and salary settled ahead of time, today.
   await goToMonth(1);
@@ -2134,14 +2136,24 @@ test("what is left this month: a bill paid ahead counts in its own month, on Mon
   await expect(left).toContainText(`Il me reste en ${monthNames[(now.getMonth() + 1) % 12].toLowerCase()}`);
   await expect(operations.locator(".row", { hasText: "Loyer test" })).not.toContainText(/\d{4}-\d{2}-\d{2}/);
   await expect(left.locator(".metric-value")).toHaveText(/^3\s?000\.00\s*CHF$/);
-  await expect(page.locator(".stat-card", { hasText: "Dépenses payées" }).locator(".metric-value")).toHaveText(/^2\s?000\.00\s*CHF$/);
+  await expect(page.locator(".stat-grid .stat-card", { hasText: "Dépenses payées" }).locator(".metric-value")).toHaveText(/^2\s?000\.00\s*CHF$/);
 
   // This month: only its own rent (still due) and the one-month tax — never next month's.
   await goToMonth(0);
   await expect(operations.locator(".row", { hasText: "Loyer test" })).toHaveCount(1);
   await expect(operations.locator(".row", { hasText: "Loyer test" })).toContainText("Pas encore payé");
   await expect(left.locator(".metric-value")).toHaveText(/^2\s?500\.00\s*CHF$/);
-  await expect(page.locator(".stat-card", { hasText: "Dépenses payées" }).locator(".metric-value")).toHaveText(/^0\.00\s*CHF$/);
+  await expect(page.locator(".stat-grid .stat-card", { hasText: "Dépenses payées" }).locator(".metric-value")).toHaveText(/^0\.00\s*CHF$/);
+
+  // Accueil: the very same « Il me reste », then the rent still to pay, at the top of the page.
+  await nav.getByRole("button", { name: "Vue d’ensemble", exact: true }).click();
+  await expect(left).toHaveCount(1);
+  await expect(left.locator(".metric-value")).toHaveText(/^2\s?500\.00\s*CHF$/);
+  const toSettle = page.locator(".card", {
+    has: page.locator(".card-title", { hasText: "À régler" }),
+  });
+  await expect(toSettle.locator(".row", { hasText: "Loyer test" }).getByRole("button", { name: "Payer", exact: true })).toBeVisible();
+  await nav.getByRole("button", { name: "Mon mois", exact: true }).click();
 
   // The recurring preview on Mon mois shows a rhythm, never a day.
   const recurring = page.locator(".card", {

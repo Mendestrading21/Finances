@@ -2,8 +2,6 @@ import type { FinanceData } from "../domain/types";
 import { dateLabel, money, wealthSummary } from "../domain/finance";
 // SVG attributes cannot read CSS variables reliably: keep ACCENT equal to --accent (index.css).
 const ACCENT = "#A8BCE8";
-// Nuances de bleu glacier à luminances alternées, ≥3,8:1 contre la carte verre sous le halo.
-const colors = [ACCENT, "#6F84B3", "#D2DCF2", "#8A9CC4", "#7884A2"];
 // En dessous, une mini-courbe se réduit à un trait isolé qui ne montre aucune tendance.
 export const SPARKLINE_MIN_POINTS = 3;
 export function Sparkline({
@@ -62,8 +60,6 @@ export function Sparkline({
     </svg>
   );
 }
-const DONUT_CIRCUMFERENCE = 402.12;
-const DONUT_GAP = 3;
 // Liées aux rangées en % de .wealth-scale (index.css) : 20/140, 100/140, 20/140.
 const WEALTH_HEIGHT = 140,
   PLOT_TOP = 20,
@@ -254,164 +250,5 @@ export function WealthChart({
         ))}
       </details>
     </>
-  );
-}
-export function Allocation({
-  items,
-  currency,
-  hidden,
-  unit = "comptes",
-}: {
-  items: { name: string; value: number }[];
-  currency: string;
-  hidden: boolean;
-  // Ce que compte le centre de l'anneau : des comptes, ou des types de compte.
-  unit?: string;
-}) {
-  const positive = items.filter((i) => i.value > 0);
-  const total = positive.reduce((s, i) => s + i.value, 0);
-  if (hidden) return <div className="chart-empty">Montants masqués</div>;
-  if (!total)
-    return (
-      <div className="empty-state">
-        La répartition apparaîtra avec vos soldes datés.
-      </div>
-    );
-  let offset = 0;
-  return (
-    <div className="donut-layout">
-      <svg
-        className="donut"
-        viewBox="0 0 160 160"
-        role="img"
-        aria-label="Répartition des actifs positifs"
-      >
-        <circle
-          cx="80"
-          cy="80"
-          r="64"
-          fill="none"
-          stroke="#FFFFFF"
-          strokeOpacity="0.06"
-          strokeWidth="13"
-        />
-        {positive.map((i, n) => {
-          const part = (i.value / total) * DONUT_CIRCUMFERENCE;
-          // Butt caps keep each arc proportional; the gap separates neighbours without a stroke.
-          const dash =
-            positive.length > 1 ? Math.max(part - DONUT_GAP, part / 2) : part;
-          const element = (
-            <circle
-              key={i.name}
-              cx="80"
-              cy="80"
-              r="64"
-              fill="none"
-              stroke={colors[n % colors.length]}
-              strokeWidth="13"
-              strokeDasharray={`${dash} ${DONUT_CIRCUMFERENCE - dash}`}
-              strokeDashoffset={-offset}
-              transform="rotate(-90 80 80)"
-              strokeLinecap="butt"
-            />
-          );
-          offset += part;
-          return element;
-        })}
-        {/* Unités du viewBox : 15 donne 12 px au plus petit donut (128 px). */}
-        <text
-          className="donut-count"
-          x="80"
-          y="78"
-          textAnchor="middle"
-          fontSize="24"
-          fontWeight="600"
-        >
-          {positive.length}
-        </text>
-        <text
-          className="donut-unit"
-          x="80"
-          y="98"
-          textAnchor="middle"
-          fontSize="15"
-        >
-          {unit}
-        </text>
-      </svg>
-      <div className="legend">
-        {positive.map((i, n) => (
-          <div className="legend-item" key={i.name}>
-            <svg
-              className="legend-swatch"
-              width="8"
-              height="8"
-              aria-hidden="true"
-            >
-              <rect
-                width="8"
-                height="8"
-                rx="2"
-                fill={colors[n % colors.length]}
-              />
-            </svg>
-            <div>
-              {i.name}
-              <small>
-                {money(i.value, currency)} ·{" "}
-                {((i.value / total) * 100).toFixed(1)} %
-              </small>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-export function FlowChart({
-  income,
-  expense,
-  currency,
-  hidden,
-}: {
-  income: number | null;
-  expense: number | null;
-  currency: string;
-  hidden: boolean;
-}) {
-  if (hidden) return <div className="chart-empty">Montants masqués</div>;
-  const max = Math.max(income || 0, expense || 0, 1);
-  return (
-    <div className="flow-chart">
-      {/* Entrées en vert, dépenses en rouge (jetons CSS, assombris à l’impression), libellé au-dessus. */}
-      {[
-        {
-          label: "Entrées prévues et reçues",
-          n: income,
-          color: "var(--positive)",
-        },
-        {
-          label: "Dépenses prévues et payées",
-          n: expense,
-          color: "var(--negative)",
-        },
-      ].map((i) => (
-        <div key={i.label}>
-          <div className="hero-foot">
-            <span>{i.label}</span>
-            <strong>{money(i.n, currency)}</strong>
-          </div>
-          <div className="progress">
-            <div
-              className="progress-fill"
-              style={{
-                width: `${((i.n || 0) / max) * 100}%`,
-                background: i.color,
-              }}
-            />
-          </div>
-        </div>
-      ))}
-    </div>
   );
 }

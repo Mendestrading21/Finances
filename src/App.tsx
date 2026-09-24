@@ -17,7 +17,6 @@ import {
   type Transaction,
 } from "./domain/types";
 import {
-  availableSummary,
   cohortSummary,
   convertMinor,
   isDate,
@@ -38,7 +37,6 @@ import {
   projectedOccurrence,
   transactionMonth,
   rhythmLabel,
-  simpleRepeatOf,
   withOccurrenceAmount,
   withRecurrenceAmount,
 } from "./domain/finance";
@@ -60,8 +58,6 @@ import {
   wealthByType,
 } from "./domain/accountTypes";
 import {
-  Allocation,
-  FlowChart,
   SPARKLINE_MIN_POINTS,
   Sparkline,
   WealthChart,
@@ -1296,7 +1292,6 @@ export default function App() {
         />
       </>
     );
-  const available = availableSummary(data, currency, month);
   const wealth = wealthSummary(data, currency),
     // Patrimoine par type de compte (Compte courant, 3e pilier, Léna…), mêmes valeurs que le total.
     wealthTypes = wealthByType(data, currency),
@@ -1473,41 +1468,6 @@ export default function App() {
       ? Math.min(100, (subsCohort.settledMinor / subsCohort.dueMinor) * 100)
       : null;
   const subsFlow = recurringFlowSummary(data, month, currency);
-  // Coût mensuel par nature pour l'aperçu de l'Accueil : somme de l'équivalent mensuel de
-  // chaque récurrence active de cette nature, converti vers la devise d'affichage — même
-  // schéma que subsAmountRanking ci-dessous (monthlyEquivalentMinor + convertMinor à la même
-  // date), pas la cohorte du mois (qui vaudrait 0 les mois sans échéance pour une récurrence
-  // trimestrielle ou annuelle). Une seule devise manquante rend le total entier "partiel"
-  // plutôt que d'additionner des montants non comparables.
-  const monthlyEquivalentTotal = (type: Recurrence["recurrenceType"]) => {
-    const at = today();
-    let totalMinor = 0,
-      excluded = 0,
-      count = 0;
-    for (const r of data.recurrences) {
-      if (!r.active || r.recurrenceType !== type) continue;
-      // Un seul mois n'est pas une charge mensuelle ; une règle terminée n'en est plus une.
-      if (simpleRepeatOf(r) === "single" || nextOccurrenceDate(r, `${at.slice(0, 7)}-01`) === null)
-        continue;
-      count++;
-      const converted = convertMinor(
-        monthlyEquivalentMinor(r, at),
-        r.currency,
-        currency,
-        data.fxRates,
-        at,
-      );
-      if (converted === null) {
-        excluded++;
-        continue;
-      }
-      totalMinor += converted;
-    }
-    return { totalMinor: excluded > 0 ? null : totalMinor, count, excluded };
-  };
-  const subsMonthlyOverview = monthlyEquivalentTotal("subscription");
-  const billsMonthlyOverview = monthlyEquivalentTotal("bill");
-  const savingMonthlyOverview = monthlyEquivalentTotal("saving");
   const subsMatchesType = (r: Recurrence) =>
     filter === "all" || r.recurrenceType === filter;
   const subsMatchesStatus = (r: Recurrence) => {
@@ -1632,23 +1592,56 @@ export default function App() {
     summary.unknownCount > 0 || monthIncome === null
       ? null
       : monthIncome - (monthExpense ?? 0);
-  const billsLeft =
-    !incomes.due.length || incomeCohort.dueMinor === null || billsCohort.dueMinor === null
-      ? null
-      : incomeCohort.dueMinor - billsCohort.dueMinor;
+  // Mises de côté du mois (3e pilier, épargne) : hors du « reste », mais montrées à côté.
+  const savingCohort = cohortSummary(data, month, currency, ["saving"]);
+  // Un seul « Il me reste », identique sur l'Accueil, Mon mois et Factures : le chiffre, puis
+  // ce qui le compose (revenus, dépenses payées et prévues) et la part des revenus déjà engagée.
+  const spentPct =
+    monthIncome !== null && monthIncome > 0 && monthExpense !== null
+      ? Math.min(100, (monthExpense / monthIncome) * 100)
+      : null;
   const leftCard = (
-    label: string,
-    value: number | null,
-    detail: string,
-  ) => (
     <div className="stat-card left-card">
-      <p className="metric-label">{label}</p>
+      <p className="metric-label">Il me reste en {monthLabel(month)}</p>
       <div
-        className={`metric-value ${value === null ? "" : value < 0 ? "negative" : "positive"}`}
+        className={`metric-value ${monthLeft === null ? "" : monthLeft < 0 ? "negative" : "positive"}`}
       >
-        {display(value)}
+        {display(monthLeft)}
       </div>
-      <p className="meta">{detail}</p>
+      {monthLeft === null ? (
+        <p className="meta">
+          {summary.unknownCount > 0
+            ? "À compléter : une opération sans date, sans taux de change ou à vérifier."
+            : `Ajoutez votre salaire ou vos revenus de ${monthLabel(month)} pour voir ce qu’il reste.`}
+        </p>
+      ) : (
+        <>
+          {!hidden && spentPct !== null && (
+            <div className="progress" aria-hidden="true">
+              <div
+                className="progress-fill left-spent"
+                style={{ width: `${spentPct}%` }}
+              />
+            </div>
+          )}
+          <dl className="left-breakdown">
+            <div>
+              <dt>Revenus</dt>
+              <dd className="positive">{display(monthIncome)}</dd>
+            </div>
+            <div>
+              <dt>Dépenses payées et prévues</dt>
+              <dd className="negative">{display(monthExpense ?? 0)}</dd>
+            </div>
+            {savingCohort.dueMinor !== null && savingCohort.dueMinor > 0 && (
+              <div>
+                <dt>Mises de côté, à part</dt>
+                <dd>{display(savingCohort.dueMinor)}</dd>
+              </div>
+            )}
+          </dl>
+        </>
+      )}
     </div>
   );
   const incomeActive = incomes.due,
@@ -2587,253 +2580,11 @@ export default function App() {
                 </button>
               </div>
             )}
-            <div className="dashboard-grid">
-              <section className="hero-card">
-                <div className="hero-foot">
-                  <p className="hero-label">
-                    Patrimoine observé{" "}
-                    {wealth.partial && <span className="tag">Partiel</span>}
-                  </p>
-                  <span className="card-icon">
-                    <Icon name="chart" size={18} />
-                  </span>
-                </div>
-                <div className="hero-value">{display(wealth.totalMinor)}</div>
-                <p className="meta">
-                  {wealth.partial
-                    ? `${wealth.excluded} compte(s) exclu(s) : date, valeur ou taux manquant.`
-                    : "Valeurs datées connues, sans double comptage."}
-                </p>
-                <WealthChart data={data} currency={currency} hidden={hidden} />
-                <p className="footer-note">
-                  Historique des valeurs disponibles · aucune performance
-                  déduite des apports.
-                </p>
-              </section>
+            {/* Dans l'ordre de la journée : ce qu'il me reste, ce qu'il faut régler, puis le patrimoine. */}
+            <div className="overview-top">
+              {leftCard}
               <Card
-                title="Votre mois"
-                icon="calendar"
-                action={
-                  <button
-                    className="card-action"
-                    onClick={() => navigate("month")}
-                  >
-                    Détail <Icon name="chevron-right" size={18} />
-                  </button>
-                }
-              >
-                <div className="metric">
-                  <div className="metric-label">Revenus confirmés</div>
-                  <div className="metric-value positive">
-                    {display(summary.incomeSettled)}
-                  </div>
-                </div>
-                <div className="metric">
-                  <div className="metric-label">Dépenses confirmées</div>
-                  <div className="metric-value negative">
-                    {display(summary.expenseSettled)}
-                  </div>
-                </div>
-                <div className="metric">
-                  <div className="metric-label">
-                    Disponible après réserves et charges
-                  </div>
-                  <div className="metric-value">
-                    {display(available.amountMinor)}
-                  </div>
-                  <p className="footer-note">
-                    {available.partial
-                      ? "À établir avec des soldes bancaires du jour et des engagements rapprochés."
-                      : `Estimation au ${available.asOf}, après engagements connus du mois.`}
-                  </p>
-                </div>
-                <div className="metric highlighted">
-                  <div className="metric-label">Projection nette du mois</div>
-                  <div className="metric-value">
-                    {display(summary.remaining)}
-                  </div>
-                  <p className="footer-note">
-                    Revenus prévus et reçus, moins dépenses prévues et payées.
-                    Ce n’est pas le solde disponible.
-                  </p>
-                </div>
-              </Card>
-            </div>
-            <div className="section-heading">
-              <h2>Aperçu du mois</h2>
-            </div>
-            <div className="stat-grid">
-              {[
-                {
-                  label: "Revenus (reçus et attendus)",
-                  value:
-                    summary.incomePlanned === null ||
-                    summary.incomeSettled === null
-                      ? null
-                      : summary.incomePlanned + summary.incomeSettled,
-                  meta: null as string | null,
-                  tone: "positive",
-                },
-                {
-                  label: "Abonnements (mensuel)",
-                  value: subsMonthlyOverview.totalMinor,
-                  meta: `${subsMonthlyOverview.count} actif(s)`,
-                  tone: "negative",
-                },
-                {
-                  label: "Factures et charges (mensuel)",
-                  value: billsMonthlyOverview.totalMinor,
-                  meta: `${billsMonthlyOverview.count} actif(s)`,
-                  tone: "negative",
-                },
-                {
-                  label: "Épargne (mensuel)",
-                  value: savingMonthlyOverview.totalMinor,
-                  meta: `${savingMonthlyOverview.count} actif(s)`,
-                  tone: "transfer",
-                },
-              ].map((s) => (
-                <div className="stat-card" key={s.label}>
-                  <p className="metric-label">{s.label}</p>
-                  <div className={`metric-value ${s.tone}`}>
-                    {s.value !== null ? display(s.value) : "—"}
-                  </div>
-                  {s.meta && <p className="meta">{s.meta}</p>}
-                </div>
-              ))}
-            </div>
-            <Card
-              title="Patrimoine par type"
-              icon="wallet"
-              action={
-                <button
-                  className="card-action"
-                  onClick={() => navigate("accounts")}
-                >
-                  Tous les comptes <Icon name="chevron-right" size={18} />
-                </button>
-              }
-            >
-              {wealthTypes.map((g) => (
-                <div className="row" key={g.label}>
-                  <span className="institution-icon" aria-hidden="true">
-                    <Icon name={accountTypeIcon(g.label)} size={18} />
-                  </span>
-                  <div className="row-main">
-                    <span className="row-title">{g.label}</span>
-                    <span className="row-detail">
-                      {g.count} compte{g.count > 1 ? "s" : ""}
-                      {g.excluded > 0 &&
-                        `${SEP}${g.excluded} non compté${g.excluded > 1 ? "s" : ""} (solde ou taux manquant)`}
-                      {!hidden &&
-                        g.totalMinor !== null &&
-                        g.totalMinor > 0 &&
-                        wealthAssetsMinor > 0 &&
-                        `${SEP}${Math.round((g.totalMinor / wealthAssetsMinor) * 100)} %`}
-                    </span>
-                  </div>
-                  <span className="row-value">{display(g.totalMinor)}</span>
-                </div>
-              ))}
-              {!data.accounts.length && (
-                <div className="empty-state">
-                  <Icon name="wallet" size={30} />
-                  <h3>Tout commence par un compte.</h3>
-                  <p>Ajoutez un compte ou importez vos données vérifiées.</p>
-                  <button
-                    className="button secondary"
-                    onClick={() => edit({ type: "account" })}
-                  >
-                    Ajouter un compte
-                  </button>
-                </div>
-              )}
-            </Card>
-            <div className="three-columns">
-              <Card title="Répartition du patrimoine" icon="chart">
-                <Allocation
-                  hidden={hidden}
-                  currency={currency}
-                  unit="types"
-                  // Par type de compte, du plus grand au plus petit (wealthByType est déjà trié).
-                  items={wealthTypes.flatMap((g) =>
-                    g.totalMinor === null
-                      ? []
-                      : [{ name: g.label, value: g.totalMinor }],
-                  )}
-                />
-                <p className="footer-note">
-                  Actifs positifs uniquement. Dettes déduites du patrimoine
-                  total.
-                </p>
-              </Card>
-              <div className="card-stack">
-                <Card title="Le mouvement du mois" icon="transfer">
-                  <FlowChart
-                    income={
-                      summary.incomePlanned === null ||
-                      summary.incomeSettled === null
-                        ? null
-                        : summary.incomePlanned + summary.incomeSettled
-                    }
-                    expense={
-                      summary.expensePlanned === null ||
-                      summary.expenseSettled === null
-                        ? null
-                        : summary.expensePlanned + summary.expenseSettled
-                    }
-                    currency={currency}
-                    hidden={hidden}
-                  />
-                </Card>
-                <Card
-                  title="À votre attention"
-                  icon="alert"
-                  action={<span className="tag">{attention}</span>}
-                >
-                  {unknownAccounts > 0 && (
-                    <div className="row">
-                      <Icon name="alert" />
-                      <div className="row-main">
-                        <span className="row-title">
-                          {unknownAccounts} compte(s) sans solde daté
-                        </span>
-                        <span className="row-detail">
-                          Ils ne sont pas inclus dans le total.
-                        </span>
-                      </div>
-                      <button
-                        className="card-action"
-                        onClick={() => navigate("accounts")}
-                      >
-                        Vérifier
-                      </button>
-                    </div>
-                  )}
-                  {staleAccounts > 0 && (
-                    <p className="warning">
-                      {staleAccounts} solde(s) datent de plus de 31 jours.
-                    </p>
-                  )}
-                  {data.reviewItems.length > 0 && (
-                    <button
-                      className="nav-item"
-                      onClick={() => navigate("documents")}
-                    >
-                      <Icon name="document" />
-                      {data.reviewItems.length} informations importées à rapprocher
-                      <Icon name="chevron-right" />
-                    </button>
-                  )}
-                  {!attention && (
-                    <p className="meta">
-                      Aucune information à rapprocher dans les données présentes.
-                    </p>
-                  )}
-                </Card>
-              </div>
-              <Card
-                title="Prochaines échéances"
+                title="À régler"
                 icon="clock"
                 action={
                   <button
@@ -2857,24 +2608,140 @@ export default function App() {
                   .map(transactionRow)}
                 {!transactions.some((t) => t.status === "planned") && (
                   <div className="empty-state">
-                    Aucune échéance connue pour ce mois.
+                    Tout est réglé pour {monthLabel(month)}.
                   </div>
                 )}
               </Card>
             </div>
+            <div className="dashboard-grid">
+              <section className="hero-card">
+                <div className="hero-foot">
+                  <p className="hero-label">
+                    Mon patrimoine{" "}
+                    {wealth.partial && <span className="tag">Partiel</span>}
+                  </p>
+                  <span className="card-icon">
+                    <Icon name="chart" size={18} />
+                  </span>
+                </div>
+                <div className="hero-value">{display(wealth.totalMinor)}</div>
+                <p className="meta">
+                  {wealth.partial
+                    ? `${wealth.excluded} compte(s) exclu(s) : date, valeur ou taux manquant.`
+                    : "Valeurs datées connues, sans double comptage."}
+                </p>
+                <WealthChart data={data} currency={currency} hidden={hidden} />
+                <p className="footer-note">
+                  Historique des valeurs disponibles · aucune performance
+                  déduite des apports.
+                </p>
+              </section>
+              <Card
+                title="Patrimoine par type"
+                icon="wallet"
+                action={
+                  <button
+                    className="card-action"
+                    onClick={() => navigate("accounts")}
+                  >
+                    Tous les comptes <Icon name="chevron-right" size={18} />
+                  </button>
+                }
+              >
+                {wealthTypes.map((g) => {
+                  // Part des actifs, masquée avec les montants.
+                  const share =
+                    !hidden &&
+                    g.totalMinor !== null &&
+                    g.totalMinor > 0 &&
+                    wealthAssetsMinor > 0
+                      ? (g.totalMinor / wealthAssetsMinor) * 100
+                      : null;
+                  return (
+                    <div className="row type-row" key={g.label}>
+                      <span className="institution-icon" aria-hidden="true">
+                        <Icon name={accountTypeIcon(g.label)} size={18} />
+                      </span>
+                      <div className="row-main">
+                        <span className="row-title">{g.label}</span>
+                        <span className="row-detail">
+                          {g.count} compte{g.count > 1 ? "s" : ""}
+                          {g.excluded > 0 &&
+                          `${SEP}${g.excluded} non compté${g.excluded > 1 ? "s" : ""} (solde ou taux manquant)`}
+                          {share !== null && `${SEP}${Math.round(share)} %`}
+                        </span>
+                        {share !== null && (
+                          <span className="type-share" aria-hidden="true">
+                            <span style={{ width: `${Math.min(100, share)}%` }} />
+                          </span>
+                        )}
+                      </div>
+                      <span className="row-value">{display(g.totalMinor)}</span>
+                    </div>
+                  );
+                })}
+                {!data.accounts.length && (
+                  <div className="empty-state">
+                    <Icon name="wallet" size={30} />
+                    <h3>Tout commence par un compte.</h3>
+                    <p>Ajoutez un compte ou importez vos données vérifiées.</p>
+                    <button
+                      className="button secondary"
+                      onClick={() => edit({ type: "account" })}
+                    >
+                      Ajouter un compte
+                    </button>
+                  </div>
+                )}
+              </Card>
+            </div>
+            {attention > 0 && (
+              <Card
+                title="À votre attention"
+                icon="alert"
+                action={<span className="tag">{attention}</span>}
+              >
+                {unknownAccounts > 0 && (
+                  <div className="row">
+                    <Icon name="alert" />
+                    <div className="row-main">
+                      <span className="row-title">
+                        {unknownAccounts} compte(s) sans solde daté
+                      </span>
+                      <span className="row-detail">
+                        Ils ne sont pas inclus dans le total.
+                      </span>
+                    </div>
+                    <button
+                      className="card-action"
+                      onClick={() => navigate("accounts")}
+                    >
+                      Vérifier
+                    </button>
+                  </div>
+                )}
+                {staleAccounts > 0 && (
+                  <p className="warning">
+                    {staleAccounts} solde(s) datent de plus de 31 jours.
+                  </p>
+                )}
+                {data.reviewItems.length > 0 && (
+                  <button
+                    className="nav-item"
+                    onClick={() => navigate("documents")}
+                  >
+                    <Icon name="document" />
+                    {data.reviewItems.length} informations importées à rapprocher
+                    <Icon name="chevron-right" />
+                  </button>
+                )}
+              </Card>
+            )}
           </>
         )}
         {page === "month" && (
           <>
-            {leftCard(
-              `Il me reste en ${monthLabel(month)}`,
-              monthLeft,
-              summary.unknownCount > 0
-                ? "À compléter : une opération sans date, sans taux de change ou à vérifier."
-                : monthIncome === null
-                  ? `Ajoutez votre salaire ou vos revenus de ${monthLabel(month)} pour voir ce qu’il reste.`
-                  : `Revenus ${display(monthIncome)} − dépenses ${display(monthExpense ?? 0)}, payées et prévues (hors mises de côté).`,
-            )}
+            {leftCard}
             <div className="stat-grid">
               {[
                 { label: "Revenus reçus", v: summary.incomeSettled, tone: "positive" },
@@ -3073,15 +2940,7 @@ export default function App() {
         )}
         {page === "bills" && (
           <>
-            {leftCard(
-              `Après mes factures en ${monthLabel(month)}`,
-              billsLeft,
-              !incomeActive.length
-                ? `Ajoutez votre salaire dans « Mes revenus » pour voir ce qu’il reste après vos factures.`
-                : billsLeft === null
-                  ? "À compléter : un montant dans une autre devise sans taux de change."
-                  : `Revenus fixes ${display(incomeCohort.dueMinor)} − factures ${display(billsCohort.dueMinor)}. Le reste du mois est dans Mon mois.`,
-            )}
+            {leftCard}
             <div className="stat-grid">
               {[
                 {
