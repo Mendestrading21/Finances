@@ -97,6 +97,8 @@ export default function Editor({
       data.transactions.find((t) => t.id === spec.id)?.kind ||
       "expense",
   );
+  // "Tous les mois" saves a new income or expense as a monthly recurrence instead of a one-off.
+  const [repeat, setRepeat] = useState<"once" | "monthly">("once");
   // recurrenceType "income" only applies to kind "income" (validation.ts enforces it), so it
   // is derived from recurrenceKind rather than stored directly — storing it directly and
   // forcing it to "income" while kind is income would overwrite whatever the user had chosen
@@ -131,6 +133,9 @@ export default function Editor({
               ? data.recurrences.find((i) => i.id === spec.id)
               : undefined;
   const initial = (item || {}) as unknown as Record<string, unknown>;
+  const canRepeat =
+    spec.type === "transaction" && !spec.quick && !item && kind !== "transfer";
+  const monthly = canRepeat && repeat === "monthly";
   useEffect(() => {
     // Real defect, measured with a keyboard-only run (Tab/Enter/Escape, no mouse): closing
     // the editor left document.activeElement on <body> instead of the button that opened it,
@@ -320,7 +325,48 @@ export default function Editor({
           source: { system: "manual", updatedAt: new Date().toISOString() },
         });
       }
-      if (spec.type === "transaction") {
+      if (spec.type === "transaction" && monthly) {
+        const startDate = get("date") || today();
+        const recurrence: Recurrence = {
+          id,
+          label: get("label"),
+          kind: get("kind") as "income" | "expense",
+          recurrenceType: (get("kind") === "income"
+            ? "income"
+            : get("recurrenceType")) as Recurrence["recurrenceType"],
+          amountMinor: num("amountMinor"),
+          currency: get("currency"),
+          accountId: nullable(f.get("accountId")),
+          category: get("category"),
+          day: Number(startDate.slice(8, 10)),
+          intervalMonths: 1,
+          startDate,
+          endDate: null,
+          active: true,
+          source,
+        };
+        updated.recurrences = [...updated.recurrences, recurrence];
+        const status = get("status") as Transaction["status"];
+        // Already paid or received this month: record this first occurrence as such.
+        if (status !== "planned")
+          updated.transactions = [
+            ...updated.transactions,
+            {
+              id: crypto.randomUUID(),
+              label: recurrence.label,
+              kind: recurrence.kind,
+              amountMinor: recurrence.amountMinor,
+              currency: recurrence.currency,
+              status,
+              date: startDate,
+              accountId: recurrence.accountId,
+              category: recurrence.category,
+              source,
+              recurrenceId: recurrence.id,
+              occurrenceDate: startDate,
+            },
+          ];
+      } else if (spec.type === "transaction") {
         // Quick editor only exposes Libellé/Montant/Mois; date and budgetMonth come from
         // hidden inputs carrying the pre-edit value — transactionDateFields() decides whether
         // the month actually changed and resolves both fields from that (see its docstring).
@@ -579,6 +625,45 @@ export default function Editor({
                       <option value="transfer">Virement entre mes comptes</option>
                     </select>
                   </label>
+                  {canRepeat && (
+                    <div className="field field-full">
+                      <span id="repeat-label">Répétition</span>
+                      <div
+                        className="tab-bar"
+                        role="group"
+                        aria-labelledby="repeat-label"
+                      >
+                        <button
+                          type="button"
+                          className={`tab-button${repeat === "once" ? " active" : ""}`}
+                          aria-pressed={repeat === "once"}
+                          onClick={() => setRepeat("once")}
+                        >
+                          Ce mois seulement
+                        </button>
+                        <button
+                          type="button"
+                          className={`tab-button${repeat === "monthly" ? " active" : ""}`}
+                          aria-pressed={repeat === "monthly"}
+                          onClick={() => setRepeat("monthly")}
+                        >
+                          Tous les mois
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  {monthly && kind === "expense" &&
+                    field("Nature", "recurrenceType", {
+                      defaultValue: "bill",
+                      children: (
+                        <>
+                          <option value="bill">Charge (loyer, assurance…)</option>
+                          <option value="subscription">Abonnement</option>
+                          <option value="saving">Épargne / mise de côté</option>
+                          <option value="other">Autre à vérifier</option>
+                        </>
+                      ),
+                    })}
                   {field("Montant", "amountMinor", {
                     required: true,
                     defaultValue: amount("amountMinor"),
@@ -589,9 +674,10 @@ export default function Editor({
                     type: "date",
                     defaultValue: val("date", item ? "" : today()),
                   })}
-                  {field("Mois de budget (facultatif)", "budgetMonth", {
-                    type: "month",
-                  })}
+                  {!monthly &&
+                    field("Mois de budget (facultatif)", "budgetMonth", {
+                      type: "month",
+                    })}
                   {field("État", "status", {
                     defaultValue: val("status", "planned"),
                     children: (
@@ -636,9 +722,9 @@ export default function Editor({
                     </>
                   )}
                   <p className="footer-note field-full">
-                    L’opération alimente votre mois. Les soldes restent des
-                    observations : actualisez-les depuis Mes comptes après
-                    rapprochement.
+                    {monthly
+                      ? "Enregistrée comme récurrence : elle revient chaque mois au même jour et se modifie depuis Abonnements. Chaque échéance reste à confirmer."
+                      : "L’opération alimente votre mois. Les soldes restent des observations : actualisez-les depuis Mes comptes après rapprochement."}
                   </p>
                 </>
               )}

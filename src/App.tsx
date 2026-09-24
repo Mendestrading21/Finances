@@ -291,7 +291,7 @@ function Auth({
     <main className="auth-screen">
       <section className="auth-art">
         <div className="brand">
-          <img src="./finance.svg" className="brand-mark" alt="" />
+          <img src="./favicon.svg" className="brand-mark" alt="" />
           Finance
         </div>
         <p className="eyebrow">VOTRE ARGENT. VOTRE HORIZON.</p>
@@ -312,7 +312,7 @@ function Auth({
       </section>
       <section className="auth-card">
         <div className="brand mobile-brand">
-          <img src="./finance.svg" className="brand-mark" alt="" />
+          <img src="./favicon.svg" className="brand-mark" alt="" />
           Finance
         </div>
         <p className="eyebrow">BIENVENUE CHEZ VOUS</p>
@@ -1560,7 +1560,7 @@ export default function App() {
     <div className="shell">
       <aside className="sidebar">
         <button className="brand" onClick={() => navigate("overview")}>
-          <img className="brand-mark" src="./finance.svg" alt="" />
+          <img className="brand-mark" src="./favicon.svg" alt="" />
           Finance
         </button>
         <p className="eyebrow nav-eyebrow">MON ESPACE</p>

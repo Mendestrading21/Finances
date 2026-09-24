@@ -1,11 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none">
   <defs>
     <linearGradient id="glass" x1="58" y1="30" x2="473" y2="512" gradientUnits="userSpaceOnUse"><stop stop-color="#1B202A"/><stop offset=".48" stop-color="#151A23"/><stop offset="1" stop-color="#10151E"/></linearGradient>
-    <linearGradient id="finance" x1="147" y1="142" x2="366" y2="355" gradientUnits="userSpaceOnUse"><stop stop-color="#DCE4F6"/><stop offset=".43" stop-color="#A8BCE8"/><stop offset="1" stop-color="#7486B8"/></linearGradient>
     <linearGradient id="edge" x1="38" y1="16" x2="432" y2="512" gradientUnits="userSpaceOnUse"><stop stop-color="#4A5364"/><stop offset=".43" stop-color="#2C3340"/><stop offset="1" stop-color="#1F2530"/></linearGradient>
+    <linearGradient id="ice" x1="117.5" y1="135.3" x2="394.5" y2="376.7" gradientUnits="userSpaceOnUse"><stop stop-color="#DCE4F6"/><stop offset=".45" stop-color="#A8BCE8"/><stop offset="1" stop-color="#7486B8"/></linearGradient>
   </defs>
   <rect x="9" y="9" width="494" height="494" rx="138" fill="url(#glass)"/>
   <rect x="10.5" y="10.5" width="491" height="491" rx="136.5" stroke="url(#edge)" stroke-width="3"/>
-  <path d="M150 342V167C150 154.85 159.85 145 172 145H340C352.15 145 362 154.85 362 167C362 179.15 352.15 189 340 189H198V229H301C313.15 229 323 238.85 323 251C323 263.15 313.15 273 301 273H198V342C198 355.25 187.25 366 174 366C160.75 366 150 355.25 150 342Z" fill="url(#finance)"/>
-  <path d="M260 345L330 306" stroke="url(#finance)" stroke-width="18" stroke-linecap="round"/>
+  <g stroke="url(#ice)" stroke-linecap="round" stroke-linejoin="round">
+    <path stroke-width="15" d="M364.2 259.3A99.3 79.5 0 1 0 180.8 317.2V368.6A8.1 8.1 0 0 0 188.9 376.7H196.2A8.1 8.1 0 0 0 204.3 368.6V340.1A99.3 79.5 0 0 0 222.5 349.8V362.2A8.1 8.1 0 0 0 230.7 370.4H237.9A8.1 8.1 0 0 0 246 362.2V356.6A99.3 79.5 0 0 0 278.2 358.2V362.2A8.1 8.1 0 0 0 286.3 370.4H293.5A8.1 8.1 0 0 0 301.7 362.2V353.9A99.3 79.5 0 0 0 321.9 346V368.6A8.1 8.1 0 0 0 330 376.7H337.2A8.1 8.1 0 0 0 345.4 368.6V329.1A99.3 79.5 0 0 0 364.2 299H383.7A10.8 10.8 0 0 0 394.5 288.2V270.1A10.8 10.8 0 0 0 383.7 259.3H364.2Z"/>
+    <path stroke-width="15" d="M295.4 202.7Q302.6 182.9 337 168.4Q338.8 190.1 331.9 218.3"/>
+    <path stroke-width="15" d="M169.9 259.9C150 261.7 132 249.1 128.3 231C124.7 205.7 157.2 198.5 160.9 220.2C164.5 241.8 139.2 254.5 117.5 243.6"/>
+    <path stroke-width="15" d="M316.1 264.9A22.6 22.6 0 0 0 343.2 264.9"/>
+    <path stroke-width="15" d="M285.6 200.9A39.7 39.7 0 1 0 230.1 205.7"/>
+    <path stroke-width="12" d="M266 160.4A11.9 9.3 0 1 0 255.4 174.1A11.9 9.3 0 1 1 244.8 187.8M255.4 148.7V155.4M255.4 192.8V199.6"/>
+  </g>
 </svg>

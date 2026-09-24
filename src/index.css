@@ -190,6 +190,8 @@ strong {
   flex-direction: column;
   padding: 0 12px calc(18px + env(safe-area-inset-bottom, 0px));
   padding-left: calc(12px + env(safe-area-inset-left, 0px));
+  /* App installée sur iPad : la barre d'état iOS est translucide au-dessus du contenu. */
+  padding-top: env(safe-area-inset-top, 0px);
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
@@ -320,13 +322,13 @@ img.brand-mark {
   position: sticky;
   top: 0;
   z-index: 20;
-  min-height: 52px;
+  min-height: calc(52px + env(safe-area-inset-top, 0px));
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
   margin: 0 calc(var(--gutter) * -1) 24px;
-  padding: 0 var(--gutter);
+  padding: env(safe-area-inset-top, 0px) var(--gutter) 0;
   border-bottom: 1px solid var(--line);
   /* 0,85 : sous 0,82, le fil d'Ariane passe sous 4,5:1 quand un gros montant défile dessous. */
   background: rgba(7, 10, 16, 0.85);
@@ -1645,6 +1647,55 @@ details[open] > summary::after {
   background: rgba(217, 190, 140, 0.08);
   color: var(--warning);
 }
+/* Conflit de synchronisation : texte, dates, puis les deux choix côte à côte. */
+.notice.sync-conflict {
+  flex-direction: column;
+  gap: 8px;
+}
+.sync-conflict .meta {
+  color: var(--text-soft);
+}
+.sync-conflict .action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.sync-panel .sync-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 0 12px;
+  color: var(--text-soft);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.sync-status svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.sync-status strong {
+  color: var(--text);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.sync-status.sync-ok svg {
+  color: var(--positive);
+}
+.sync-status.sync-offline,
+.sync-status.sync-conflict,
+.sync-status.sync-reconfigure {
+  color: var(--warning);
+}
+.sync-status.sync-error {
+  color: var(--negative);
+}
+.sync-form {
+  display: grid;
+  gap: 12px;
+}
+.sync-form .footer-note {
+  margin: 0;
+}
 /* Une ligne : la hauteur vient du lien (cible de 36 à 44 px), pas d'un rembourrage ajouté. */
 .notice.demo-notice {
   justify-content: space-between;
@@ -1991,6 +2042,10 @@ input::file-selector-button {
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   background: rgba(255, 255, 255, 0.03);
+}
+/* Dans un formulaire, l'espacement vient déjà de la grille des champs. */
+.field > .tab-bar {
+  margin-bottom: 0;
 }
 .tab-button {
   min-height: 32px;

@@ -1,9 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse"><stop stop-color="#1B202A"/><stop offset="1" stop-color="#10151E"/></linearGradient>
-    <linearGradient id="f" x1="153" y1="145" x2="359" y2="354" gradientUnits="userSpaceOnUse"><stop stop-color="#DCE4F6"/><stop offset=".5" stop-color="#A8BCE8"/><stop offset="1" stop-color="#7486B8"/></linearGradient>
+    <linearGradient id="ice" x1="96.6" y1="117.1" x2="415.4" y2="394.9" gradientUnits="userSpaceOnUse"><stop stop-color="#DCE4F6"/><stop offset=".45" stop-color="#A8BCE8"/><stop offset="1" stop-color="#7486B8"/></linearGradient>
   </defs>
   <path fill="url(#bg)" d="M0 0h512v512H0z"/>
-  <path d="M156 335V173c0-12 10-22 22-22h157a22 22 0 0 1 0 44H202v37h94a22 22 0 0 1 0 44h-94v59a23 23 0 0 1-46 0Z" fill="url(#f)"/>
-  <path d="m260 337 61-34" stroke="url(#f)" stroke-width="18" stroke-linecap="round"/>
+  <g stroke="url(#ice)" stroke-linecap="round" stroke-linejoin="round">
+    <path stroke-width="17.3" d="M380.6 259.8A114.3 91.5 0 1 0 169.5 326.4V385.5A9.4 9.4 0 0 0 178.8 394.9H187.1A9.4 9.4 0 0 0 196.5 385.5V352.8A114.3 91.5 0 0 0 217.5 363.9V378.2A9.4 9.4 0 0 0 226.8 387.6H235.2A9.4 9.4 0 0 0 244.5 378.2V371.8A114.3 91.5 0 0 0 281.5 373.6V378.2A9.4 9.4 0 0 0 290.9 387.6H299.2A9.4 9.4 0 0 0 308.5 378.2V368.7A114.3 91.5 0 0 0 331.8 359.5V385.5A9.4 9.4 0 0 0 341.2 394.9H349.5A9.4 9.4 0 0 0 358.8 385.5V340.1A114.3 91.5 0 0 0 380.6 305.5H402.9A12.5 12.5 0 0 0 415.4 293V272.2A12.5 12.5 0 0 0 402.9 259.8H380.6Z"/>
+    <path stroke-width="17.3" d="M301.4 194.7Q309.7 171.8 349.2 155.2Q351.2 180.2 343.3 212.6"/>
+    <path stroke-width="17.3" d="M156.9 260.5C134 262.6 113.3 248 109.1 227.2C104.9 198.1 142.4 189.8 146.5 214.8C150.7 239.7 121.6 254.3 96.6 241.8"/>
+    <path stroke-width="17.3" d="M325.2 266.2A26 26 0 0 0 356.3 266.2"/>
+    <path stroke-width="17.3" d="M290 192.6A45.7 45.7 0 1 0 226.2 198.1"/>
+    <path stroke-width="13.8" d="M267.5 146A13.7 10.7 0 1 0 255.3 161.8A13.7 10.7 0 1 1 243.2 177.6M255.3 132.6V140.2M255.3 183.3V191.1"/>
+  </g>
 </svg>

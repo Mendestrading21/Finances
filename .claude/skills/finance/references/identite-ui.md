@@ -48,7 +48,11 @@ Le registre versionné ne contient que des métadonnées et actifs génériques.
 
 ## Nouveau logo Finance
 
-Créer un signe original, distinct des logos bancaires et des bibliothèques d’icônes. Direction recommandée : un `F` simple formé par deux plans ou une ligne ascendante discrète, en bleu glacier `#A8BCE8` sur fond graphite, sans autre couleur d’accent. Le logo doit fonctionner sans halo et sans texte.
+Logo retenu (choix de l’utilisateur, septembre 2026) : une tirelire de profil tournée vers la droite, en trait fin arrondi, avec une pièce « $ » qui entre dans la fente. Son dessin d’origine était doré ; il est décliné en bleu glacier (dégradé `#DCE4F6` → `#A8BCE8` → `#7486B8`) sur le carreau graphite, sans autre couleur d’accent, sans halo et sans texte.
+
+- `public/finance.svg` : logo complet (icônes 192/512 et manifeste) ;
+- `public/favicon.svg` : coupe simplifiée à trait épais (sans queue, œil ni « $ »), utilisée pour l’onglet et pour `.brand-mark` dans l’app, car le logo complet n’est plus qu’une tache sous 32 px ;
+- `public/finance-maskable.svg` : fond bord à bord, dessin dans la zone sûre (Android, `apple-touch-icon.png` sans transparence).
 
 Livrables :
 

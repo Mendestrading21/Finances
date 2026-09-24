@@ -1538,3 +1538,54 @@ test("PWA update: after typing on the lock screen, a new deploy waits for Rechar
     await rm(siteDir, { recursive: true, force: true });
   }
 });
+
+test("new operation for every month becomes a recurrence, settled now and due next month", async ({
+  page,
+}) => {
+  const monthNames = [
+    "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
+    "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre",
+  ];
+  const now = new Date();
+  const nextIndex = (now.getMonth() + 1) % 12;
+  const nextYear = now.getFullYear() + (nextIndex === 0 ? 1 : 0);
+
+  await page.goto("/");
+  await page.getByLabel("Phrase secrète", { exact: true }).fill("Exemple-test-Finance-repeat-2026");
+  await page.getByLabel("Confirmer la phrase secrète").fill("Exemple-test-Finance-repeat-2026");
+  await page.getByRole("button", { name: "Créer mon coffre" }).click();
+  const nav = page.getByRole("navigation").first();
+  await nav.getByRole("button", { name: "Mon mois", exact: true }).click();
+
+  await page.getByRole("button", { name: "Ajouter", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.locator('select[name="kind"]').selectOption("income");
+  await dialog.getByRole("button", { name: "Tous les mois", exact: true }).click();
+  await expect(
+    dialog.getByRole("button", { name: "Tous les mois", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await dialog.getByLabel("Libellé").fill("Salaire mensuel test");
+  await dialog.getByLabel("Montant", { exact: true }).fill("4200");
+  await dialog.getByLabel("État", { exact: true }).selectOption({ label: "Reçu" });
+  await dialog.getByRole("button", { name: "Enregistrer", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+
+  // Operations only: Mon mois also lists the recurrence itself in its recurring-charges card.
+  const operationsCard = page.locator(".card", {
+    has: page.locator(".card-title", { hasText: "Les opérations" }),
+  });
+  const rows = operationsCard.locator(".row", { hasText: "Salaire mensuel test" });
+  await expect(rows).toHaveCount(1);
+  await expect(rows).toContainText("Reçu");
+
+  await page.locator(".month-picker-trigger").click();
+  if (nextIndex === 0) await page.getByRole("button", { name: "Année suivante" }).click();
+  await page
+    .getByRole("button", { name: `${monthNames[nextIndex]} ${nextYear}`, exact: true })
+    .click();
+  await expect(rows).toHaveCount(1);
+  await expect(rows).toContainText("Pas encore reçu");
+
+  await nav.getByRole("button", { name: "Abonnements", exact: true }).click();
+  await expect(page.locator(".row", { hasText: "Salaire mensuel test" }).first()).toBeVisible();
+});
