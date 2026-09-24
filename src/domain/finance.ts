@@ -686,27 +686,26 @@ function dayAfter(date: string): string {
   return next.toISOString().slice(0, 10);
 }
 
-/** Same bill or income under another rule: same kind, nature and currency, and either the
- * same name or starting the day after this one ends (the rule a « Tous les mois » split handed
- * over to, even if renamed then). */
-function continuations(
-  recurrences: readonly Recurrence[],
-  recurrence: Recurrence,
-  label = recurrence.label,
-): Recurrence[] {
-  const name = (value: string) => value.trim().toLocaleLowerCase("fr");
-  const handover = recurrence.endDate ? dayAfter(recurrence.endDate) : null;
-  return recurrences.filter(
-    (other) =>
-      other.id !== recurrence.id &&
-      other.kind === recurrence.kind &&
-      other.recurrenceType === recurrence.recurrenceType &&
-      other.currency === recurrence.currency &&
-      other.startDate > recurrence.startDate &&
-      (other.startDate === handover ||
-        name(other.label) === name(recurrence.label) ||
-        name(other.label) === name(label)),
-  );
+/** A « Tous les mois » split hands a bill over to a new rule whose id names the rule it
+ * continues: `{racine}:suite:{mois}`. The whole chain shares the root id, so the link is
+ * explicit — never guessed from a name or a date (two bills may share both). */
+const SUITE = ":suite:";
+function familyRoot(id: string): string {
+  const at = id.indexOf(SUITE);
+  return at < 0 ? id : id.slice(0, at);
+}
+/** Other rules of the same chain, oldest first. */
+function family(recurrences: readonly Recurrence[], recurrence: Recurrence): Recurrence[] {
+  const root = familyRoot(recurrence.id);
+  return recurrences
+    .filter((other) => other.id !== recurrence.id && familyRoot(other.id) === root)
+    .sort((a, b) => a.startDate.localeCompare(b.startDate));
+}
+function suiteId(recurrences: readonly Recurrence[], recurrence: Recurrence, month: string): string {
+  const base = `${familyRoot(recurrence.id)}${SUITE}${month}`;
+  let id = base;
+  for (let n = 2; recurrences.some((r) => r.id === id); n++) id = `${base}-${n}`;
+  return id;
 }
 
 /** The schedule alone, whether or not the recurrence is paused. */
@@ -800,18 +799,20 @@ export function simpleEditOptions(
       : repeat === "single" && due !== null
         ? "single"
         : "keep";
-  // Déjà suivie par une autre règle dès le lendemain de sa fin (une scission) : la
-  // prolonger ferait deux fois la même facture ; seuls « Comme maintenant » et une fin plus tôt.
-  const handedOver =
-    !!recurrence.endDate &&
-    continuations(recurrences, recurrence).some(
-      (other) => other.startDate === dayAfter(recurrence.endDate!),
-    );
-  const choices: SimpleChoice[] = handedOver ? [] : ["monthly"];
-  if (!hasPast && !handedOver) choices.push("single");
+  // Même chaîne (scission) : déjà suivie dès le lendemain de sa fin, ou pas encore relayée
+  // par la règle d'avant ce mois-ci. La prolonger ou la déplacer ferait deux fois la même
+  // facture : seuls « Comme maintenant » et, s'il reste des mois après, une fin plus tôt.
+  const chain = family(recurrences, recurrence);
+  const next = chain.find((other) => other.startDate > recurrence.startDate);
+  const previous = chain.filter((other) => other.startDate < recurrence.startDate).pop();
+  const locked =
+    (!!next && !!recurrence.endDate && dayAfter(recurrence.endDate) === next.startDate) ||
+    (!!previous && (!previous.endDate || previous.endDate >= first));
+  const choices: SimpleChoice[] = locked ? [] : ["monthly"];
+  if (!hasPast && !locked) choices.push("single");
   else if (hasPast && (!recurrence.endDate || recurrence.endDate > last))
     choices.push("until");
-  const start = handedOver ? "keep" : initial;
+  const start = locked ? "keep" : initial;
   if (start === "keep") choices.push("keep");
   return {
     choices,
@@ -842,8 +843,8 @@ const LATER_AMOUNT_ERROR =
  * - « Tous les mois »: an unbroken monthly rule just loses its end; one with nothing due
  *   before `month` restarts there; any other (yearly, ended, an older single month) is split —
  *   the old rule ends before this month (after its own occurrence of this month, or a payment
- *   already recorded from it, if any), a new monthly rule `newId` takes over, so no past month
- *   comes back as unpaid;
+ *   already recorded from it, if any), a new monthly rule `{racine}:suite:{mois}` takes over,
+ *   so no past month comes back as unpaid;
  * - « Seulement {mois} » (offered only with nothing due before): that month alone;
  * - « Jusqu'en {mois} »: ends with `month`, the months before unchanged;
  * - « Comme maintenant »: the cadence stays as it is.
@@ -856,7 +857,6 @@ export function applySimpleEdit(
   choice: SimpleChoice,
   month: string,
   amountMinor: number,
-  newId: string,
 ): FinanceData {
   if (!Number.isSafeInteger(amountMinor) || amountMinor < 0)
     throw new Error("Montant de récurrence invalide.");
@@ -970,17 +970,17 @@ export function applySimpleEdit(
         endDate:
           existing.endDate && existing.endDate < endBefore ? existing.endDate : endBefore,
       },
-      fresh(newId, existing.day, splitFirst, null),
+      fresh(suiteId(data.recurrences, existing, splitMonth), existing.day, splitFirst, null),
     ];
   }
   if (choice === "monthly") {
-    // Never two rules for the same bill at once: the monthly one stops where a later rule
-    // for it (e.g. the part a previous « Tous les mois » split off) starts.
+    // Never two rules for the same bill at once: the monthly one stops where the next rule of
+    // its own chain (the part a previous « Tous les mois » split off) starts. Bills that only
+    // share a name are separate bills and are never cut.
     const carrier = changed[changed.length - 1];
-    const later = continuations(data.recurrences, existing, plain.label)
+    const later = family(data.recurrences, existing)
       .map((other) => other.startDate)
-      .filter((start) => start > carrier.startDate)
-      .sort()[0];
+      .filter((start) => start > carrier.startDate)[0];
     if (later) {
       const end = new Date(`${later}T12:00:00Z`);
       end.setUTCDate(end.getUTCDate() - 1);

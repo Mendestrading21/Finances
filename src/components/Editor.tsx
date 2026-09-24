@@ -168,11 +168,12 @@ export default function Editor({
         "monthly",
         month,
         simpleOptions.amountMinor,
-        "apercu",
       );
+      // La règle qui porte le mensuel : la suite créée par une scission, sinon la même.
       const carrier =
-        next.recurrences.find((r) => r.id === "apercu") ??
-        next.recurrences.find((r) => r.id === existingRecurrence.id)!;
+        next.recurrences.find(
+          (r) => !data.recurrences.some((before) => before.id === r.id),
+        ) ?? next.recurrences.find((r) => r.id === existingRecurrence.id)!;
       const firstDue = nextOccurrenceDate(
         { ...carrier, active: true },
         `${month}-01`,
@@ -526,7 +527,6 @@ export default function Editor({
           repeatChoice,
           month,
           num("amountMinor"),
-          crypto.randomUUID(),
         );
         updated.recurrences = next.recurrences;
         updated.transactions = next.transactions;

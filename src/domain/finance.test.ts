@@ -2095,7 +2095,6 @@ describe("factures et revenus sans date : tous les mois, un seul mois, jusqu'à 
       choice,
       month,
       amountMinor,
-      "new-rule",
     );
     expect(validateData(next)).toBeTruthy();
     return next;
@@ -2142,7 +2141,7 @@ describe("factures et revenus sans date : tous les mois, un seul mois, jusqu'à 
     expect(due(next, "2026-11")).toEqual([["2026-11-15", 30000, false]]);
     expect(next.recurrences.map((r) => [r.id, r.startDate, r.endDate ?? null])).toEqual([
       ["tax", "2026-03-15", "2026-09-30"],
-      ["new-rule", "2026-10-01", null],
+      ["tax:suite:2026-10", "2026-10-01", null],
     ]);
     // L'échéance annuelle de ce mois-ci reste la sienne : la règle mensuelle démarre après.
     const inOctober = recurrence({ ...yearly, startDate: "2025-10-15" });
@@ -2254,11 +2253,11 @@ describe("factures et revenus sans date : tous les mois, un seul mois, jusqu'à 
     const yearly = recurrence({ ...tax, day: 15, intervalMonths: 12, startDate: "2026-03-15", amountMinor: 300000, source: notion });
     const imported = withAccount({ recurrences: [yearly] });
     const next = edit(imported, yearly, "monthly", "2026-10", 25000);
-    const added = next.recurrences.find((r) => r.id === "new-rule")!;
+    const added = next.recurrences.find((r) => r.id === "tax:suite:2026-10")!;
     expect(added.source.sourceId).toBeUndefined();
     expect(next.recurrences.find((r) => r.id === "tax")!.source.sourceId).toBe("notion-impots");
     const again = mergeImport(next, imported);
-    expect(again.recurrences.map((r) => r.id).sort()).toEqual(["new-rule", "tax"]);
+    expect(again.recurrences.map((r) => r.id).sort()).toEqual(["tax", "tax:suite:2026-10"]);
   });
 
   it("l'ancienne partie d'une scission ne peut pas redevenir mensuelle en double", () => {
@@ -2271,14 +2270,48 @@ describe("factures et revenus sans date : tous les mois, un seul mois, jusqu'à 
       expect(options.initial).toBe("keep");
       expect(() => edit(split, old, "monthly", month, 300000)).toThrow(/pas possible/);
     }
+    // La suite, vue d'un mois encore couvert par l'ancienne règle, ne se déplace pas non plus.
+    const suite = split.recurrences.find((r) => r.id === "tax:suite:2026-10")!;
+    expect(simpleEditOptions(suite, "2026-09", split.recurrences)).toMatchObject({
+      choices: ["keep"],
+      initial: "keep",
+    });
     // Terminée bien avant la suite : « Tous les mois » comble l'écart, sans chevaucher la suite.
     const ended = recurrence({ ...tax, day: 1, startDate: "2026-01-01", endDate: "2026-03-31", amountMinor: 8000 });
-    const later = recurrence({ ...tax, id: "later", day: 1, startDate: "2026-10-01", amountMinor: 9000 });
+    const later = recurrence({ ...tax, id: "tax:suite:2026-10", day: 1, startDate: "2026-10-01", amountMinor: 9000 });
     const d = withAccount({ recurrences: [ended, later] });
     const filled = edit(d, ended, "monthly", "2026-03", 8000);
     expect(filled.recurrences.find((r) => r.id === "tax")!.endDate).toBe("2026-09-30");
     for (const month of ["2026-06", "2026-10", "2027-01"])
       expect(due(filled, month)).toHaveLength(1);
+  });
+
+  it("deux factures du même nom restent deux factures : rien n'est coupé ni bloqué", () => {
+    // Deux salaires homonymes : enregistrer l'un ne touche pas à l'autre ni à ses propres mois.
+    const salaryA = recurrence({ id: "sal-a", label: "Salaire", kind: "income", recurrenceType: "income", day: 25, startDate: "2026-01-25", amountMinor: 500000 });
+    const salaryB = recurrence({ id: "sal-b", label: "Salaire", kind: "income", recurrenceType: "income", day: 25, startDate: "2026-06-25", amountMinor: 150000 });
+    const twoSalaries = withAccount({ recurrences: [salaryA, salaryB] });
+    expect(simpleEditOptions(salaryA, "2026-10", twoSalaries.recurrences).initial).toBe("monthly");
+    const saved = edit(twoSalaries, salaryA, "monthly", "2026-10", 500000);
+    expect(saved.recurrences.find((r) => r.id === "sal-a")!.endDate ?? null).toBeNull();
+    expect(due(saved, "2026-10").map((i) => i[1])).toEqual([500000, 150000]);
+    // Électricité mensuelle et un décompte « Électricité » en décembre seulement.
+    const power = recurrence({ id: "power", label: "Électricité", day: 1, startDate: "2026-01-01", amountMinor: 8000 });
+    const decompte = edit(withAccount({ recurrences: [power] }), { ...power, id: "power-dec" } as Recurrence, "single", "2026-12", 12000);
+    const withNew = edit(decompte, power, "monthly", "2026-10", 8500);
+    expect(withNew.recurrences.find((r) => r.id === "power")!.endDate ?? null).toBeNull();
+    expect(due(withNew, "2027-01")).toEqual([["2027-01-01", 8500, false]]);
+    expect(due(withNew, "2026-12").map((i) => i[1])).toEqual([8500, 12000]);
+    // Renommer vers un nom existant ne coupe rien non plus.
+    const dog = recurrence({ id: "dog", label: "Taxe chien", day: 1, startDate: "2026-01-01", amountMinor: 10000 });
+    const other = recurrence({ id: "other", label: "Taxe", day: 1, startDate: "2026-11-01", amountMinor: 20000 });
+    const renamed = edit(withAccount({ recurrences: [dog, other] }), dog, "monthly", "2026-10", 10000, "Taxe");
+    expect(renamed.recurrences.find((r) => r.id === "dog")!.endDate ?? null).toBeNull();
+    // Une fin qui tombe la veille d'une autre facture sans lien ne la bloque pas.
+    const insurance = recurrence({ id: "insurance", label: "Assurance", day: 1, startDate: "2026-01-01", endDate: "2026-09-30", amountMinor: 30000 });
+    const internet = recurrence({ id: "internet", label: "Internet", day: 1, startDate: "2026-10-01", amountMinor: 6000 });
+    const options = simpleEditOptions(insurance, "2026-10", [insurance, internet]);
+    expect(options.choices).toContain("monthly");
   });
 
   it("« Tous les mois » ou « Jusqu'en » avec un nouveau montant ne change jamais un mois passé", () => {
