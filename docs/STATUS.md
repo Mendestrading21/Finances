@@ -657,19 +657,29 @@ Fusion précédente : connexion simplifiée dans `main` (commit `af9bf3a`, PR #5
 Demande de l'utilisateur, capture à l'appui (« Impôts — octobre 2026 · Aucune échéance ») : plus de dates ni d'échéances pour les factures ; à l'ajout, seulement « tous les mois » ou « juste le mois sélectionné ». Cause : l'ancien formulaire demandait jour, fréquence, début et fin ; un début par défaut « aujourd'hui » après le jour choisi sautait le mois en cours, et une fin ou une fréquence mal réglée laissait une facture sans échéance.
 
 - **Ajout** (page Factures) : libellé, montant, devise, compte et « Répétition » : **Tous les mois** (dès le mois affiché) ou **Seulement {mois affiché}**. Aucun jour, début, fin, fréquence ni catégorie à saisir.
-- **Modification** d'une facture ou d'un revenu existant : même formulaire. Le jour interne et les paiements déjà enregistrés sont conservés. Une cadence réglée ailleurs (tous les 3 mois, fin datée) reste telle quelle avec « Comme maintenant ». Un seul mois a un seul montant.
+- **Modification** d'une facture ou d'un revenu existant : même formulaire, sans jamais toucher aux mois passés.
+  - « Tous les mois » sur une facture annuelle, terminée ou d'un seul mois plus ancien : l'ancienne règle s'arrête avant le mois affiché, et une nouvelle règle mensuelle prend le relais. Aucun mois passé ne revient comme impayé.
+  - « Jusqu'en {mois} » arrête proprement la facture.
+  - « Seulement {mois} » n'est proposé que s'il n'y a rien avant ce mois.
+  - « Comme maintenant » garde un rythme que les choix simples n'expriment pas : début plus tard, tous les 3 mois… Renommer ne déplace aucune date.
+  - Le montant prérempli est celui du mois affiché. Un lien « Plus d'options » ouvre le formulaire complet.
 - **Page Factures** : chaque ligne indique « Tous les mois » ou « Seulement ce mois » au lieu du jour, et plus jamais « Aucune échéance ». Ce qui n'est pas dû ce mois-ci est replié dans « Factures d'autres mois » / « Revenus d'autres mois ». Tri : à payer d'abord, puis montant.
 - **Mon mois** et fenêtre « Modifier » : plus de date inventée pour une facture ou un revenu pas encore réglé. Un paiement garde sa vraie date.
-- Calcul : `simpleRepeatOf`, `monthBounds` et `withSimpleSchedule` (finance.ts). Ils ne déplacent jamais un début existant plus tard, sauf pour « un seul mois ». Un nouveau montant s'applique dès le mois affiché, via `withRecurrenceAmount`.
+- Calcul : `simpleEditOptions`, `applySimpleEdit`, `rhythmLabel` et `firstOccurrenceDate` (finance.ts). Une échéance ajustée d'un mois qui n'est plus due est retirée si elle n'est qu'une projection de l'app ; un paiement reste. Le rythme affiché part de la vraie première échéance : « Répétition à choisir » pour un ancien enregistrement jamais dû. Le total mensuel de l'Accueil et la liste Abonnements ignorent les règles d'un seul mois ou terminées.
 
-Vérification indépendante (`finance-verification`) en cours.
+Vérification indépendante (`finance-verification`) : calculs justes pour une nouvelle facture (cohorte, Mon mois, disponible, jour 31). Deux défauts bloquants dans l'éditeur simple, tous deux corrigés, avec tests et contrôles négatifs :
+- « Tous les mois » sur des impôts annuels payés en mars créait six faux impayés, d'avril à septembre ;
+- renommer une facture qui commence plus tard avançait son début.
 
-Preuves : `typecheck`, `test` (**250/250**, dont 9 tests « sans date » ; l'ancien défaut « début aujourd'hui = rien ce mois-ci » est reproduit dans un test), `build`, les **20** scénarios `test:e2e` rejoués individuellement. Ils couvrent notamment :
+Corrigés aussi : échéance fantôme, montant prérempli après un changement prévu, nouveau montant d'un seul mois plus ancien, message d'erreur, fin propre, rythme des anciens enregistrements, tri, totaux mensuels, accès aux options complètes et textes. Contre-vérification par le même relecteur en cours.
+
+Preuves : `typecheck`, `test` (**252/252**, dont 11 tests « sans date » ; l'ancien défaut « début aujourd'hui = rien ce mois-ci » est reproduit dans un test ; quatre mutations — scission, choix par défaut, retrait des projections, montant prérempli — font échouer les tests), `build`, les **20** scénarios `test:e2e` rejoués individuellement. Ils couvrent notamment :
 - « bills… » :
   - facture ajoutée sans date sur le mois précédent ;
   - facture « Seulement ce mois » présente ce mois, absente le mois suivant et repliée le mois d'avant ;
   - paiement des deux ;
-  - passage d'un seul mois à « Tous les mois » depuis son formulaire.
+  - passage d'un seul mois à « Tous les mois » depuis son formulaire ;
+  - arrêt avec « Jusqu'en {mois} » (mois d'avant intacts, plus rien après).
 - « bills page also lists recurring income… » ;
 - « daily entries… » : une facture créée depuis Abonnements se rouvre en « Une facture » sans date.
 
@@ -677,7 +687,7 @@ Captures ordinateur et iPhone de la page, du formulaire et de Mon mois revues.
 
 Limites :
 - Les factures déjà créées avec l'ancien formulaire gardent leur jour et leurs dates internes, mais n'affichent plus de date. Une facture comme « Impôts », sans échéance ce mois-ci, apparaît dans « Factures d'autres mois », où le crayon permet de choisir « Tous les mois » ou « Seulement ce mois ».
-- Réactiver « Tous les mois » sur une facture terminée depuis longtemps fait réapparaître les mois intermédiaires comme non payés.
+- Une échéance modifiée à la main (note, justificatif) dans un mois qui n'est plus dû est gardée : elle reste visible dans Mon mois.
 - La page Abonnements garde son formulaire complet pour les abonnements.
 
 ## État réel
