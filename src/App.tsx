@@ -191,13 +191,19 @@ const dayLabel = (date: string | null | undefined) =>
   date && isDate(date) ? shortDateLabel(date) : (date ?? "");
 // Soldes montrés dans le détail d'un compte, du plus récent au plus ancien.
 const HISTORY_SHOWN = 6;
-// Les quatre choses qu'on ajoute au quotidien, chacune vers son formulaire court.
+// Ce qu'on ajoute au quotidien, chacun vers son formulaire court.
 const ADD_CHOICES: { title: string; hint: string; icon: IconName; spec: EditorSpec }[] = [
   {
     title: "Une facture",
     hint: "Loyer, assurance, téléphone : chaque mois ou un seul",
     icon: "document",
     spec: { type: "recurrence", recurrenceType: "bill", simple: true },
+  },
+  {
+    title: "Un abonnement",
+    hint: "Musique, streaming, forfait : chaque mois",
+    icon: "refresh",
+    spec: { type: "recurrence", recurrenceType: "subscription", simple: true },
   },
   {
     title: "Un revenu",

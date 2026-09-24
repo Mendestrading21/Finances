@@ -1,6 +1,6 @@
 # Abonnements et règlements mensuels
 
-La page **Abonnements** montre les services et charges récurrentes réellement enregistrés. Elle partage le moteur d’occurrences avec Mon mois ; elle ne duplique pas les opérations.
+**Mon mois** montre les services et charges récurrentes réellement enregistrés, avec les revenus et les mises de côté, sur un seul moteur d’occurrences ; il ne duplique pas les opérations.
 
 ## Modèle
 
@@ -38,22 +38,22 @@ Le passage à payé/reçu crée ou met à jour l’opération explicite de cette
 
 Un règlement partiel ne peut pas devenir `Payé` si le modèle ne supporte pas le reliquat. Dans ce cas, refuser l’action ou demander une opération partielle séparée clairement nommée.
 
-## Page Abonnements
+## Dans Mon mois
 
-La page contient :
+Factures, abonnements, revenus et mises de côté se suivent dans **Mon mois**, pour le mois choisi, sur le même moteur d'occurrences (il n'y a plus de page Abonnements ni Factures séparée) :
 
-1. un résumé compact qui nomme son périmètre : dû pour le mois sélectionné, réglé pour ces échéances, reste dû et nombre actif ; le flux payé/reçu dans le mois est séparé ;
-2. une liste `Actifs` avec identité, cadence, prochain montant, compte, statut de l’occurrence et action ;
-3. une liste `En pause ou terminés`, repliée par défaut ;
-4. des filtres `Tous`, `Abonnements`, `Charges`, `Revenus`, puis `Payé/Reçu`, `À payer/recevoir` ;
-5. un tri `Montant mensuel` ou `Prochaine échéance` ;
-6. un formulaire court pour créer ou modifier une récurrence, avec champs avancés repliés.
+1. « Il me reste », puis « Reste à payer » et « Reste à recevoir » (`monthSummary`) ;
+2. **Mes revenus** : revenus récurrents puis ponctuels ;
+3. **Mes factures** : toutes les dépenses récurrentes ; un abonnement porte l'étiquette « Abonnement » ;
+4. **Dépenses du mois** : dépenses ponctuelles ;
+5. **Mis de côté** : mises de côté récurrentes et virements, seulement s'il y en a ;
+6. volets repliés : récurrences d'autres mois, arrêtées, puis les autres mois.
 
-Pour une cadence trimestrielle ou annuelle, afficher le prochain débit réel et, si utile, un **équivalent mensuel** nommé comme tel. Ne pas remplacer le débit réel par une moyenne. Le total du mois n’inclut que les occurrences effectivement prévues dans ce mois.
+Chaque opération apparaît une seule fois : l'échéance due d'une récurrence est la ligne de cette récurrence ; une échéance d'un autre mois réglée ce mois-ci (paiement en retard) reste visible dans la carte de sa nature avec « pour {mois} ».
 
-## Page Factures
+Le crayon d'une échéance propose « Ce mois seulement » (`withOccurrenceAmount` : l'opération liée à l'échéance porte le montant de ce mois) ou « Ce mois et les suivants » (`withRecurrenceAmount` daté du 1er du mois). Une opération liée à une échéance remplace la projection partout, cohorte comprise.
 
-Vue ciblée des récurrences de nature `bill` (loyer, assurance, télécom, énergie) pour le mois choisi, sur le même moteur d'occurrences. Le crayon propose « Ce mois seulement » (`withOccurrenceAmount` : l'opération liée à l'échéance porte le montant de ce mois) ou « Ce mois et les suivants » (`withRecurrenceAmount` daté du 1er du mois). Une opération liée à une échéance remplace la projection partout, cohorte comprise.
+Pour une cadence trimestrielle ou annuelle, afficher le débit réel du mois où il tombe ; ne pas le remplacer par une moyenne. Le total du mois n'inclut que les occurrences effectivement prévues dans ce mois.
 
 ## Calculs
 
@@ -62,7 +62,7 @@ Séparer deux axes et les nommer dans l’interface :
 - **cohorte d’échéances** : occurrences dont la date d’échéance appartient au mois sélectionné ;
 - **flux réalisé** : opérations `settled` dont la date réelle de règlement appartient au mois sélectionné.
 
-Pour la cohorte, afficher `Dû en <mois>`, `Réglé pour <mois>` et `Reste dû`. `Réglé pour <mois>` suit le lien avec l’occurrence même si le règlement est plus tardif ; montrer alors sa date et le retard. `Reste dû` ne tombe à zéro que si le règlement rapproché couvre l’occurrence. Tant que le modèle n’a pas de règlement partiel, une opération réglée liée à l’échéance la clôt : son montant devient le montant dû de cette échéance (Mon mois, Abonnements et Factures affichent alors le même chiffre), et l’écart avec la règle reste visible (`projectedAmountMinor`, mention « habituel … »). Pour le flux, conserver les libellés `Payé en <mois>` et `Reçu en <mois>` et classer selon la date réelle.
+Pour la cohorte, afficher `Dû en <mois>`, `Réglé pour <mois>` et `Reste dû`. `Réglé pour <mois>` suit le lien avec l’occurrence même si le règlement est plus tardif ; montrer alors sa date et le retard. `Reste dû` ne tombe à zéro que si le règlement rapproché couvre l’occurrence. Tant que le modèle n’a pas de règlement partiel, une opération réglée liée à l’échéance la clôt : son montant devient le montant dû de cette échéance (Mon mois et l’Accueil affichent alors le même chiffre), et l’écart avec la règle reste visible (`projectedAmountMinor`, mention « habituel … »). Pour le flux, conserver les libellés `Payé en <mois>` et `Reçu en <mois>` et classer selon la date réelle.
 
 Exemple obligatoire : une charge de 100 CHF due le 28 février et payée le 2 mars donne, pour la cohorte de février, 100 CHF dus, 100 CHF réglés et 0 CHF restant, avec la mention « payé le 2 mars ». Le flux réalisé de février vaut 0 CHF pour cette charge ; celui de mars inclut 100 CHF. L’échéance propre à mars reste une occurrence distincte.
 
@@ -76,4 +76,4 @@ Exemple obligatoire : une charge de 100 CHF due le 28 février et payée le 2 ma
 
 Tester au minimum : mois sans occurrence, mensuel, trimestriel, annuel, 31 ramené à février, année bissextile, changement de montant futur, pause, fin, paiement daté dans un autre mois avec cohorte et flux attendus, retour à prévu, pièce jointe, devise sans taux, import ancien sans classification et réimport idempotent.
 
-Le parcours navigateur doit vérifier qu’un statut changé sur Abonnements met à jour Mon mois et l’Accueil après rechargement et déverrouillage, sans doublon.
+Le parcours navigateur doit vérifier qu’un statut changé dans Mon mois met à jour l’Accueil après rechargement et déverrouillage, sans doublon.

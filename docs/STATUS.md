@@ -931,10 +931,10 @@ Preuves :
 Limites :
 - **80 px non atteints pour une ligne avec « Payer ».** Placer le bouton sur la ligne du statut laisserait environ 135 px au texte « Tous les mois · Pas encore payé », qui en demande environ 190. Le statut passerait sur deux lignes (environ 87 px) et les titres perdraient 45 px. La mise en page actuelle est donc gardée (104 px). Un abonnement au nom long fait 128 px : son étiquette passe à la ligne (« Abonnement musique » dans la démo).
 - À 390 px, dans Chromium sous Linux, le titre « Dépenses du mois » passe sur deux lignes à côté de « Ajouter une dépense ». La police y est plus large que SF Pro ; ce point n'est pas vérifié sur iPhone.
-- **Créer un abonnement ou une mise de côté** passe par « Ajouter une dépense », puis « Tous les mois » et « Nature », ou par la nature d'une facture existante. Le formulaire « Une récurrence » avec choix du type, l'ancien « Ajouter » d'Abonnements, n'est plus atteignable. Le contrôle de l'aller-retour de type dans ce formulaire est retiré ; la nature enregistrée est vérifiée à la réouverture.
+- **Créer un abonnement** : « Un abonnement » est ajouté au choix « Ajouter » de l'Accueil. Une mise de côté se crée par « Ajouter une dépense », « Tous les mois » puis « Nature », ou en changeant la nature d'une facture existante. Le formulaire « Une récurrence » avec choix du type (l'ancien « Ajouter » d'Abonnements) n'est plus atteignable ; la nature enregistrée est vérifiée à la réouverture.
 - Une ligne de récurrence réglée n'a pas l'icône « Joindre » (comme sur l'ancienne page Factures). Le reçu se joint depuis Documents et réglages ; les lignes ponctuelles gardent l'icône.
 - « Ajouter une dépense » date l'opération d'aujourd'hui, même si un autre mois est affiché (comportement antérieur du formulaire).
-- `AGENTS.md` (« sept pages, dont Abonnements »), `SKILL.md`, `design.md` (« Sept pages reliées ») et `abonnements.md` (« Page Abonnements », « Page Factures ») décrivent encore les anciennes pages.
+- `AGENTS.md`, `SKILL.md`, `design.md`, `abonnements.md` et l'agent `finance-abonnements` sont mis à jour : six pages, et Mon mois à la place des pages Abonnements et Factures.
 - Aucune relecture indépendante (`finance-designer`, `finance-verification`) : l'environnement de ce lot n'offrait pas de sous-agents. Aucun essai sur appareil physique.
 
 ## État réel

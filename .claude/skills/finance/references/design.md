@@ -66,19 +66,18 @@ Les images de référence donnent l’ambiance, pas des données : ne pas réuti
 - Logos d’établissements seulement si provenance et droit d’usage vérifiés. À défaut, monogramme neutre avec nom écrit ; ne pas le présenter comme logo officiel. Aucun chargement distant qui révèle la liste des établissements consultés.
 - Respecter contraste, réduction des animations, préférence de transparence lorsque disponible et agrandissement du texte. Des cibles tactiles d’environ 44 px et un focus visible sont le minimum visé pour les commandes quotidiennes.
 
-## Sept pages reliées
+## Six pages reliées
 
 | Page | Question principale | Actions prioritaires |
 | --- | --- | --- |
 | Vue d’ensemble | Où en sont mes finances et que dois-je regarder ? | Ajouter une opération, actualiser une donnée, ouvrir une échéance |
-| Mon mois | Qu’est-ce qui est reçu, payé et encore prévu ? | Revenu, dépense, paiement, récurrence |
+| Mon mois | Combien il me reste, et qu’est-ce qui est reçu, payé ou encore à régler ? | Marquer payé ou reçu, ajouter une facture, un revenu ou une dépense, petite modification d’un mois |
 | Mes comptes | Où est l’argent, dans quelle devise et à quelle date ? | Ajouter un compte, actualiser un solde, transférer |
-| Abonnements | Qu’est-ce qui est dû, réglé ou reste à régler ce mois-ci ? | Marquer payé ou reçu, ajouter une récurrence, filtrer par statut |
 | Épargne et projets | Que reste-t-il à mettre de côté ? | Créer un objectif, affecter une somme existante |
 | Investissements | Quelles sont mes positions et leurs comptes ? | Ajouter ou actualiser une position, consulter la répartition |
 | Documents et réglages | Où sont mes pièces et comment récupérer mes données ? | Joindre, importer, sauvegarder, restaurer, verrouiller |
 
-Sur mobile, garder la navigation courte : quelques entrées principales et un accès explicite aux autres pages. Sur iPad et Windows, exploiter la largeur par colonnes utiles et navigation latérale. Ne pas étirer un tableau d’ordinateur jusqu’à le rendre illisible sur iPhone. Les filtres de mois/devise restent visibles et appliqués de manière cohérente.
+Sur mobile, garder la navigation courte : Accueil, Mon mois, Comptes et « Plus » pour les autres pages. Sur iPad et Windows, exploiter la largeur par colonnes utiles et navigation latérale. Ne pas étirer un tableau d’ordinateur jusqu’à le rendre illisible sur iPhone. Les filtres de mois/devise restent visibles et appliqués de manière cohérente.
 
 ## Saisie quotidienne
 

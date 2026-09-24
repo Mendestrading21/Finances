@@ -2477,6 +2477,7 @@ test("simpler screens: add chooser, no ISO date on daily pages, uncounted accoun
   const chooser = page.getByRole("dialog", { name: "Ajouter" });
   await expect(chooser.locator(".add-choice")).toHaveText([
     /Une facture/,
+    /Un abonnement/,
     /Un revenu/,
     /Une dépense/,
     /Un compte/,
