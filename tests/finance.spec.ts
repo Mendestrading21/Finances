@@ -441,7 +441,14 @@ test("daily entries: income, currency-synced transfer, recurrence, investment-on
   ).not.toHaveValue("");
   await dialog.getByRole("button", { name: "Fermer" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  page.once("dialog", (d) => d.accept());
+  // Remettre à payer acts at once, no browser confirm; « Annuler » in the message undoes it.
+  await occurrenceRow
+    .getByRole("button", { name: "Remettre à payer Assurance test", exact: true })
+    .click();
+  await expect(occurrenceRow).toContainText("Pas encore payé");
+  await page.locator(".toast").getByRole("button", { name: "Annuler", exact: true }).click();
+  await expect(occurrenceRow).toContainText("Payé");
+  await expect(occurrenceRow).not.toContainText("Pas encore payé");
   await occurrenceRow
     .getByRole("button", { name: "Remettre à payer Assurance test", exact: true })
     .click();
@@ -885,7 +892,7 @@ test("subscriptions: a status change made on Abonnements updates Mon mois and Ac
   // actual simplified French wording each figure sits under, not just the figures themselves.
   // "Charge test abo" is the only (active, expense) recurrence, due but not yet settled.
   await expect(statValue("Dû ce mois")).toContainText("77.70");
-  await expect(statValue("Abonnements actifs")).toContainText("1");
+  await expect(statValue("Actifs, tous types")).toContainText("1");
   // The settled share is a progress bar under the "Réglé ce mois" figure (same subsSettledPct).
   const settledShare = page.getByRole("progressbar", { name: "Part réglée" });
   await expect(settledShare).toHaveCount(1);
@@ -950,11 +957,10 @@ test("subscriptions: a status change made on Abonnements updates Mon mois and Ac
   await page
     .getByRole("button", { name: "Déverrouiller", exact: true })
     .click();
-  // Overview's own <h1> reads "Une vue sur l'essentiel.", not "Vue d'ensemble" (see App.tsx's
-  // page-title ternary) — lands there by default since `page` state resets to "overview" on
-  // every fresh mount, unlock included.
+  // Lands on the Accueil by default (its <h1> is the page's own name, "Vue d'ensemble"), since
+  // `page` state resets to "overview" on every fresh mount, unlock included.
   await expect(
-    page.getByRole("heading", { name: "Une vue sur l’essentiel.", exact: true }),
+    page.getByRole("heading", { name: "Vue d’ensemble", exact: true }),
   ).toBeVisible();
   await expect(toSettle).toBeVisible();
   await expect(toSettle.locator(".row", { hasText: "Charge test abo" })).toHaveCount(0);
@@ -2255,7 +2261,7 @@ test("account types: accounts grouped by type with totals, on Mes comptes and th
   for (let i = 0; i < 2; i++) {
     await openAccount("Trading épargne test");
     await page.getByRole("button", { name: "Modifier Trading épargne test", exact: true }).click();
-    const d = page.getByRole("dialog", { name: "Un compte" });
+    const d = page.getByRole("dialog", { name: "Modifier Trading épargne test" });
     await expect(d.getByLabel("Type de compte", { exact: true })).toHaveValue("__autre__");
     await expect(d.getByLabel("C’est plutôt", { exact: true })).toHaveValue("savings");
     await d.getByRole("button", { name: "Enregistrer", exact: true }).click();
@@ -2268,7 +2274,7 @@ test("account types: accounts grouped by type with totals, on Mes comptes and th
   await nav.getByRole("button", { name: "Mes comptes", exact: true }).click();
   await openAccount("UBS Léna test");
   await page.getByRole("button", { name: "Modifier UBS Léna test", exact: true }).click();
-  const reopened = page.getByRole("dialog", { name: "Un compte" });
+  const reopened = page.getByRole("dialog", { name: "Modifier UBS Léna test" });
   await expect(reopened.getByLabel("Type de compte", { exact: true })).toHaveValue("__autre__");
   await expect(reopened.getByLabel("Nom du type", { exact: true })).toHaveValue("Léna");
   expect(errors).toEqual([]);
@@ -2365,6 +2371,70 @@ test("accounts: compact rows, balance with the account, all balances updated at 
   await page.getByRole("button", { name: "Mettre à jour les soldes", exact: true }).click();
   update = page.getByRole("dialog", { name: "Mettre à jour les soldes" });
   await expect(update).not.toContainText("Actuel");
+  expect(errors).toEqual([]);
+});
+
+test("simpler screens: add chooser, no ISO date on daily pages, uncounted accounts named", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  const nav = page.getByRole("navigation", { name: "Navigation principale", exact: true });
+
+  // Demo: no « 2026-09-28 » left on the pages used every day.
+  await page.goto("/");
+  await page.getByRole("button", { name: "Voir la démonstration" }).click();
+  for (const name of ["Vue d’ensemble", "Mon mois", "Factures", "Mes comptes", "Épargne et projets"]) {
+    await nav.getByRole("button", { name, exact: true }).click();
+    await expect(page.locator("main")).not.toContainText(/\d{4}-\d{2}-\d{2}/);
+  }
+  await page.getByRole("button", { name: "Ouvrir mon coffre" }).click();
+
+  // An empty vault is not « Partiel »: it asks for a first account.
+  await page.getByLabel("Phrase secrète", { exact: true }).fill("Exemple-test-Finance-simple");
+  await page.getByLabel("Confirmer la phrase secrète").fill("Exemple-test-Finance-simple");
+  await page.getByRole("button", { name: "Créer mon coffre" }).click();
+  await nav.getByRole("button", { name: "Vue d’ensemble", exact: true }).click();
+  const hero = page.locator(".hero-card");
+  await expect(hero).toContainText("Ajoutez un compte pour voir votre patrimoine.");
+  await expect(hero.locator(".tag")).toHaveCount(0);
+
+  // Accueil « Ajouter »: choose what, then the matching short form. Closing it gives the
+  // focus back to the button, as the editor does.
+  const addButton = page.getByRole("button", { name: "Ajouter", exact: true });
+  await addButton.click();
+  await expect(page.getByRole("dialog", { name: "Ajouter" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(addButton).toBeFocused();
+  await addButton.click();
+  const chooser = page.getByRole("dialog", { name: "Ajouter" });
+  await expect(chooser.locator(".add-choice")).toHaveText([
+    /Une facture/,
+    /Un revenu/,
+    /Une dépense/,
+    /Un compte/,
+  ]);
+  await chooser.getByRole("button", { name: /Un compte/ }).click();
+  const form = page.getByRole("dialog", { name: "Un compte" });
+  await form.getByLabel("Nom du compte", { exact: true }).fill("Courtier USD test");
+  await form.getByLabel("Solde actuel", { exact: true }).fill("100");
+  await form.getByLabel("Devise", { exact: true }).selectOption("USD");
+  await form.getByRole("button", { name: "Enregistrer", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+
+  // Not counted for lack of a rate: named, with its reason and the way to fix it.
+  await expect(hero.locator(".tag")).toHaveText("Partiel");
+  await expect(hero).toContainText("Non compté : Courtier USD test (taux USD → CHF manquant).");
+  const attention = page.locator(".card", { has: page.locator(".card-title", { hasText: "À votre attention" }) });
+  await expect(attention).toContainText("1 compte en devise sans taux de change");
+  await hero.getByRole("button", { name: "Ajouter un taux de change", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "Un taux de change" })).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  // Réglages: nothing to add there.
+  await nav.getByRole("button", { name: "Documents et réglages", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Ajouter", exact: true })).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 
@@ -2544,6 +2614,6 @@ test("quick unlock: Face ID or fingerprint opens the vault without typing the pa
   await page
     .getByRole("button", { name: "Déverrouiller avec Face ID ou l’empreinte", exact: true })
     .click();
-  await expect(page.getByRole("heading", { name: "Une vue sur l’essentiel." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Vue d’ensemble", exact: true })).toBeVisible();
   expect(errors).toEqual([]);
 });

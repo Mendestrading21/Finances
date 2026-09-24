@@ -628,11 +628,12 @@ export default function Editor({
     >
       <div className="dialog-header">
         <div>
-          <p className="eyebrow">FINANCE · SAISIE RAPIDE</p>
           <h2 id="editor-title">
             {spec.type === "recurrence"
               ? natureTitles[recurrenceType]
-              : titles[spec.type]}
+              : existingAccount
+                ? `Modifier ${existingAccount.name}`
+                : titles[spec.type]}
           </h2>
         </div>
         <button

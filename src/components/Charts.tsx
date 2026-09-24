@@ -32,7 +32,7 @@ export function Sparkline({
       height="24"
       preserveAspectRatio="none"
       role="img"
-      aria-label={`Tendance du solde : ${points.length} soldes datés, du ${points[0].asOf} au ${points[points.length - 1].asOf}`}
+      aria-label={`Tendance du solde : ${points.length} soldes datés, du ${dateLabel(points[0].asOf)} au ${dateLabel(points[points.length - 1].asOf)}`}
     >
       <defs>
         <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">

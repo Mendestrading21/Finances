@@ -77,6 +77,13 @@ const paths: Record<string, ReactNode> = {
     </>
   ),
   "chevron-right": <path d="m9 5 7 7-7 7" />,
+  // Retour en arrière : « remettre à payer », distinct d'« actualiser » (flèches en cercle).
+  undo: (
+    <>
+      <path d="M9 14 4 9l5-5" />
+      <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />
+    </>
+  ),
   "chevron-left": <path d="m15 5-7 7 7 7" />,
   close: <path d="m5 5 14 14M5 19 19 5" />,
   check: <path d="m4 12 5 5L20 6" />,

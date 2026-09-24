@@ -195,8 +195,96 @@ function SourceLink({ source }: { source: Source }) {
 // defaulting every Card to an icon, matching the same reference's warning not to add an
 // icon "à chaque ligne décorative": only call sites that pass one get a chip.
 const MONTH_PAGES: readonly string[] = ["overview", "month", "bills", "subscriptions"];
+// « 20 août » plutôt que 2026-08-20 à l'écran ; une valeur qui n'est pas une date reste telle quelle.
+const dayLabel = (date: string | null | undefined) =>
+  date && isDate(date) ? shortDateLabel(date) : (date ?? "");
 // Soldes montrés dans le détail d'un compte, du plus récent au plus ancien.
 const HISTORY_SHOWN = 6;
+// Les quatre choses qu'on ajoute au quotidien, chacune vers son formulaire court.
+const ADD_CHOICES: { title: string; hint: string; icon: IconName; spec: EditorSpec }[] = [
+  {
+    title: "Une facture",
+    hint: "Loyer, assurance, téléphone : chaque mois ou un seul",
+    icon: "document",
+    spec: { type: "recurrence", recurrenceType: "bill", simple: true },
+  },
+  {
+    title: "Un revenu",
+    hint: "Salaire, rente : chaque mois ou un seul",
+    icon: "arrow-down",
+    spec: { type: "recurrence", kind: "income", simple: true },
+  },
+  {
+    title: "Une dépense",
+    hint: "Un achat ou un paiement de ce mois",
+    icon: "arrow-up",
+    spec: { type: "transaction", kind: "expense" },
+  },
+  {
+    title: "Un compte",
+    hint: "Compte, épargne, prévoyance, placement",
+    icon: "wallet",
+    spec: { type: "account" },
+  },
+];
+function AddChooser({
+  onPick,
+  onClose,
+}: {
+  onPick: (spec: EditorSpec) => void;
+  onClose: () => void;
+}) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const d = dialog.current;
+    // Comme l'éditeur : le focus revient au bouton « Ajouter » (Échap, croix ou choix).
+    const trigger =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    d?.showModal();
+    return () => {
+      d?.close();
+      if (trigger && document.body.contains(trigger)) trigger.focus();
+    };
+  }, []);
+  return (
+    <dialog
+      ref={dialog}
+      className="dialog add-chooser"
+      aria-labelledby="add-chooser-title"
+      onCancel={onClose}
+    >
+      <div className="dialog-header">
+        <h2 id="add-chooser-title">Ajouter</h2>
+        <button
+          className="icon-button"
+          type="button"
+          onClick={onClose}
+          aria-label="Fermer"
+        >
+          <Icon name="close" />
+        </button>
+      </div>
+      <div className="add-choices">
+        {ADD_CHOICES.map((c) => (
+          <button
+            key={c.title}
+            type="button"
+            className="add-choice"
+            onClick={() => onPick(c.spec)}
+          >
+            <span className="card-icon">
+              <Icon name={c.icon} size={18} />
+            </span>
+            <span className="add-choice-text">
+              <strong>{c.title}</strong>
+              <small>{c.hint}</small>
+            </span>
+          </button>
+        ))}
+      </div>
+    </dialog>
+  );
+}
 function Card({
   title,
   icon,
@@ -755,6 +843,13 @@ export default function App() {
     [subsSort, setSubsSort] = useState<"amount" | "next">("amount"),
     [more, setMore] = useState(false),
     [pendingImport, setPendingImport] = useState<FinanceData | null>(null),
+    // Accueil : le choix de ce qu'on ajoute, avant le formulaire.
+    [addChooser, setAddChooser] = useState(false),
+    // « Annuler » du dernier message : appliqué aux données du moment, jamais à une copie ancienne.
+    [undo, setUndo] = useState<{
+      message: string;
+      apply: (d: FinanceData) => FinanceData;
+    } | null>(null),
     [busy, setBusy] = useState(false),
     [receiptTxn, setReceiptTxn] = useState(""),
     // Échéance d'une récurrence ouverte dans « Modifier » (ce mois seulement / suivants).
@@ -782,6 +877,12 @@ export default function App() {
   const session = useRef(0);
   const fileInput = useRef<HTMLInputElement>(null);
   const moreButton = useRef<HTMLButtonElement>(null);
+  const pendingImportRef = useRef<HTMLDivElement>(null);
+  // Un import à vérifier s'affiche plus bas que le bouton : on l'amène à l'écran.
+  useEffect(() => {
+    if (pendingImport)
+      pendingImportRef.current?.scrollIntoView({ block: "start" });
+  }, [pendingImport]);
   const mutating = useRef(false);
   const [preview, setPreview] = useState<{
     url: string;
@@ -801,6 +902,7 @@ export default function App() {
     setPreview(null);
     setOccurrenceEdit(null);
     setMessage("");
+    setUndo(null);
     setError("");
     setSync({ state: "off" });
     setSyncChecked(false);
@@ -1359,12 +1461,38 @@ export default function App() {
     .reverse();
   const display = (value: number | null, unit = currency) =>
     hidden ? "••••••" : money(value, unit);
+  // Comptes que le total ne compte pas, chacun avec sa raison, pour savoir quoi compléter.
+  const exclusionReason = (a: Account) => {
+    const b = latestBalance(a);
+    if (!b || b.amountMinor === null) return "solde à compléter";
+    if (convertMinor(100, a.currency, currency, data.fxRates, today()) === null)
+      return `taux ${a.currency} → ${currency} manquant`;
+    // Une position dans une devise sans taux : c'est aussi un taux qui manque.
+    const noRate = data.positions.find(
+      (p) =>
+        a.valuationMode === "components" &&
+        p.accountId === a.id &&
+        convertMinor(100, p.currency, currency, data.fxRates, today()) === null,
+    );
+    if (noRate) return `taux ${noRate.currency} → ${currency} manquant`;
+    return "position à valoriser";
+  };
+  const excludedAccounts = wealth.items
+    .filter((i) => i.valueMinor === null)
+    .flatMap((i) => data.accounts.filter((a) => a.id === i.accountId));
+  const missingRate = excludedAccounts.filter((a) =>
+    exclusionReason(a).startsWith("taux"),
+  ).length;
+  const excludedNote = `Non compté${excludedAccounts.length > 1 ? "s" : ""} : ${excludedAccounts
+    .map((a) => `${a.name} (${exclusionReason(a)})`)
+    .join(", ")}.`;
   const unknownAccounts = data.accounts.filter((a) => !latestBalance(a)).length;
   const staleAccounts = data.accounts.filter((a) => {
     const b = latestBalance(a);
     return b?.asOf && Date.parse(today()) - Date.parse(b.asOf) > 31 * 86400000;
   }).length;
-  const attention = data.reviewItems.length + unknownAccounts + staleAccounts;
+  const attention =
+    data.reviewItems.length + unknownAccounts + staleAccounts + missingRate;
   const accountName = (id: string | null) =>
     data.accounts.find((a) => a.id === id)?.name || "Compte à préciser";
   const edit = (spec: EditorSpec) => {
@@ -1676,7 +1804,9 @@ export default function App() {
     // d'un mois (comme « À votre attention »).
     const note = asOf
       ? valued === null
-        ? "À valoriser : position ou taux manquant"
+        ? a.valuationMode === "components"
+          ? "À valoriser : position ou taux manquant"
+          : "Montant du solde à compléter"
         : asOf.slice(0, 7) === today().slice(0, 7)
           ? null
           : `au ${shortDateLabel(asOf)}`
@@ -1847,12 +1977,6 @@ export default function App() {
     if (!data) return;
     const verb =
       t.kind === "income" ? "recevoir" : t.kind === "transfer" ? "régler" : "payer";
-    if (
-      !window.confirm(
-        `Remettre « ${t.label} » à ${verb} ? Le règlement du ${t.date ?? "date inconnue"} reste conservé dans l’historique, pas effacé.`,
-      )
-    )
-      return;
     try {
       const next: Transaction = {
         ...t,
@@ -1873,9 +1997,16 @@ export default function App() {
         ...data,
         transactions: [...data.transactions.filter((v) => v.id !== t.id), next],
       });
-      setMessage(
-        "Remis à prévu. L’ancienne date de règlement reste dans l’historique.",
-      );
+      // Tout de suite, comme « Payer » ; une erreur se rattrape par « Annuler » dans le message.
+      const text = `« ${t.label} » remis à ${verb}.`;
+      setMessage(text);
+      setUndo({
+        message: text,
+        apply: (d) => ({
+          ...d,
+          transactions: [...d.transactions.filter((v) => v.id !== t.id), t],
+        }),
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Correction non enregistrée.");
     }
@@ -1945,7 +2076,7 @@ export default function App() {
                 data?.recurrences.some((r) => r.id === t.recurrenceId) ? null : (
                   <>
                     {t.date ? (
-                      <span className="nowrap">{t.date}</span>
+                      <span className="nowrap">{dayLabel(t.date)}</span>
                     ) : t.budgetMonth ? (
                       <>
                         <span className="nowrap">{monthLabel(t.budgetMonth)}</span>
@@ -2047,7 +2178,7 @@ export default function App() {
                 } ${t.label}`}
                 onClick={() => revertToPlanned(t)}
               >
-                <Icon name="refresh" size={18} />
+                <Icon name="undo" size={18} />
               </button>
             )}
             {t.status === "planned" ? (
@@ -2207,7 +2338,7 @@ export default function App() {
                 } ${r.label}`}
                 onClick={() => revertToPlanned(settledTxn)}
               >
-                <Icon name="refresh" size={18} />
+                <Icon name="undo" size={18} />
               </button>
             )}
           </div>
@@ -2242,7 +2373,7 @@ export default function App() {
           sur {display(g.targetMinor, g.currency)}
           {g.dueDate && (
             <>
-              {SEP}échéance <span className="nowrap">{g.dueDate}</span>
+              {SEP}échéance <span className="nowrap">{dayLabel(g.dueDate)}</span>
             </>
           )}
         </p>
@@ -2256,7 +2387,7 @@ export default function App() {
         )}
         <div className="hero-foot">
           <span className="meta">
-            {g.asOf ? `Réserve au ${g.asOf}` : "Réserve non datée"}
+            {g.asOf ? `Réserve au ${dayLabel(g.asOf)}` : "Réserve non datée"}
           </span>
           <span>
             {hidden
@@ -2348,56 +2479,37 @@ export default function App() {
         </header>
         <div className="page-header">
           <div className="page-heading">
-            {page === "overview" && (
-              <p className="eyebrow">VOTRE FINANCE, EN CLAIR</p>
-            )}
-            <h1 className="page-title">
-              {page === "overview"
-                ? "Une vue sur l’essentiel."
-                : currentPage.name}
-            </h1>
+            <h1 className="page-title">{currentPage.name}</h1>
           </div>
-          <button
-            className="button primary small"
-            onClick={() =>
-              edit(
-                page === "bills"
-                  ? { type: "recurrence", recurrenceType: "bill", simple: true }
-                  : {
-                type:
-                  page === "accounts"
-                    ? "account"
-                    : page === "subscriptions"
-                      ? "recurrence"
-                      : page === "goals"
-                        ? "goal"
-                        : page === "investments"
-                          ? "position"
-                          : "transaction",
-                    },
-              )
-            }
-          >
-            <Icon name="plus" />
-            Ajouter
-          </button>
-          <p className="subtitle">
-            {page === "overview"
-              ? "Vos comptes, votre mois, vos prochains projets."
-              : page === "month"
-                ? "Ce qui entre, ce qui sort et ce qui reste à prévoir."
-                : page === "accounts"
-                  ? "Chaque compte, sa devise et son solde daté."
-                  : page === "bills"
-                    ? "Vos factures fixes et vos revenus, chaque mois. Un petit changement ? Le crayon."
-                  : page === "subscriptions"
-                    ? "Abonnements, factures et charges du mois."
-                    : page === "goals"
-                      ? "Donnez une place à ce qui compte pour vous."
-                      : page === "investments"
-                      ? "Vos positions, rattachées à leurs comptes."
-                      : "Vos pièces et vos données, à portée de main."}
-          </p>
+          {/* Réglages : rien à ajouter. Accueil : on choisit quoi (facture, revenu, dépense, compte). */}
+          {page !== "documents" && (
+            <button
+              className="button primary small"
+              onClick={() =>
+                page === "overview"
+                  ? setAddChooser(true)
+                  : edit(
+                      page === "bills"
+                        ? { type: "recurrence", recurrenceType: "bill", simple: true }
+                        : {
+                            type:
+                              page === "accounts"
+                                ? "account"
+                                : page === "subscriptions"
+                                  ? "recurrence"
+                                  : page === "goals"
+                                    ? "goal"
+                                    : page === "investments"
+                                      ? "position"
+                                      : "transaction",
+                          },
+                    )
+              }
+            >
+              <Icon name="plus" />
+              Ajouter
+            </button>
+          )}
         </div>
         {demo && (
           // Une ligne : la mention complète figure dans le pied de page.
@@ -2416,6 +2528,23 @@ export default function App() {
         {message && (
           <div className="notice toast" role="status">
             {message}
+            {undo?.message === message && (
+              <button
+                className="text-button"
+                onClick={async () => {
+                  const pending = undo;
+                  setUndo(null);
+                  try {
+                    await persist(pending.apply(data));
+                    setMessage("Annulé.");
+                  } catch (e) {
+                    setError(e instanceof Error ? e.message : "Annulation non enregistrée.");
+                  }
+                }}
+              >
+                Annuler
+              </button>
+            )}
           </div>
         )}
         {updateNotice && <div className="update-banner">{updateNotice}</div>}
@@ -2628,7 +2757,7 @@ export default function App() {
                 <div className="hero-foot">
                   <p className="hero-label">
                     Mon patrimoine{" "}
-                    {wealth.partial && <span className="tag">Partiel</span>}
+                    {wealth.excluded > 0 && <span className="tag">Partiel</span>}
                   </p>
                   <span className="card-icon">
                     <Icon name="chart" size={18} />
@@ -2636,15 +2765,21 @@ export default function App() {
                 </div>
                 <div className="hero-value">{display(wealth.totalMinor)}</div>
                 <p className="meta">
-                  {wealth.partial
-                    ? `${wealth.excluded} compte(s) exclu(s) : date, valeur ou taux manquant.`
-                    : "Valeurs datées connues, sans double comptage."}
+                  {!data.accounts.length
+                    ? "Ajoutez un compte pour voir votre patrimoine."
+                    : wealth.excluded > 0
+                      ? excludedNote
+                      : "Valeurs datées connues, sans double comptage."}
                 </p>
+                {missingRate > 0 && (
+                  <button
+                    className="button small secondary hero-action"
+                    onClick={() => edit({ type: "fx" })}
+                  >
+                    Ajouter un taux de change
+                  </button>
+                )}
                 <WealthChart data={data} currency={currency} hidden={hidden} />
-                <p className="footer-note">
-                  Historique des valeurs disponibles · aucune performance
-                  déduite des apports.
-                </p>
               </section>
               <Card
                 title="Patrimoine par type"
@@ -2727,6 +2862,28 @@ export default function App() {
                       onClick={() => navigate("accounts")}
                     >
                       Vérifier
+                    </button>
+                  </div>
+                )}
+                {missingRate > 0 && (
+                  <div className="row">
+                    <Icon name="alert" />
+                    <div className="row-main">
+                      <span className="row-title">
+                        {missingRate === 1
+                          ? "1 compte en devise sans taux de change"
+                          : `${missingRate} comptes en devise sans taux de change`}
+                      </span>
+                      <span className="row-detail">
+                        {missingRate === 1 ? "Il n’est" : "Ils ne sont"} pas
+                        inclus dans le total.
+                      </span>
+                    </div>
+                    <button
+                      className="card-action"
+                      onClick={() => edit({ type: "fx" })}
+                    >
+                      Ajouter un taux
                     </button>
                   </div>
                 )}
@@ -2895,15 +3052,14 @@ export default function App() {
                       <Icon name="wallet" size={18} />
                     </span>
                     Total
-                    {wealth.partial && <span className="tag">Partiel</span>}
+                    {wealth.excluded > 0 && <span className="tag">Partiel</span>}
                   </span>
                   <span className="accounts-total-value">
                     {display(wealth.totalMinor)}
                   </span>
-                  {wealth.partial && (
+                  {wealth.excluded > 0 && (
                     <p className="footer-note accounts-total-note">
-                      {wealth.excluded} compte(s) exclu(s) : date, valeur ou
-                      taux manquant.
+                      {excludedNote}
                     </p>
                   )}
                   {/* Tous les soldes d'un coup, datés d'aujourd'hui : la mise à jour du mois. */}
@@ -2943,10 +3099,6 @@ export default function App() {
                 Ajoutez votre premier compte ou importez un fichier Finance.
               </div>
             )}
-            <p className="footer-note">
-              Les soldes conservent leur date d’observation. Les opérations du
-              mois ne les modifient pas automatiquement.
-            </p>
           </>
         )}
         {page === "bills" && (
@@ -3078,11 +3230,6 @@ export default function App() {
                 {incomeInactive.map((r) => subscriptionRow(r, "bills"))}
               </details>
             )}
-            <p className="footer-note">
-              Factures et revenus reviennent tout seuls chaque mois, ou
-              seulement le mois choisi. Le crayon change le montant de{" "}
-              {monthLabel(month)} seulement, ou de ce mois et des suivants.
-            </p>
           </>
         )}
         {page === "subscriptions" && (
@@ -3115,7 +3262,7 @@ export default function App() {
                   // Matches cohortSummary's activeCount exactly: every active recurrence,
                   // any kind or classification (revenus et mises de côté compris) — the label
                   // must not promise a narrower scope than what is actually counted.
-                  label: "Abonnements actifs",
+                  label: "Actifs, tous types",
                   value: String(subsCohort.activeCount),
                 },
               ].map((s) => (
@@ -3240,10 +3387,6 @@ export default function App() {
                 </p>
               )}
             </details>
-            <p className="footer-note">
-              « Ce mois » désigne {monthLabel(month)}, le mois choisi en haut
-              de la page.
-            </p>
           </>
         )}
         {page === "goals" && (
@@ -3310,7 +3453,7 @@ export default function App() {
                         {SEP}
                         {hidden ? "•••" : p.quantity || "Quantité inconnue"}
                         {SEP}
-                        <span className="nowrap">{p.asOf || "Non daté"}</span>
+                        <span className="nowrap">{p.asOf ? dayLabel(p.asOf) : "Non daté"}</span>
                       </span>
                     </div>
                     <div className="row-end">
@@ -3471,7 +3614,7 @@ export default function App() {
                     <p className="meta" key={i}>
                       {hidden ? "•••" : `1 ${r.from} = ${r.rate} ${r.to}`}
                       {SEP}
-                      {r.asOf}
+                      {dayLabel(r.asOf)}
                     </p>
                   ))}
                 </div>
@@ -3498,9 +3641,13 @@ export default function App() {
               </Card>
             </div>
             {pendingImport && (
+              // Amenée à l'écran : sinon la vérification s'ouvre loin sous le bouton d'import.
+              <div ref={pendingImportRef} className="pending-import">
               <Card title="Vérifier cet import" icon="check">
                 <p>
                   {pendingImport.accounts.length} comptes ·{" "}
+                  {pendingImport.recurrences.length} factures, abonnements et
+                  revenus ·{" "}
                   {pendingImport.transactions.length} opérations ·{" "}
                   {pendingImport.positions.length} positions ·{" "}
                   {pendingImport.reviewItems.length} éléments à rapprocher.
@@ -3523,6 +3670,7 @@ export default function App() {
                   Annuler
                 </button>
               </Card>
+              </div>
             )}
             <Card title="Reçus et documents" icon="document">
               <div className="form-grid">
@@ -3535,7 +3683,7 @@ export default function App() {
                     <option value="">Sans opération</option>
                     {data.transactions.map((t) => (
                       <option key={t.id} value={t.id}>
-                        {t.label} · {t.date || "Non daté"}
+                        {t.label} · {t.date ? dayLabel(t.date) : "Non daté"}
                       </option>
                     ))}
                   </select>
@@ -3563,7 +3711,7 @@ export default function App() {
                   <div className="row-main">
                     <span className="row-title">{d.name}</span>
                     <span className="row-detail">
-                      {d.addedAt.slice(0, 10)}
+                      {dayLabel(d.addedAt.slice(0, 10))}
                       {SEP}
                       {d.transactionId
                         ? data.transactions.find(
@@ -3629,8 +3777,7 @@ export default function App() {
           {demo
             ? "Démonstration · Tous les montants et établissements sont fictifs."
             : "Espace privé sur cet appareil ·"}{" "}
-          Soldes observés, sources conservées. Version {__APP_VERSION__} du{" "}
-          {__APP_BUILT_ON__}.
+          Version {__APP_VERSION__} du {dayLabel(__APP_BUILT_ON__)}
         </footer>
       </main>
       <nav className="mobile-nav" aria-label="Navigation mobile">
@@ -3684,6 +3831,15 @@ export default function App() {
             </button>
           ))}
         </div>
+      )}
+      {addChooser && (
+        <AddChooser
+          onPick={(spec) => {
+            setAddChooser(false);
+            edit(spec);
+          }}
+          onClose={() => setAddChooser(false)}
+        />
       )}
       {editor && (
         <Editor
