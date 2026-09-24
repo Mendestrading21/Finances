@@ -1,4 +1,5 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Locator, type Page, type Route } from "@playwright/test";
+import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile, cp, mkdtemp, rm } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
@@ -1537,4 +1538,304 @@ test("PWA update: after typing on the lock screen, a new deploy waits for Rechar
     await new Promise<void>((resolve) => server.close(() => resolve()));
     await rm(siteDir, { recursive: true, force: true });
   }
+});
+
+// "Tous les mois" saves a new operation as a monthly recurrence: this month settled, next month due.
+test("new operation for every month becomes a recurrence, settled now and due next month", async ({
+  page,
+}) => {
+  const monthNames = [
+    "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
+    "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre",
+  ];
+  const now = new Date();
+  const nextIndex = (now.getMonth() + 1) % 12;
+  const nextYear = now.getFullYear() + (nextIndex === 0 ? 1 : 0);
+
+  await page.goto("/");
+  await page.getByLabel("Phrase secrète", { exact: true }).fill("Exemple-test-Finance-repeat-2026");
+  await page.getByLabel("Confirmer la phrase secrète").fill("Exemple-test-Finance-repeat-2026");
+  await page.getByRole("button", { name: "Créer mon coffre" }).click();
+  const nav = page.getByRole("navigation").first();
+  await nav.getByRole("button", { name: "Mon mois", exact: true }).click();
+
+  await page.getByRole("button", { name: "Ajouter", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.locator('select[name="kind"]').selectOption("income");
+  await dialog.getByRole("button", { name: "Tous les mois", exact: true }).click();
+  await expect(
+    dialog.getByRole("button", { name: "Tous les mois", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await dialog.getByLabel("Libellé").fill("Salaire mensuel test");
+  await dialog.getByLabel("Montant", { exact: true }).fill("4200");
+  await dialog.getByLabel("État", { exact: true }).selectOption({ label: "Reçu" });
+  await dialog.getByRole("button", { name: "Enregistrer", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+
+  // Operations only: Mon mois also lists the recurrence itself in its recurring-charges card.
+  const operationsCard = page.locator(".card", {
+    has: page.locator(".card-title", { hasText: "Les opérations" }),
+  });
+  const rows = operationsCard.locator(".row", { hasText: "Salaire mensuel test" });
+  await expect(rows).toHaveCount(1);
+  await expect(rows).toContainText("Reçu");
+
+  await page.locator(".month-picker-trigger").click();
+  if (nextIndex === 0) await page.getByRole("button", { name: "Année suivante" }).click();
+  await page
+    .getByRole("button", { name: `${monthNames[nextIndex]} ${nextYear}`, exact: true })
+    .click();
+  await expect(rows).toHaveCount(1);
+  await expect(rows).toContainText("Pas encore reçu");
+
+  await nav.getByRole("button", { name: "Abonnements", exact: true }).click();
+  await expect(page.locator(".row", { hasText: "Salaire mensuel test" }).first()).toBeVisible();
+});
+
+// Fake GitHub contents API held in memory, shared by two browser contexts ("devices").
+function fakeGitHub() {
+  const file: { raw: string | null; sha: string | null } = { raw: null, sha: null };
+  const puts: string[] = [];
+  // Origins whose requests fail as if that device had no network.
+  const offline = new Set<string>();
+  const cors = {
+    "access-control-allow-origin": "*",
+    "access-control-allow-headers": "authorization, accept, content-type, x-github-api-version",
+    "access-control-allow-methods": "GET, PUT, OPTIONS",
+  };
+  const blobSha = (raw: string) =>
+    createHash("sha1").update(`blob ${Buffer.byteLength(raw)}\0`).update(raw).digest("hex");
+  async function handle(route: Route) {
+    const request = route.request();
+    if (offline.has(request.headers()["origin"] ?? ""))
+      return route.abort("internetdisconnected");
+    if (request.method() === "OPTIONS") return route.fulfill({ status: 204, headers: cors });
+    const json = (status: number, body: unknown) =>
+      route.fulfill({
+        status,
+        headers: { ...cors, "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    const { pathname } = new URL(request.url());
+    if (pathname === "/repos/exemple-test/finance-coffre-test")
+      return json(200, { full_name: "exemple-test/finance-coffre-test", private: true });
+    if (pathname === "/repos/exemple-test/finance-coffre-test/contents/finance-coffre.json") {
+      if (request.method() === "GET")
+        return file.raw === null
+          ? json(404, { message: "Not Found" })
+          : json(200, {
+              type: "file",
+              sha: file.sha,
+              encoding: "base64",
+              content: Buffer.from(file.raw).toString("base64"),
+            });
+      if (request.method() === "PUT") {
+        const body = JSON.parse(request.postData() ?? "{}");
+        if ((body.sha ?? null) !== file.sha) return json(409, { message: "sha mismatch" });
+        file.raw = Buffer.from(body.content, "base64").toString("utf8");
+        file.sha = blobSha(file.raw);
+        puts.push(file.raw);
+        return json(200, { content: { sha: file.sha } });
+      }
+    }
+    return json(404, { message: "Not Found" });
+  }
+  return { file, puts, offline, handle };
+}
+
+test("sync: one vault on two devices through a private GitHub repository, encrypted only", async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  const github = fakeGitHub();
+  const token = `github_pat_${"EXEMPLEFICTIF".repeat(3)}`; // Synthetic, never a real token.
+  const syncPassphrase = "Exemple-test-Finance-sync-2026";
+  const fillRepo = async (scope: Page | Locator) => {
+    await scope.getByLabel("Propriétaire GitHub").fill("exemple-test");
+    await scope.getByLabel("Dépôt privé").fill("finance-coffre-test");
+    await scope.getByLabel("Jeton d’accès").fill(token);
+  };
+  const addExpense = async (p: Page, label: string) => {
+    await p
+      .getByRole("navigation", { name: "Navigation principale", exact: true })
+      .getByRole("button", { name: "Mon mois", exact: true })
+      .click();
+    await p.getByRole("button", { name: "Ajouter", exact: true }).click();
+    const dialog = p.getByRole("dialog");
+    await dialog.getByLabel("Libellé").fill(label);
+    await dialog.getByLabel("Montant", { exact: true }).fill("55");
+    await dialog.getByRole("button", { name: "Enregistrer", exact: true }).click();
+    await expect(p.getByRole("dialog")).toHaveCount(0);
+  };
+  const wake = async (p: Page) => {
+    await p.bringToFront();
+    await p.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+  };
+
+  // Device A: new vault, then sync switched on from Documents et réglages.
+  await page.context().route("https://api.github.com/**", github.handle);
+  await page.goto("/");
+  await page.getByLabel("Phrase secrète", { exact: true }).fill(syncPassphrase);
+  await page.getByLabel("Confirmer la phrase secrète").fill(syncPassphrase);
+  await page.getByRole("button", { name: "Créer mon coffre" }).click();
+  await page
+    .getByRole("navigation", { name: "Navigation principale", exact: true })
+    .getByRole("button", { name: "Documents et réglages", exact: true })
+    .click();
+  const syncCard = page.locator(".card", {
+    has: page.locator(".card-title", { hasText: "Synchronisation entre appareils" }),
+  });
+  await fillRepo(syncCard);
+  await syncCard.getByRole("button", { name: "Activer la synchronisation" }).click();
+  await expect(syncCard.getByRole("status")).toContainText("Synchronisé");
+  expect(github.puts).toHaveLength(1);
+
+  // A change on A is sent by itself, encrypted.
+  await addExpense(page, "Courses synchro test");
+  await expect.poll(() => github.puts.length).toBe(2);
+  for (const raw of github.puts) {
+    expect(JSON.parse(raw).format).toBe("Finance");
+    expect(raw).not.toContain("Courses synchro test");
+    expect(raw).not.toContain(token);
+  }
+  expect(await page.evaluate(() => Object.values(localStorage).join(""))).not.toContain(token);
+
+  // Device B: another origin, so its own empty storage; same vault opened from GitHub.
+  const originA = new URL(page.url()).origin;
+  const originB = originA.replace("127.0.0.1", "localhost");
+  const pageB = await page.context().newPage();
+  pageB.on("pageerror", (e) => errors.push(e.message));
+  await pageB.goto(`${originB}/`);
+  await expect(pageB.getByRole("heading", { name: "Créer mon espace privé" })).toBeVisible();
+  await pageB.getByRole("button", { name: "Ouvrir depuis GitHub", exact: true }).click();
+  await pageB.getByLabel("Phrase secrète", { exact: true }).fill(syncPassphrase);
+  await fillRepo(pageB);
+  await pageB.getByRole("button", { name: "Ouvrir depuis GitHub", exact: true }).click();
+  await pageB
+    .getByRole("navigation", { name: "Navigation principale", exact: true })
+    .getByRole("button", { name: "Mon mois", exact: true })
+    .click();
+  await expect(pageB.getByText("Courses synchro test", { exact: true })).toBeVisible();
+
+  // B changes something; A picks it up when it comes back to the foreground.
+  const before = github.puts.length;
+  await addExpense(pageB, "Pharmacie synchro test");
+  await expect.poll(() => github.puts.length).toBe(before + 1);
+  await wake(page);
+  await expect(page.getByText("Pharmacie synchro test", { exact: true })).toBeVisible();
+
+  // Both change while A is offline: A must ask which version to keep, writing nothing meanwhile.
+  github.offline.add(originA);
+  await addExpense(page, "Loyer hors ligne A");
+  await addExpense(pageB, "Cadeau distant B");
+  await expect.poll(() => github.puts.length).toBe(before + 2);
+  const remoteBeforeChoice = github.file.raw;
+  github.offline.delete(originA);
+  await wake(page);
+  const conflict = page.getByRole("alertdialog");
+  await expect(conflict).toContainText("Deux versions différentes");
+  expect(github.file.raw).toBe(remoteBeforeChoice);
+  await conflict.getByRole("button", { name: "Garder cet appareil", exact: true }).click();
+  await expect(conflict).toHaveCount(0);
+  await expect.poll(() => github.puts.length).toBe(before + 3);
+
+  // B follows A's choice.
+  await wake(pageB);
+  await expect(pageB.getByText("Loyer hors ligne A", { exact: true })).toBeVisible();
+  await expect(pageB.getByText("Cadeau distant B", { exact: true })).toHaveCount(0);
+
+  // Settled: further syncs on both devices send nothing (no ping-pong after a pull).
+  await wake(page);
+  await wake(pageB);
+  await page.waitForTimeout(3000);
+  expect(github.puts).toHaveLength(before + 3);
+
+  // An editor left open on A while B's change is pulled must not write back its older fields.
+  await page.getByRole("button", { name: "Modifier Courses synchro test", exact: true }).click();
+  const staleEditor = page.getByRole("dialog");
+  await pageB.getByRole("button", { name: "Modifier Courses synchro test", exact: true }).click();
+  await pageB.getByRole("dialog").getByLabel("Montant", { exact: true }).fill("60");
+  await pageB.getByRole("dialog").getByRole("button", { name: "Enregistrer", exact: true }).click();
+  await expect.poll(() => github.puts.length).toBe(before + 4);
+  await wake(page);
+  await expect(page.getByText("Mis à jour avec les modifications")).toBeVisible();
+  await staleEditor.getByLabel("Libellé").fill("Courses renommées A");
+  await staleEditor.getByRole("button", { name: "Enregistrer", exact: true }).click();
+  await expect(staleEditor).toContainText("mis à jour depuis un autre appareil pendant l’édition");
+  await staleEditor.getByRole("button", { name: "Annuler", exact: true }).click();
+  await expect(page.getByText("Courses renommées A")).toHaveCount(0);
+  await expect(
+    page.locator(".row", { hasText: "Courses synchro test" }).first(),
+  ).toContainText("60.00");
+  expect(github.puts).toHaveLength(before + 4);
+  await pageB.close();
+  expect(errors).toEqual([]);
+});
+
+test("sync: a separately created vault in the repository is never merged or overwritten without an explicit choice", async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  const github = fakeGitHub();
+  const token = `github_pat_${"EXEMPLEFICTIF".repeat(3)}`; // Synthetic, never a real token.
+  const enableSync = async (p: Page) => {
+    await p
+      .getByRole("navigation", { name: "Navigation principale", exact: true })
+      .getByRole("button", { name: "Documents et réglages", exact: true })
+      .click();
+    const card = p.locator(".card", {
+      has: p.locator(".card-title", { hasText: "Synchronisation entre appareils" }),
+    });
+    await card.getByLabel("Propriétaire GitHub").fill("exemple-test");
+    await card.getByLabel("Dépôt privé").fill("finance-coffre-test");
+    await card.getByLabel("Jeton d’accès").fill(token);
+    await card.getByRole("button", { name: "Activer la synchronisation" }).click();
+    return card;
+  };
+  const createVault = async (p: Page, secret: string) => {
+    await p.getByLabel("Phrase secrète", { exact: true }).fill(secret);
+    await p.getByLabel("Confirmer la phrase secrète").fill(secret);
+    await p.getByRole("button", { name: "Créer mon coffre" }).click();
+  };
+
+  // A: the vault already in use, synchronized.
+  await page.context().route("https://api.github.com/**", github.handle);
+  await page.goto("/");
+  await createVault(page, "Exemple-test-Finance-coffre-A");
+  const cardA = await enableSync(page);
+  await expect(cardA.getByRole("status")).toContainText("Synchronisé");
+  const remoteA = github.file.raw;
+
+  // B: a second vault created separately, then pointed at the same repository.
+  const originB = new URL(page.url()).origin.replace("127.0.0.1", "localhost");
+  const pageB = await page.context().newPage();
+  pageB.on("pageerror", (e) => errors.push(e.message));
+  await pageB.goto(`${originB}/`);
+  await createVault(pageB, "Exemple-test-Finance-coffre-B");
+  await enableSync(pageB);
+  const foreign = pageB.getByRole("alertdialog");
+  await expect(foreign).toContainText("Ce dépôt contient un autre coffre");
+  expect(github.file.raw).toBe(remoteA);
+
+  // Replacing needs a second, explicit confirmation; cancelling writes nothing.
+  await foreign.getByRole("button", { name: "Remplacer celui du dépôt par ce coffre" }).click();
+  await foreign.getByRole("button", { name: "Annuler", exact: true }).click();
+  expect(github.puts).toHaveLength(1);
+  await foreign.getByRole("button", { name: "Remplacer celui du dépôt par ce coffre" }).click();
+  await foreign.getByRole("button", { name: "Confirmer le remplacement", exact: true }).click();
+  await expect(foreign).toHaveCount(0);
+  await expect.poll(() => github.puts.length).toBe(2);
+
+  // A is told the repository now holds another vault; nothing on A is replaced.
+  await page.bringToFront();
+  await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+  await expect(page.getByRole("alertdialog")).toContainText("Ce dépôt contient un autre coffre");
+  await expect(cardA.getByRole("status")).toContainText("autre coffre");
+  expect(github.puts).toHaveLength(2);
+  await pageB.close();
+  expect(errors).toEqual([]);
 });

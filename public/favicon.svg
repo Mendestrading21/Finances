@@ -1,11 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none">
   <defs>
     <linearGradient id="glass" x1="58" y1="30" x2="473" y2="512" gradientUnits="userSpaceOnUse"><stop stop-color="#1B202A"/><stop offset=".48" stop-color="#151A23"/><stop offset="1" stop-color="#10151E"/></linearGradient>
-    <linearGradient id="finance" x1="147" y1="142" x2="366" y2="355" gradientUnits="userSpaceOnUse"><stop stop-color="#DCE4F6"/><stop offset=".43" stop-color="#A8BCE8"/><stop offset="1" stop-color="#7486B8"/></linearGradient>
     <linearGradient id="edge" x1="38" y1="16" x2="432" y2="512" gradientUnits="userSpaceOnUse"><stop stop-color="#4A5364"/><stop offset=".43" stop-color="#2C3340"/><stop offset="1" stop-color="#1F2530"/></linearGradient>
+    <linearGradient id="ice" x1="90.7" y1="78" x2="421.3" y2="434" gradientUnits="userSpaceOnUse"><stop stop-color="#DCE4F6"/><stop offset=".45" stop-color="#A8BCE8"/><stop offset="1" stop-color="#7486B8"/></linearGradient>
   </defs>
   <rect x="9" y="9" width="494" height="494" rx="138" fill="url(#glass)"/>
   <rect x="10.5" y="10.5" width="491" height="491" rx="136.5" stroke="url(#edge)" stroke-width="3"/>
-  <path d="M150 342V167C150 154.85 159.85 145 172 145H340C352.15 145 362 154.85 362 167C362 179.15 352.15 189 340 189H198V229H301C313.15 229 323 238.85 323 251C323 263.15 313.15 273 301 273H198V342C198 355.25 187.25 366 174 366C160.75 366 150 355.25 150 342Z" fill="url(#finance)"/>
-  <path d="M260 345L330 306" stroke="url(#finance)" stroke-width="18" stroke-linecap="round"/>
+  <g stroke="url(#ice)" stroke-linecap="round" stroke-linejoin="round">
+    <path stroke-width="34" d="M370.6 254.4A143.2 114.5 0 1 0 131.5 368.4V421A13 13 0 0 0 144.6 434H162.8A13 13 0 0 0 175.8 421V392.9A143.2 114.5 0 0 0 274.7 397.9V421A13 13 0 0 0 287.7 434H306A13 13 0 0 0 319 421V380.4A143.2 114.5 0 0 0 370.6 322.1H405.7A15.6 15.6 0 0 0 421.3 306.4V270A15.6 15.6 0 0 0 405.7 254.4H370.6Z"/>
+    <path stroke-width="34" d="M282.8 180.6Q293.2 152 334.9 120.7Q337.5 152 340.2 211.6"/>
+    <path stroke-width="34" d="M247.6 174.2A59.9 59.9 0 1 0 166.2 187.2"/>
+  </g>
 </svg>

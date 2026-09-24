@@ -56,6 +56,25 @@ import {
 } from "./components/Charts";
 import Editor, { type EditorSpec } from "./components/Editor";
 import { MonthPicker } from "./components/MonthPicker";
+import {
+  SyncCard,
+  SyncFields,
+  dateTimeLabel,
+  readSyncInput,
+  type SyncInput,
+  type SyncView,
+} from "./components/SyncPanel";
+import {
+  configureSync,
+  disableSync,
+  loadSyncState,
+  openFromGitHub,
+  resolveConflict,
+  syncNow,
+  SyncOfflineError,
+  VaultChangedError,
+} from "./sync";
+import { vaultRevision } from "./vault";
 import { UPDATE_READY_EVENT } from "./swUpdateEvent";
 const pages = [
   { id: "overview", name: "Vue d’ensemble", short: "Accueil", icon: "home" },
@@ -97,6 +116,10 @@ function monogramInitials(name: string): string {
     words.length > 1 ? words[0][0] + words[1][0] : name.replace(/\s+/g, "").slice(0, 2)
   ).toUpperCase();
 }
+const PULLED_MEANWHILE =
+  "Vos données viennent d’être mises à jour depuis un autre appareil. Vérifiez, puis recommencez.";
+const EDITED_ELSEWHERE =
+  "Cet élément a été mis à jour depuis un autre appareil pendant l’édition. Fermez, puis rouvrez-le.";
 // Espace insécable avant le point : jamais de « · » seul en début de ligne.
 const SEP = "\u00a0· ";
 const assetTypeLabels: Record<
@@ -202,7 +225,11 @@ function Auth({
     // allowOlder, in a ref rather than React state so it never gets captured in a
     // state-inspection snapshot. Cleared right after that retry settles, on cancel, or
     // whenever a fresh restore attempt starts.
-    pendingOlderBackupPasswordRef = useRef("");
+    pendingOlderBackupPasswordRef = useRef(""),
+    // Nouvel appareil : ouvrir le coffre chiffré conservé dans le dépôt GitHub privé.
+    [fromGitHub, setFromGitHub] = useState(false),
+    // Réglages GitHub (jeton compris) gardés hors de l'état React, le temps d'une confirmation « plus ancien ».
+    pendingGitHubRef = useRef<SyncInput | null>(null);
   useEffect(() => {
     // Default focus lands on the safer action so a stray Enter/Space never replaces
     // newer data by accident.
@@ -216,7 +243,17 @@ function Auth({
     try {
       const f = new FormData(e.currentTarget);
       password = String(f.get("password") || "");
-      if (backup) {
+      if (fromGitHub) {
+        if (exists && !f.get("replace"))
+          throw new Error(
+            "Confirmez le remplacement du coffre présent sur cet appareil.",
+          );
+        const settings = readSyncInput(f);
+        pendingGitHubRef.current = settings;
+        const r = await openFromGitHub(settings, password);
+        pendingGitHubRef.current = null;
+        onOpen(r.data, r.key);
+      } else if (backup) {
         if (exists && !f.get("replace"))
           throw new Error(
             "Confirmez le remplacement du coffre présent sur cet appareil.",
@@ -234,12 +271,17 @@ function Auth({
         onOpen(data, key);
       }
     } catch (e) {
-      if (backup && e instanceof Error && isOlderBackupError(e.message)) {
+      if (
+        (backup || fromGitHub) &&
+        e instanceof Error &&
+        isOlderBackupError(e.message)
+      ) {
         // Nothing was written (importVault fails closed before touching the vault):
         // ask for an explicit, conscious confirmation instead of a dead-end error.
         pendingOlderBackupPasswordRef.current = password;
-        setOlderBackup({ raw: backup, message: e.message });
+        setOlderBackup({ raw: fromGitHub ? "" : (backup ?? ""), message: e.message });
       } else {
+        pendingGitHubRef.current = null;
         setError(
           e instanceof Error ? e.message : "Impossible d’ouvrir le coffre.",
         );
@@ -253,8 +295,11 @@ function Auth({
     setBusy(true);
     setError("");
     const password = pendingOlderBackupPasswordRef.current;
+    const github = pendingGitHubRef.current;
     try {
-      const r = await importVault(olderBackup.raw, password, true);
+      const r = github
+        ? await openFromGitHub(github, password, true)
+        : await importVault(olderBackup.raw, password, true);
       setOlderBackup(null);
       onOpen(r.data, r.key);
     } catch (e) {
@@ -266,12 +311,14 @@ function Auth({
       );
     } finally {
       pendingOlderBackupPasswordRef.current = "";
+      pendingGitHubRef.current = null;
       setBusy(false);
     }
   }
   function cancelOlderBackup() {
     // Nothing was ever written for this refusal, so canceling is a pure UI reset.
     pendingOlderBackupPasswordRef.current = "";
+    pendingGitHubRef.current = null;
     setOlderBackup(null);
     setError("");
   }
@@ -291,7 +338,7 @@ function Auth({
     <main className="auth-screen">
       <section className="auth-art">
         <div className="brand">
-          <img src="./finance.svg" className="brand-mark" alt="" />
+          <img src="./favicon.svg" className="brand-mark" alt="" />
           Finance
         </div>
         <p className="eyebrow">VOTRE ARGENT. VOTRE HORIZON.</p>
@@ -312,25 +359,29 @@ function Auth({
       </section>
       <section className="auth-card">
         <div className="brand mobile-brand">
-          <img src="./finance.svg" className="brand-mark" alt="" />
+          <img src="./favicon.svg" className="brand-mark" alt="" />
           Finance
         </div>
         <p className="eyebrow">BIENVENUE CHEZ VOUS</p>
         <h2 id="auth-heading">
           {olderBackup
             ? "Confirmer la restauration"
-            : backup
-              ? "Restaurer votre sauvegarde"
-              : exists
-                ? "Ouvrir mon espace"
-                : "Créer mon espace privé"}
+            : fromGitHub
+              ? "Ouvrir depuis GitHub"
+              : backup
+                ? "Restaurer votre sauvegarde"
+                : exists
+                  ? "Ouvrir mon espace"
+                  : "Créer mon espace privé"}
         </h2>
         <p className="subtitle">
           {olderBackup
             ? "Cette sauvegarde est plus ancienne que les données déjà présentes sur cet appareil."
-            : exists
-              ? "Votre phrase secrète déverrouille les données de cet appareil."
-              : "Choisissez une phrase secrète de 12 caractères minimum. Elle chiffre vos données sur cet appareil."}
+            : fromGitHub
+              ? "Récupérez le coffre chiffré de vos autres appareils, puis déverrouillez-le avec la même phrase secrète."
+              : exists
+                ? "Votre phrase secrète déverrouille les données de cet appareil."
+                : "Choisissez une phrase secrète de 12 caractères minimum. Elle chiffre vos données sur cet appareil."}
         </p>
         {olderBackup ? (
           <div
@@ -379,12 +430,22 @@ function Auth({
                 <input
                   type="password"
                   name="password"
-                  autoComplete={exists ? "current-password" : "new-password"}
-                  minLength={exists || backup ? 1 : 12}
+                  autoComplete={
+                    exists || fromGitHub ? "current-password" : "new-password"
+                  }
+                  minLength={exists || backup || fromGitHub ? 1 : 12}
                   required
                 />
               </label>
-              {!exists && !backup && (
+              {fromGitHub && <SyncFields idPrefix="auth-sync" />}
+              {fromGitHub && exists && (
+                <label className="notice">
+                  <input type="checkbox" name="replace" /> Remplacer le
+                  coffre de cet appareil par celui du dépôt. Exportez d’abord
+                  une sauvegarde chiffrée de celui-ci pour le garder.
+                </label>
+              )}
+              {!exists && !backup && !fromGitHub && (
                 <label className="field">
                   <span>Confirmer la phrase secrète</span>
                   <input
@@ -410,11 +471,13 @@ function Auth({
               <button className="button primary full-width" disabled={busy}>
                 {busy
                   ? "Ouverture…"
-                  : backup
-                    ? "Restaurer"
-                    : exists
-                      ? "Déverrouiller"
-                      : "Créer mon coffre"}
+                  : fromGitHub
+                    ? "Ouvrir depuis GitHub"
+                    : backup
+                      ? "Restaurer"
+                      : exists
+                        ? "Déverrouiller"
+                        : "Créer mon coffre"}
                 <Icon name="chevron-right" />
               </button>
             </form>
@@ -422,24 +485,51 @@ function Auth({
               La phrase secrète ne peut pas être récupérée. Gardez-la et
               exportez régulièrement une sauvegarde chiffrée.
             </p>
-            <div className="auth-links">
-              <label className="button secondary">
-                Restaurer une sauvegarde
-                <input
-                  className="sr-only"
-                  type="file"
-                  accept=".finance-vault,.json"
-                  onChange={restore}
-                />
-              </label>
+            {!fromGitHub && (
+              <div className="auth-links">
+                <button
+                  className="button secondary"
+                  disabled={busy}
+                  onClick={() => {
+                    pendingOlderBackupPasswordRef.current = "";
+                    setBackup(null);
+                    setOlderBackup(null);
+                    setError("");
+                    setFromGitHub(true);
+                  }}
+                >
+                  Ouvrir depuis GitHub
+                </button>
+                <label className="button secondary">
+                  Restaurer une sauvegarde
+                  <input
+                    className="sr-only"
+                    type="file"
+                    accept=".finance-vault,.json"
+                    onChange={restore}
+                  />
+                </label>
+                <button
+                  className="button secondary"
+                  disabled={busy}
+                  onClick={onDemo}
+                >
+                  Voir la démonstration
+                </button>
+              </div>
+            )}
+            {fromGitHub && (
               <button
-                className="button secondary"
+                className="text-button"
                 disabled={busy}
-                onClick={onDemo}
+                onClick={() => {
+                  setFromGitHub(false);
+                  setError("");
+                }}
               >
-                Voir la démonstration
+                Retour
               </button>
-            </div>
+            )}
             {backup && (
               <button
                 className="text-button"
@@ -484,7 +574,22 @@ export default function App() {
     [more, setMore] = useState(false),
     [pendingImport, setPendingImport] = useState<FinanceData | null>(null),
     [busy, setBusy] = useState(false),
-    [receiptTxn, setReceiptTxn] = useState("");
+    [receiptTxn, setReceiptTxn] = useState(""),
+    [sync, setSync] = useState<SyncView>({ state: "off" }),
+    [syncConflict, setSyncConflict] = useState<{
+      localSavedAt?: string;
+      remoteSavedAt?: string;
+      localSha: string;
+      remoteSha: string;
+      changed?: boolean;
+    } | null>(null),
+    // Le dépôt contient un autre coffre (créé séparément ou autre phrase secrète).
+    [syncForeign, setSyncForeign] = useState<{
+      remoteSavedAt?: string;
+      remoteSha?: string;
+      confirming?: boolean;
+    } | null>(null),
+    [syncBusy, setSyncBusy] = useState(false);
   const session = useRef(0);
   const fileInput = useRef<HTMLInputElement>(null);
   const moreButton = useRef<HTMLButtonElement>(null);
@@ -497,6 +602,7 @@ export default function App() {
   const previewDialog = useRef<HTMLDialogElement>(null);
   const lock = useCallback(() => {
     session.current++;
+    openKey.current = null;
     setData(null);
     setKey(null);
     setDemo(false);
@@ -506,6 +612,9 @@ export default function App() {
     setPreview(null);
     setMessage("");
     setError("");
+    setSync({ state: "off" });
+    setSyncConflict(null);
+    setSyncForeign(null);
   }, []);
   useEffect(() => {
     if (!data || demo) return;
@@ -566,6 +675,195 @@ export default function App() {
     window.addEventListener(UPDATE_READY_EVENT, onUpdateReady);
     return () => window.removeEventListener(UPDATE_READY_EVENT, onUpdateReady);
   }, []);
+  // Synchronisation : une seule exécution à la fois, jamais lancée pendant un enregistrement.
+  // Un enregistrement n'attend pas le réseau : le coffre refuse une modification calculée avant
+  // un tirage (révision), et un tirage refuse de remplacer une modification locale concurrente.
+  const syncRun = useRef<Promise<void> | null>(null);
+  const syncAgain = useRef(false);
+  const syncTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  // Révision du coffre correspondant aux données affichées (incrémentée par chaque tirage).
+  const pullCount = useRef(0);
+  // Révision au moment où l'éditeur a été ouvert (ses champs datent de là).
+  const editorPulls = useRef(0);
+  const conflictPending = useRef(false);
+  // Change quand la synchronisation est désactivée : le résultat d'une exécution en cours est ignoré.
+  const syncEpoch = useRef(0);
+  // Clé du coffre ouvert, remise à null dès le verrouillage (avant le rendu suivant).
+  const openKey = useRef<CryptoKey | null>(null);
+  type SyncMode =
+    | { kind: "auto" | "manual" }
+    | {
+        kind: "remote" | "local";
+        expected?: { localSha?: string; remoteSha: string };
+        replaceForeign?: boolean;
+      };
+  const runSync = useCallback(
+    async (mode: SyncMode = { kind: "auto" }): Promise<void> => {
+      if (!key || demo || openKey.current !== key) return;
+      // Session et clé capturées avant toute attente : un verrouillage entre-temps annule tout.
+      const s = session.current;
+      const epoch = syncEpoch.current;
+      const sessionGone = () => s !== session.current || openKey.current !== key;
+      const stale = () => sessionGone() || epoch !== syncEpoch.current;
+      const auto = mode.kind === "auto";
+      if (syncRun.current) {
+        if (auto) {
+          syncAgain.current = true;
+          return;
+        }
+        await syncRun.current;
+      }
+      if (auto && conflictPending.current) return;
+      if (mutating.current) {
+        if (auto) {
+          syncAgain.current = true;
+          return;
+        }
+        // Un choix explicite attend la fin de l'enregistrement en cours au lieu d'être perdu.
+        while (mutating.current) await new Promise((r) => setTimeout(r, 100));
+      }
+      if (stale()) return;
+      const job = (async () => {
+        const stored = await loadSyncState(key).catch(
+          () => ({ state: "reconfigure" }) as const,
+        );
+        if (stale()) return;
+        if (stored.state !== "ready") {
+          setSync({ state: stored.state });
+          return;
+        }
+        const cfg = stored.config;
+        const repo = `${cfg.owner}/${cfg.repo}`;
+        setSync((v) => ({
+          state: "syncing",
+          repo,
+          lastSyncAt: "lastSyncAt" in v ? v.lastSyncAt : undefined,
+        }));
+        try {
+          const r =
+            mode.kind === "remote" || mode.kind === "local"
+              ? await resolveConflict(key, cfg, mode.kind, {
+                  expected: mode.expected,
+                  replaceForeign: mode.replaceForeign,
+                })
+              : await syncNow(key, cfg);
+          if (sessionGone()) return;
+          // Le coffre a déjà été remplacé : l'afficher même si la synchronisation vient d'être désactivée.
+          if (r.status === "pulled") {
+            pullCount.current = vaultRevision(key);
+            setData(r.data);
+            setMessage("Mis à jour avec les modifications de vos autres appareils.");
+          }
+          if (stale()) return;
+          if (r.status === "foreign") {
+            conflictPending.current = true;
+            setSyncConflict(null);
+            setSyncForeign({
+              remoteSavedAt: r.remoteSavedAt,
+              remoteSha: r.remoteSha,
+            });
+            setSync({ state: "foreign", repo });
+            return;
+          }
+          if (r.status === "conflict") {
+            conflictPending.current = true;
+            setSyncForeign(null);
+            setSyncConflict({
+              localSavedAt: r.localSavedAt,
+              remoteSavedAt: r.remoteSavedAt,
+              localSha: r.localSha,
+              remoteSha: r.remoteSha,
+              // Un choix était en cours mais les versions ont encore changé : rien n'a été écrit.
+              changed: mode.kind === "remote" || mode.kind === "local",
+            });
+            setSync({ state: "conflict", repo });
+            return;
+          }
+          conflictPending.current = false;
+          setSyncConflict(null);
+          setSyncForeign(null);
+          setSync({ state: "ok", repo, lastSyncAt: new Date().toISOString() });
+        } catch (e) {
+          if (stale()) return;
+          // Un enregistrement local a eu lieu pendant la synchronisation : rien n'a été remplacé, on relance.
+          if (e instanceof VaultChangedError) {
+            syncAgain.current = true;
+            return;
+          }
+          setSync(
+            e instanceof SyncOfflineError
+              ? { state: "offline", repo }
+              : {
+                  state: "error",
+                  repo,
+                  detail: e instanceof Error ? e.message : undefined,
+                },
+          );
+        }
+      })();
+      syncRun.current = job;
+      try {
+        await job;
+      } finally {
+        if (syncRun.current === job) syncRun.current = null;
+      }
+      if (syncAgain.current && !stale()) {
+        syncAgain.current = false;
+        void runSync();
+      }
+    },
+    [key, demo],
+  );
+  useEffect(() => {
+    if (!key || demo) return;
+    void runSync();
+    const wake = () => {
+      if (!document.hidden) void runSync();
+    };
+    document.addEventListener("visibilitychange", wake);
+    window.addEventListener("online", wake);
+    const poll = setInterval(wake, 60_000);
+    return () => {
+      document.removeEventListener("visibilitychange", wake);
+      window.removeEventListener("online", wake);
+      clearInterval(poll);
+      clearTimeout(syncTimer.current);
+    };
+  }, [key, demo, runSync]);
+  async function manualSync(mode: SyncMode) {
+    setSyncBusy(true);
+    try {
+      await runSync(mode);
+    } finally {
+      setSyncBusy(false);
+    }
+  }
+  async function enableSync(input: SyncInput) {
+    if (!key) throw new Error("Coffre verrouillé.");
+    setSyncBusy(true);
+    try {
+      await configureSync(key, input);
+      syncEpoch.current++;
+      conflictPending.current = false;
+      await runSync({ kind: "manual" });
+    } finally {
+      setSyncBusy(false);
+    }
+  }
+  function stopSync() {
+    try {
+      disableSync();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Désactivation impossible.");
+      return;
+    }
+    syncEpoch.current++;
+    conflictPending.current = false;
+    setSyncConflict(null);
+    setSyncForeign(null);
+    setSync({ state: "off" });
+    setMessage("Synchronisation désactivée sur cet appareil.");
+  }
   useEffect(() => {
     if (preview) previewDialog.current?.showModal();
     return () => {
@@ -605,6 +903,7 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [more]);
   const renderSession = session.current;
+  const renderPulls = pullCount.current;
   function navigate(p: Page) {
     setPage(p);
     setMore(false);
@@ -621,13 +920,23 @@ export default function App() {
     mutating.current = true;
     const currentSession = session.current;
     try {
+      if (pullCount.current !== renderPulls) throw new Error(PULLED_MEANWHILE);
       const valid = validateData(next);
       if (!demo) {
         if (!key) throw new Error("Coffre verrouillé.");
-        await saveVault(key, valid);
+        try {
+          await saveVault(key, valid, renderPulls);
+        } catch (e) {
+          if (e instanceof VaultChangedError) throw new Error(PULLED_MEANWHILE);
+          throw e;
+        }
       }
       if (currentSession !== session.current)
         throw new Error("Coffre verrouillé.");
+      if (!demo) {
+        clearTimeout(syncTimer.current);
+        syncTimer.current = setTimeout(() => void runSync(), 1500);
+      }
       setData(valid);
       setMessage(
         demo
@@ -745,6 +1054,8 @@ export default function App() {
         <Auth
           onOpen={(d, k) => {
             session.current++;
+            openKey.current = k;
+            pullCount.current = vaultRevision(k);
             setData(d);
             setKey(k);
             setCurrency(d.preferences.baseCurrency);
@@ -834,6 +1145,7 @@ export default function App() {
     data.accounts.find((a) => a.id === id)?.name || "Compte à préciser";
   const edit = (spec: EditorSpec) => {
     setError("");
+    editorPulls.current = pullCount.current;
     setEditor(spec);
   };
   // Distinct metaphor per nature (identite-ui.md), reusing existing icons where one already
@@ -1560,7 +1872,7 @@ export default function App() {
     <div className="shell">
       <aside className="sidebar">
         <button className="brand" onClick={() => navigate("overview")}>
-          <img className="brand-mark" src="./finance.svg" alt="" />
+          <img className="brand-mark" src="./favicon.svg" alt="" />
           Finance
         </button>
         <p className="eyebrow nav-eyebrow">MON ESPACE</p>
@@ -1585,7 +1897,11 @@ export default function App() {
           <p className="footer-note">
             {demo
               ? "Des exemples pour découvrir Finance."
-              : "Chiffré sur cet appareil. Sauvegardez pour transférer vos données."}
+              : sync.state === "ok"
+                ? "Chiffré, synchronisé via votre dépôt GitHub privé."
+                : sync.state === "off"
+                  ? "Chiffré sur cet appareil. Sauvegardez pour transférer vos données."
+                  : "Chiffré sur cet appareil. Synchronisation : voir Documents et réglages."}
           </p>
           <button className="nav-item" onClick={lock}>
             <Icon name="logout" />
@@ -1691,6 +2007,127 @@ export default function App() {
           </div>
         )}
         {updateNotice && <div className="update-banner">{updateNotice}</div>}
+        {syncConflict && (
+          <div
+            className="notice warning sync-conflict"
+            role="alertdialog"
+            aria-labelledby="sync-conflict-title"
+          >
+            <p id="sync-conflict-title">
+              <strong>Deux versions différentes de votre coffre.</strong>{" "}
+              {syncConflict.changed
+                ? "Les versions ont encore changé pendant votre choix ; rien n’a été remplacé. Vérifiez les dates, puis choisissez à nouveau."
+                : "Il a été modifié ici et sur un autre appareil depuis la dernière synchronisation. Choisissez la version à garder : l’autre sera remplacée."}
+            </p>
+            <p className="meta">
+              Cet appareil : {dateTimeLabel(syncConflict.localSavedAt)}
+              {SEP}Autre appareil : {dateTimeLabel(syncConflict.remoteSavedAt)}
+            </p>
+            <div className="action-row">
+              <button
+                className="button secondary small"
+                disabled={syncBusy}
+                onClick={() =>
+                  void manualSync({
+                    kind: "remote",
+                    expected: {
+                      localSha: syncConflict.localSha,
+                      remoteSha: syncConflict.remoteSha,
+                    },
+                  })
+                }
+              >
+                Garder l’autre appareil
+              </button>
+              <button
+                className="button secondary small"
+                disabled={syncBusy}
+                onClick={() =>
+                  void manualSync({
+                    kind: "local",
+                    expected: {
+                      localSha: syncConflict.localSha,
+                      remoteSha: syncConflict.remoteSha,
+                    },
+                  })
+                }
+              >
+                Garder cet appareil
+              </button>
+            </div>
+          </div>
+        )}
+        {syncForeign && (
+          <div
+            className="notice warning sync-conflict"
+            role="alertdialog"
+            aria-labelledby="sync-foreign-title"
+          >
+            <p id="sync-foreign-title">
+              <strong>Ce dépôt contient un autre coffre</strong> (créé
+              séparément ou avec une autre phrase secrète), enregistré le{" "}
+              {dateTimeLabel(syncForeign.remoteSavedAt)}. Rien n’a été modifié.
+            </p>
+            <p className="meta">
+              Pour utiliser celui du dépôt sur cet appareil : exportez d’abord
+              une sauvegarde chiffrée de ce coffre-ci (Documents et réglages),
+              verrouillez, puis choisissez « Ouvrir depuis GitHub ».
+            </p>
+            {syncForeign.confirming ? (
+              <>
+                <p>
+                  Le coffre du dépôt sera remplacé par celui de cet appareil ;
+                  il ne restera que dans l’historique du dépôt.
+                </p>
+                <div className="action-row">
+                  <button
+                    className="button secondary small"
+                    disabled={syncBusy}
+                    onClick={() =>
+                      void manualSync({
+                        kind: "local",
+                        replaceForeign: true,
+                        expected: syncForeign.remoteSha
+                          ? { remoteSha: syncForeign.remoteSha }
+                          : undefined,
+                      })
+                    }
+                  >
+                    Confirmer le remplacement
+                  </button>
+                  <button
+                    className="button secondary small"
+                    disabled={syncBusy}
+                    onClick={() =>
+                      setSyncForeign({ ...syncForeign, confirming: false })
+                    }
+                  >
+                    Annuler
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="action-row">
+                <button
+                  className="button secondary small"
+                  disabled={syncBusy}
+                  onClick={() =>
+                    setSyncForeign({ ...syncForeign, confirming: true })
+                  }
+                >
+                  Remplacer celui du dépôt par ce coffre
+                </button>
+                <button
+                  className="button secondary small"
+                  disabled={syncBusy}
+                  onClick={stopSync}
+                >
+                  Désactiver la synchronisation
+                </button>
+              </div>
+            )}
+          </div>
+        )}
         <div className="period-bar">
           <MonthPicker
             month={month}
@@ -2534,9 +2971,8 @@ export default function App() {
                   Appareil local · verrouillage après 5 minutes d’inactivité.
                 </p>
                 <p className="footer-note">
-                  Synchronisation bancaire et entre appareils : non configurée.
-                  Transférez une sauvegarde chiffrée, puis restaurez-la à
-                  l’ouverture sur l’autre appareil.
+                  Aucune connexion bancaire : les montants restent saisis ou
+                  importés par vous.
                 </p>
                 <button
                   className="button secondary"
@@ -2554,6 +2990,16 @@ export default function App() {
                     </p>
                   ))}
                 </div>
+              </Card>
+              <Card title="Synchronisation entre appareils" icon="refresh">
+                <SyncCard
+                  view={sync}
+                  demo={demo}
+                  busy={syncBusy}
+                  onConfigure={enableSync}
+                  onSyncNow={() => void manualSync({ kind: "manual" })}
+                  onDisable={stopSync}
+                />
               </Card>
             </div>
             {pendingImport && (
@@ -2749,7 +3195,12 @@ export default function App() {
           key={`${editor.type}-${editor.id || "new"}`}
           spec={editor}
           data={data}
-          onSave={persist}
+          onSave={(next) => {
+            // Un tirage pendant l'édition : les champs du formulaire datent d'avant, ne pas les réécrire.
+            if (pullCount.current !== editorPulls.current)
+              return Promise.reject(new Error(EDITED_ELSEWHERE));
+            return persist(next);
+          }}
           onClose={() => setEditor(null)}
         />
       )}
