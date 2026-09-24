@@ -15,6 +15,17 @@ if (import.meta.env.PROD && "serviceWorker" in navigator) {
   window.addEventListener("load", () => {
     navigator.serviceWorker
       .register(new URL("./sw.js", document.baseURI))
+      .then((registration) => {
+        // An installed iPhone app resumed from the background never navigates, so the browser
+        // never re-checks sw.js on its own: check whenever the app comes back to the foreground.
+        let lastCheck = Date.now();
+        document.addEventListener("visibilitychange", () => {
+          if (document.visibilityState !== "visible") return;
+          if (Date.now() - lastCheck < 60_000) return;
+          lastCheck = Date.now();
+          registration.update().catch(() => {});
+        });
+      })
       .catch(() => {
         // Online use still works when the browser does not permit offline installation.
       });

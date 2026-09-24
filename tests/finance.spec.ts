@@ -1340,3 +1340,66 @@ test("PWA update: a new deploy offers an already-open tab a reload, without clos
     await rm(siteDir, { recursive: true, force: true });
   }
 });
+
+// The lock screen holds nothing in memory, so a new deploy is applied at once there instead of
+// waiting for a "Recharger" click that the lock screen used to never show.
+test("PWA update: on the lock screen with nothing typed, a new deploy reloads by itself", async ({
+  page,
+}) => {
+  const siteDir = join(
+    await mkdtemp(join(tmpdir(), "finance-pwa-lock-test-")),
+    "site",
+  );
+  await cp("dist", siteDir, { recursive: true });
+  const { server, port } = await serveStaticDir(siteDir);
+
+  try {
+    const indexPath = join(siteDir, "index.html");
+    const swPath = join(siteDir, "sw.js");
+    const originalIndex = await readFile(indexPath, "utf8");
+    const originalSw = await readFile(swPath, "utf8");
+
+    await page.goto(`http://127.0.0.1:${port}/`);
+    await expect(
+      page.getByRole("button", { name: "Voir la démonstration" }),
+    ).toBeVisible();
+    await page.waitForFunction(
+      () => navigator.serviceWorker.controller !== null,
+      null,
+      { timeout: 15000 },
+    );
+
+    const marker = `test-marker-lock-${Date.now()}`;
+    await writeFile(
+      indexPath,
+      originalIndex.replace(
+        "<title>",
+        `<meta name="test-marker" content="${marker}" /><title>`,
+      ),
+    );
+    await writeFile(
+      swPath,
+      originalSw.replace(/finance-shell-[a-z0-9]+/, `finance-shell-${marker}`),
+    );
+
+    await page.evaluate(async () => {
+      const registration = await navigator.serviceWorker.getRegistration();
+      await registration?.update();
+    });
+
+    await page.waitForFunction(
+      (expected) =>
+        document.querySelector('meta[name="test-marker"]')?.getAttribute(
+          "content",
+        ) === expected,
+      marker,
+      { timeout: 15000 },
+    );
+    await expect(
+      page.getByRole("button", { name: "Recharger", exact: true }),
+    ).toHaveCount(0);
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await rm(siteDir, { recursive: true, force: true });
+  }
+});
