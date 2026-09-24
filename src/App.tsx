@@ -34,6 +34,10 @@ import {
   today,
   transactionsForMonth,
   wealthSummary,
+  findOccurrenceTransaction,
+  projectedOccurrence,
+  withOccurrenceAmount,
+  withRecurrenceAmount,
 } from "./domain/finance";
 import { validateData, mergeImport } from "./domain/validation";
 import {
@@ -55,6 +59,7 @@ import {
   WealthChart,
 } from "./components/Charts";
 import Editor, { type EditorSpec } from "./components/Editor";
+import OccurrenceDialog, { type OccurrenceScope } from "./components/OccurrenceDialog";
 import { MonthPicker } from "./components/MonthPicker";
 import {
   SyncCard,
@@ -79,6 +84,7 @@ import { UPDATE_READY_EVENT } from "./swUpdateEvent";
 const pages = [
   { id: "overview", name: "Vue d’ensemble", short: "Accueil", icon: "home" },
   { id: "month", name: "Mon mois", short: "Mon mois", icon: "calendar" },
+  { id: "bills", name: "Factures", short: "Factures", icon: "document" },
   { id: "accounts", name: "Mes comptes", short: "Comptes", icon: "wallet" },
   {
     id: "subscriptions",
@@ -101,6 +107,8 @@ const pages = [
   },
 ] as const;
 type Page = (typeof pages)[number]["id"];
+// Onglets toujours visibles en bas sur téléphone ; les autres pages sont sous « Plus ».
+const MOBILE_TABS = 4;
 function download(raw: string, name: string, type = "application/json") {
   const url = URL.createObjectURL(new Blob([raw], { type }));
   const a = document.createElement("a");
@@ -115,6 +123,15 @@ function monogramInitials(name: string): string {
   return (
     words.length > 1 ? words[0][0] + words[1][0] : name.replace(/\s+/g, "").slice(0, 2)
   ).toUpperCase();
+}
+// Une information importée puis modifiée garde la trace de la modification manuelle.
+function manualSource(source: Source): Source {
+  const now = new Date().toISOString();
+  return {
+    ...source,
+    updatedAt: now,
+    note: [source.note, "Modification manuelle le " + now].filter(Boolean).join(" · "),
+  };
 }
 const PULLED_MEANWHILE =
   "Vos données viennent d’être mises à jour depuis un autre appareil. Vérifiez, puis recommencez.";
@@ -575,6 +592,11 @@ export default function App() {
     [pendingImport, setPendingImport] = useState<FinanceData | null>(null),
     [busy, setBusy] = useState(false),
     [receiptTxn, setReceiptTxn] = useState(""),
+    // Échéance d'une récurrence ouverte dans « Modifier » (ce mois seulement / suivants).
+    [occurrenceEdit, setOccurrenceEdit] = useState<{
+      recurrenceId: string;
+      occurrenceDate: string;
+    } | null>(null),
     [sync, setSync] = useState<SyncView>({ state: "off" }),
     [syncConflict, setSyncConflict] = useState<{
       localSavedAt?: string;
@@ -610,6 +632,7 @@ export default function App() {
     setPendingImport(null);
     setHidden(false);
     setPreview(null);
+    setOccurrenceEdit(null);
     setMessage("");
     setError("");
     setSync({ state: "off" });
@@ -830,6 +853,19 @@ export default function App() {
       clearTimeout(syncTimer.current);
     };
   }, [key, demo, runSync]);
+  // Une synchronisation a retiré ou arrêté la récurrence : la fenêtre se ferme au lieu de revenir plus tard.
+  useEffect(() => {
+    if (!occurrenceEdit || !data) return;
+    const stillDue = occurrenceCohort(data, occurrenceEdit.occurrenceDate.slice(0, 7)).some(
+      (i) =>
+        i.recurrenceId === occurrenceEdit.recurrenceId &&
+        i.occurrenceDate === occurrenceEdit.occurrenceDate,
+    );
+    if (!stillDue) {
+      setOccurrenceEdit(null);
+      setMessage("Cette échéance a changé sur un autre appareil : rouvrez-la pour la modifier.");
+    }
+  }, [occurrenceEdit, data]);
   async function manualSync(mode: SyncMode) {
     setSyncBusy(true);
     try {
@@ -1148,6 +1184,70 @@ export default function App() {
     editorPulls.current = pullCount.current;
     setEditor(spec);
   };
+  const isDueOccurrence = (recurrenceId: string, occurrenceDate: string) =>
+    !!data &&
+    occurrenceCohort(data, occurrenceDate.slice(0, 7)).some(
+      (i) => i.recurrenceId === recurrenceId && i.occurrenceDate === occurrenceDate,
+    );
+  const openOccurrence = (recurrenceId: string, occurrenceDate: string) => {
+    setError("");
+    editorPulls.current = pullCount.current;
+    setOccurrenceEdit({ recurrenceId, occurrenceDate });
+  };
+  // Opération déjà enregistrée pour cette échéance : montant ajusté, règlement ou remise à payer.
+  const linkedOccurrence = (recurrenceId: string, occurrenceDate: string) =>
+    data ? findOccurrenceTransaction(data.transactions, recurrenceId, occurrenceDate) : undefined;
+  async function saveOccurrence(scope: OccurrenceScope, amountMinor: number) {
+    if (!data || !occurrenceEdit) return;
+    if (pullCount.current !== editorPulls.current) throw new Error(EDITED_ELSEWHERE);
+    const { recurrenceId, occurrenceDate } = occurrenceEdit;
+    const recurrence = data.recurrences.find((r) => r.id === recurrenceId);
+    if (!recurrence) throw new Error("Récurrence introuvable.");
+    const linked = findOccurrenceTransaction(data.transactions, recurrenceId, occurrenceDate);
+    if (scope === "following" && linked && linked.currency !== recurrence.currency)
+      throw new Error(
+        "Cette échéance est dans une autre devise que la facture : choisissez « Ce mois seulement », ou changez la devise avec « Modifier le nom, le jour… ».",
+      );
+    let next: FinanceData = data;
+    if (scope === "following") {
+      // Ce mois compris : la date d'effet part du 1er du mois, jamais avant le début de la règle.
+      const monthStart = `${occurrenceDate.slice(0, 7)}-01`;
+      const from = monthStart < recurrence.startDate ? recurrence.startDate : monthStart;
+      const changed = withRecurrenceAmount(recurrence, amountMinor, from);
+      if (changed !== recurrence)
+        next = {
+          ...next,
+          recurrences: next.recurrences.map((r) =>
+            r.id === recurrenceId ? { ...changed, source: manualSource(changed.source) } : r,
+          ),
+        };
+    }
+    // « Ce mois » : toujours. « Suivants » : un ajustement encore à payer suit le nouveau montant,
+    // un règlement déjà enregistré garde le sien.
+    if (scope === "month" || (linked && linked.status !== "settled")) {
+      const adjusted = withOccurrenceAmount(next, recurrenceId, occurrenceDate, amountMinor);
+      if (adjusted !== next) {
+        const record = findOccurrenceTransaction(
+          adjusted.transactions,
+          recurrenceId,
+          occurrenceDate,
+        );
+        next = record
+          ? {
+              ...adjusted,
+              transactions: adjusted.transactions.map((t) =>
+                t.id === record.id ? { ...t, source: manualSource(t.source) } : t,
+              ),
+            }
+          : adjusted;
+      }
+    }
+    if (next === data) {
+      setMessage("Aucun changement : c’est déjà ce montant.");
+      return;
+    }
+    await persist(next);
+  }
   // Distinct metaphor per nature (identite-ui.md), reusing existing icons where one already
   // fits rather than inventing a lookalike: "refresh" for the repeating abonnement itself,
   // "bank" for a fixed charge, "arrow-down" matching the same icon used for income elsewhere,
@@ -1260,25 +1360,36 @@ export default function App() {
           if (db === null) return -1;
           return da.localeCompare(db);
         });
+  // Page Factures : charges fixes (nature « bill »), dans l'ordre des échéances du mois choisi,
+  // puis montant décroissant à date égale (même devise seulement : aucune conversion implicite).
+  const billsCohort = cohortSummary(data, month, currency, ["bill"]);
+  const billsSettledPct =
+    billsCohort.dueMinor !== null &&
+    billsCohort.settledMinor !== null &&
+    billsCohort.dueMinor > 0
+      ? Math.min(100, (billsCohort.settledMinor / billsCohort.dueMinor) * 100)
+      : null;
+  const billsActive = data.recurrences
+    .filter((r) => r.active && r.recurrenceType === "bill")
+    .sort((a, b) => {
+      const ia = subsCohortByRecurrence.get(a.id),
+        ib = subsCohortByRecurrence.get(b.id);
+      if (!ia || !ib) return ia ? -1 : ib ? 1 : a.label.localeCompare(b.label);
+      return (
+        ia.occurrenceDate.localeCompare(ib.occurrenceDate) ||
+        (ia.currency === ib.currency ? ib.dueAmountMinor - ia.dueAmountMinor : 0) ||
+        a.label.localeCompare(b.label)
+      );
+    });
+  const billsInactive = data.recurrences
+    .filter((r) => !r.active && r.recurrenceType === "bill")
+    .sort((a, b) => a.label.localeCompare(b.label));
   // Prefills "Marquer payé/reçu" from a not-yet-persisted occurrence, mirroring
   // `transactionsForMonth`'s own virtual-transaction shape and id (`recurrenceId:date`) so a
   // settlement made here and one made from Mon mois never create two different transactions
   // for the same occurrence.
   function subsVirtualTransaction(r: Recurrence, dueDate: string, amountMinor: number): Transaction {
-    return {
-      id: `${r.id}:${dueDate}`,
-      label: r.label,
-      kind: r.kind,
-      amountMinor,
-      currency: r.currency,
-      status: "planned",
-      date: dueDate,
-      accountId: r.accountId,
-      category: r.category,
-      recurrenceId: r.id,
-      occurrenceDate: dueDate,
-      source: r.source,
-    };
+    return projectedOccurrence(r, dueDate, amountMinor);
   }
   const kinds = {
     bank: "Compte bancaire",
@@ -1476,13 +1587,23 @@ export default function App() {
             .join(" · "),
         },
       };
+      // Une échéance projetée dont l'identifiant est déjà pris par l'opération d'une autre
+      // échéance reçoit un identifiant neuf : jamais écraser l'enregistrement d'un autre mois.
+      const holder = data.transactions.find((v) => v.id === t.id);
+      const clash =
+        !!holder &&
+        !!t.recurrenceId &&
+        (holder.recurrenceId ?? null) !== null &&
+        (holder.recurrenceId !== t.recurrenceId || holder.occurrenceDate !== t.occurrenceDate);
+      const settled = clash ? { ...next, id: crypto.randomUUID() } : next;
       await persist({
         ...data,
-        transactions: data.transactions.some((v) => v.id === t.id)
-          ? data.transactions.map((v) => (v.id === t.id ? next : v))
-          : [...data.transactions, next],
+        transactions:
+          holder && !clash
+            ? data.transactions.map((v) => (v.id === t.id ? settled : v))
+            : [...data.transactions, settled],
       });
-      setJustSettledId(t.id);
+      setJustSettledId(settled.id);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Enregistrement impossible.");
     }
@@ -1646,16 +1767,32 @@ export default function App() {
               // a virtual/projected one (without it, no record to edit yet) sat side by
               // side with "Payer" starting at two different x positions, since the icon
               // used to trail the button instead of leading it.
-              t.status === "planned" && data?.transactions.some((i) => i.id === t.id) && (
+              t.status === "planned" &&
+              t.recurrenceId &&
+              t.occurrenceDate &&
+              isDueOccurrence(t.recurrenceId, t.occurrenceDate) ? (
+                // Échéance d'une récurrence (enregistrée ou non) : montant de ce mois ou des suivants.
+                // Une échéance qui n'est plus due (règle arrêtée, jour changé) garde l'éditeur rapide.
                 <button
                   className="icon-button"
                   aria-label={`Modifier ${t.label}`}
-                  onClick={() =>
-                    edit({ type: "transaction", id: t.id, kind: t.kind, quick: true })
-                  }
+                  onClick={() => openOccurrence(t.recurrenceId!, t.occurrenceDate!)}
                 >
                   <Icon name="edit" size={18} />
                 </button>
+              ) : (
+                t.status === "planned" &&
+                data?.transactions.some((i) => i.id === t.id) && (
+                  <button
+                    className="icon-button"
+                    aria-label={`Modifier ${t.label}`}
+                    onClick={() =>
+                      edit({ type: "transaction", id: t.id, kind: t.kind, quick: true })
+                    }
+                  >
+                    <Icon name="edit" size={18} />
+                  </button>
+                )
               )
             }
             {t.status === "settled" && t.recurrenceId && t.occurrenceDate && (
@@ -1688,15 +1825,26 @@ export default function App() {
       </div>
     );
   }
-  function subscriptionRow(r: Recurrence) {
+  function subscriptionRow(
+    r: Recurrence,
+    variant: "subscriptions" | "bills" = "subscriptions",
+  ) {
     const cohortItem = subsCohortByRecurrence.get(r.id);
     const settledTxn = cohortItem?.settled
       ? data?.transactions.find((t) => t.id === cohortItem.settled!.transactionId)
       : undefined;
+    // Une opération déjà enregistrée pour l'échéance (montant ajusté ce mois-ci, remise à payer)
+    // est réglée elle-même : jamais une seconde opération pour la même échéance.
+    const linkedDue =
+      cohortItem && !cohortItem.settled
+        ? linkedOccurrence(r.id, cohortItem.occurrenceDate)
+        : undefined;
     const dueTxn =
       cohortItem && !cohortItem.settled
-        ? subsVirtualTransaction(r, cohortItem.occurrenceDate, cohortItem.dueAmountMinor)
+        ? (linkedDue ??
+          subsVirtualTransaction(r, cohortItem.occurrenceDate, cohortItem.dueAmountMinor))
         : null;
+    const bills = variant === "bills";
     // Long card — name, amount, month, "c'est tout" (explicit user request): cadence, day,
     // account and the "≈/mois" equivalent used to crowd this row with detail the user found
     // excessive once they'd seen it in daily use; dropped here, still available from the
@@ -1744,7 +1892,11 @@ export default function App() {
               )
             ) : (
               <>
-                <span className="nowrap">{monthLabel(month)}</span>
+                <span className="nowrap">
+                  {bills && cohortItem
+                    ? `le ${Number(cohortItem.occurrenceDate.slice(8))}`
+                    : monthLabel(month)}
+                </span>
                 {SEP}
                 <span
                   className={`nowrap ${!cohortItem ? "" : cohortItem.settled ? recurrenceTone(r) : "status-pending"}`}
@@ -1759,6 +1911,15 @@ export default function App() {
                         ? "Pas encore reçu"
                         : "Pas encore payé"}
                 </span>
+                {bills && cohortItem?.adjusted && (
+                  <>
+                    {SEP}
+                    <span>
+                      {cohortItem.settled ? "" : "montant modifié ce mois, "}
+                      habituel {display(cohortItem.projectedAmountMinor, r.currency)}
+                    </span>
+                  </>
+                )}
               </>
             )}
           </span>
@@ -1779,7 +1940,11 @@ export default function App() {
             <button
               className="icon-button"
               aria-label={`Modifier ${r.label}`}
-              onClick={() => edit({ type: "recurrence", id: r.id })}
+              onClick={() =>
+                bills && cohortItem
+                  ? openOccurrence(r.id, cohortItem.occurrenceDate)
+                  : edit({ type: "recurrence", id: r.id })
+              }
             >
               <Icon name="edit" size={18} />
             </button>
@@ -1954,7 +2119,10 @@ export default function App() {
           <button
             className="button primary small"
             onClick={() =>
-              edit({
+              edit(
+                page === "bills"
+                  ? { type: "recurrence", recurrenceType: "bill" }
+                  : {
                 type:
                   page === "accounts"
                     ? "account"
@@ -1965,7 +2133,8 @@ export default function App() {
                         : page === "investments"
                           ? "position"
                           : "transaction",
-              })
+                    },
+              )
             }
           >
             <Icon name="plus" />
@@ -1978,6 +2147,8 @@ export default function App() {
                 ? "Ce qui entre, ce qui sort et ce qui reste à prévoir."
                 : page === "accounts"
                   ? "Chaque compte, sa devise et son solde daté."
+                  : page === "bills"
+                    ? "Vos factures fixes, chaque mois. Un petit changement ? Le crayon."
                   : page === "subscriptions"
                     ? "Abonnements, factures et charges du mois."
                     : page === "goals"
@@ -2600,6 +2771,89 @@ export default function App() {
             </p>
           </>
         )}
+        {page === "bills" && (
+          <>
+            <div className="stat-grid">
+              {[
+                {
+                  label: `Factures de ${monthLabel(month)}`,
+                  value:
+                    billsCohort.dueMinor !== null ? display(billsCohort.dueMinor) : "—",
+                },
+                {
+                  label: "Déjà payé",
+                  tone: "negative",
+                  value:
+                    billsCohort.settledMinor !== null
+                      ? display(billsCohort.settledMinor)
+                      : "—",
+                  settledPct: billsSettledPct,
+                },
+                {
+                  label: "Reste à payer",
+                  value:
+                    billsCohort.remainingMinor !== null
+                      ? display(billsCohort.remainingMinor)
+                      : "—",
+                },
+              ].map((s) => (
+                <div className="stat-card" key={s.label}>
+                  <p className="metric-label">{s.label}</p>
+                  <div className={`metric-value ${s.tone ?? ""}`}>{s.value}</div>
+                  {s.settledPct != null && (
+                    <div
+                      className="progress"
+                      role="progressbar"
+                      aria-label="Part des factures payée"
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-valuenow={Math.round(s.settledPct)}
+                    >
+                      <div
+                        className="progress-fill"
+                        style={{ width: `${s.settledPct}%` }}
+                      />
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+            {billsCohort.partial && (
+              <p className="meta">
+                {billsCohort.excluded} facture(s) exclue(s) du total : taux de
+                change manquant.
+              </p>
+            )}
+            <Card title="Mes factures" icon="document">
+              {billsActive.map((r) => subscriptionRow(r, "bills"))}
+              {!billsActive.length && (
+                <div className="empty-state">
+                  <p>
+                    Ajoutez vos factures fixes (loyer, assurance, téléphone,
+                    électricité…) : elles reviennent chaque mois dans Mon mois.
+                  </p>
+                  <button
+                    className="button secondary"
+                    onClick={() => edit({ type: "recurrence", recurrenceType: "bill" })}
+                  >
+                    Ajouter une facture
+                  </button>
+                </div>
+              )}
+            </Card>
+            {billsInactive.length > 0 && (
+              <details className="account-history">
+                <summary>Arrêtées ({billsInactive.length})</summary>
+                {billsInactive.map((r) => subscriptionRow(r, "bills"))}
+              </details>
+            )}
+            <p className="footer-note">
+              Chaque facture revient toute seule à chaque échéance. Le crayon
+              change le montant de {monthLabel(month)} seulement, ou de ce mois
+              et des suivants.
+            </p>
+          </>
+        )}
         {page === "subscriptions" && (
           <>
             <div className="stat-grid">
@@ -2737,7 +2991,7 @@ export default function App() {
                   <option value="next">Trier : prochaine échéance</option>
                 </select>
               </label>
-              {subsSortedActive.map(subscriptionRow)}
+              {subsSortedActive.map((r) => subscriptionRow(r))}
               {!subsSortedActive.length && (
                 <div className="empty-state">
                   {data.recurrences.some((r) => r.active)
@@ -2748,7 +3002,7 @@ export default function App() {
             </Card>
             <details className="account-history">
               <summary>En pause ou terminés ({subsInactive.length})</summary>
-              {subsInactive.map(subscriptionRow)}
+              {subsInactive.map((r) => subscriptionRow(r))}
               {!subsInactive.length && (
                 <p className="meta">
                   Aucun abonnement ou charge en pause ou terminé.
@@ -3139,7 +3393,7 @@ export default function App() {
         </footer>
       </main>
       <nav className="mobile-nav" aria-label="Navigation mobile">
-        {pages.slice(0, 3).map((p) => (
+        {pages.slice(0, MOBILE_TABS).map((p) => (
           <button
             key={p.id}
             className={page === p.id ? "active" : ""}
@@ -3154,7 +3408,7 @@ export default function App() {
           ref={moreButton}
           onClick={() => setMore(!more)}
           className={
-            !["overview", "month", "accounts"].includes(page)
+            pages.findIndex((p) => p.id === page) >= MOBILE_TABS
               ? "active"
               : ""
           }
@@ -3177,7 +3431,7 @@ export default function App() {
       )}
       {more && (
         <div className="mobile-more">
-          {pages.slice(3).map((p) => (
+          {pages.slice(MOBILE_TABS).map((p) => (
             <button
               className={`nav-item${page === p.id ? " active" : ""}`}
               key={p.id}
@@ -3204,6 +3458,35 @@ export default function App() {
           onClose={() => setEditor(null)}
         />
       )}
+      {occurrenceEdit &&
+        (() => {
+          const recurrence = data.recurrences.find(
+            (r) => r.id === occurrenceEdit.recurrenceId,
+          );
+          const item = occurrenceCohort(data, occurrenceEdit.occurrenceDate.slice(0, 7)).find(
+            (i) =>
+              i.recurrenceId === occurrenceEdit.recurrenceId &&
+              i.occurrenceDate === occurrenceEdit.occurrenceDate,
+          );
+          if (!recurrence || !item) return null;
+          return (
+            <OccurrenceDialog
+              key={`${recurrence.id}:${item.occurrenceDate}`}
+              recurrence={recurrence}
+              occurrenceDate={item.occurrenceDate}
+              amountMinor={item.dueAmountMinor}
+              currency={item.currency}
+              usualAmountMinor={item.projectedAmountMinor}
+              settled={item.settled !== null}
+              onSave={saveOccurrence}
+              onEditAll={() => {
+                setOccurrenceEdit(null);
+                edit({ type: "recurrence", id: recurrence.id });
+              }}
+              onClose={() => setOccurrenceEdit(null)}
+            />
+          );
+        })()}
       {preview && (
         <dialog
           className="dialog document-dialog"

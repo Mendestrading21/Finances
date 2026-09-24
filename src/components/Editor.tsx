@@ -68,6 +68,8 @@ export type EditorSpec = {
    * row) instead of the full field set. Every other field is preserved unchanged via hidden
    * inputs — this narrows what is editable, not what is stored. */
   quick?: boolean;
+  /** recurrence only: nature proposée pour une nouvelle récurrence (page Factures : "bill"). */
+  recurrenceType?: Exclude<Recurrence["recurrenceType"], "income">;
 };
 const titles = {
   transaction: "Une opération",
@@ -112,7 +114,9 @@ export default function Editor({
   >(() => {
     const existing = data.recurrences.find((r) => r.id === spec.id)
       ?.recurrenceType;
-    return existing && existing !== "income" ? existing : "subscription";
+    return existing && existing !== "income"
+      ? existing
+      : (spec.recurrenceType ?? "subscription");
   });
   const recurrenceType: Recurrence["recurrenceType"] =
     recurrenceKind === "income" ? "income" : expenseRecurrenceType;
@@ -487,7 +491,11 @@ export default function Editor({
       <div className="dialog-header">
         <div>
           <p className="eyebrow">FINANCE · SAISIE RAPIDE</p>
-          <h2 id="editor-title">{titles[spec.type]}</h2>
+          <h2 id="editor-title">
+            {spec.type === "recurrence" && !spec.id && spec.recurrenceType === "bill"
+              ? "Une facture"
+              : titles[spec.type]}
+          </h2>
         </div>
         <button
           className="icon-button"
