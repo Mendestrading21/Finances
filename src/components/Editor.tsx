@@ -107,7 +107,8 @@ export default function Editor({
   // on the expense side, losing it for good on the next switch back. Keeping the expense-side
   // choice in its own state means a Dépense → Revenu → Dépense round trip never loses it.
   const [recurrenceKind, setRecurrenceKind] = useState<"income" | "expense">(
-    data.recurrences.find((r) => r.id === spec.id)?.kind ?? "expense",
+    data.recurrences.find((r) => r.id === spec.id)?.kind ??
+      (spec.type === "recurrence" && spec.kind === "income" ? "income" : "expense"),
   );
   const [expenseRecurrenceType, setExpenseRecurrenceType] = useState<
     Exclude<Recurrence["recurrenceType"], "income">
@@ -492,9 +493,11 @@ export default function Editor({
         <div>
           <p className="eyebrow">FINANCE · SAISIE RAPIDE</p>
           <h2 id="editor-title">
-            {spec.type === "recurrence" && !spec.id && spec.recurrenceType === "bill"
-              ? "Une facture"
-              : titles[spec.type]}
+            {spec.type === "recurrence" && !spec.id && spec.kind === "income"
+              ? "Un revenu"
+              : spec.type === "recurrence" && !spec.id && spec.recurrenceType === "bill"
+                ? "Une facture"
+                : titles[spec.type]}
           </h2>
         </div>
         <button

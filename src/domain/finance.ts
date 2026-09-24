@@ -425,9 +425,10 @@ export type CohortSummary = {
  * the recurrence rules, not a missing observation — but a missing FX rate on any due or settled
  * amount makes the whole trio null/partial instead of silently treating that one item as zero,
  * mirroring wealthSummary.
- * With `types` (e.g. ["bill"] for Factures), the scope is instead the expense occurrences whose
- * classification is listed — no implicit saving exclusion — and `activeCount` counts only the
- * active recurrences of those types. Without it, both are unchanged.
+ * With `types` (e.g. ["bill"] or ["income"] for Factures), the scope is instead the occurrences
+ * whose classification is listed — no implicit saving exclusion; "income" is reserved for income
+ * recurrences (validation.ts), so ["income"] reads as "attendu / reçu / reste à recevoir" — and
+ * `activeCount` counts only the active recurrences of those types. Without it, both are unchanged.
  * A settled occurrence's due amount IS its settlement (see occurrenceCohort), so both sides are
  * converted at the same date — the settlement's, as before — rather than letting two dated rates
  * invent a non-zero "reste dû" on an occurrence that is closed. */
@@ -437,10 +438,10 @@ export function cohortSummary(
   currency: string,
   types?: readonly Recurrence["recurrenceType"][],
 ): CohortSummary {
-  const inScope = (type: Recurrence["recurrenceType"]) =>
-    types ? types.includes(type) : type !== "saving";
-  const items = occurrenceCohort(data, month).filter(
-    (i) => i.kind === "expense" && inScope(i.recurrenceType),
+  const items = occurrenceCohort(data, month).filter((i) =>
+    types
+      ? types.includes(i.recurrenceType)
+      : i.kind === "expense" && i.recurrenceType !== "saving",
   );
   const dueParts: number[] = [];
   const settledParts: number[] = [];

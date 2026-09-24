@@ -1384,6 +1384,26 @@ export default function App() {
   const billsInactive = data.recurrences
     .filter((r) => !r.active && r.recurrenceType === "bill")
     .sort((a, b) => a.label.localeCompare(b.label));
+  // Revenus fixes sur la même page : attendu, reçu et reste à recevoir du mois choisi.
+  const incomeCohort = cohortSummary(data, month, currency, ["income"]);
+  const incomeReceivedPct =
+    incomeCohort.dueMinor !== null &&
+    incomeCohort.settledMinor !== null &&
+    incomeCohort.dueMinor > 0
+      ? Math.min(100, (incomeCohort.settledMinor / incomeCohort.dueMinor) * 100)
+      : null;
+  const incomeActive = data.recurrences
+    .filter((r) => r.active && r.recurrenceType === "income")
+    .sort((a, b) => {
+      const ia = subsCohortByRecurrence.get(a.id),
+        ib = subsCohortByRecurrence.get(b.id);
+      if (!ia || !ib) return ia ? -1 : ib ? 1 : a.label.localeCompare(b.label);
+      return (
+        ia.occurrenceDate.localeCompare(ib.occurrenceDate) ||
+        (ia.currency === ib.currency ? ib.dueAmountMinor - ia.dueAmountMinor : 0) ||
+        a.label.localeCompare(b.label)
+      );
+    });
   // Prefills "Marquer payé/reçu" from a not-yet-persisted occurrence, mirroring
   // `transactionsForMonth`'s own virtual-transaction shape and id (`recurrenceId:date`) so a
   // settlement made here and one made from Mon mois never create two different transactions
@@ -2148,7 +2168,7 @@ export default function App() {
                 : page === "accounts"
                   ? "Chaque compte, sa devise et son solde daté."
                   : page === "bills"
-                    ? "Vos factures fixes, chaque mois. Un petit changement ? Le crayon."
+                    ? "Vos factures fixes et vos revenus, chaque mois. Un petit changement ? Le crayon."
                   : page === "subscriptions"
                     ? "Abonnements, factures et charges du mois."
                     : page === "goals"
@@ -2779,78 +2799,107 @@ export default function App() {
                   label: `Factures de ${monthLabel(month)}`,
                   value:
                     billsCohort.dueMinor !== null ? display(billsCohort.dueMinor) : "—",
-                },
-                {
-                  label: "Déjà payé",
-                  tone: "negative",
-                  value:
-                    billsCohort.settledMinor !== null
-                      ? display(billsCohort.settledMinor)
-                      : "—",
-                  settledPct: billsSettledPct,
+                  pct: billsSettledPct,
+                  pctLabel: "Part des factures payée",
                 },
                 {
                   label: "Reste à payer",
+                  tone: "negative",
                   value:
                     billsCohort.remainingMinor !== null
                       ? display(billsCohort.remainingMinor)
+                      : "—",
+                },
+                {
+                  label: `Revenus de ${monthLabel(month)}`,
+                  value:
+                    incomeCohort.dueMinor !== null ? display(incomeCohort.dueMinor) : "—",
+                  pct: incomeReceivedPct,
+                  pctLabel: "Part des revenus reçue",
+                },
+                {
+                  label: "Reste à recevoir",
+                  tone: "positive",
+                  value:
+                    incomeCohort.remainingMinor !== null
+                      ? display(incomeCohort.remainingMinor)
                       : "—",
                 },
               ].map((s) => (
                 <div className="stat-card" key={s.label}>
                   <p className="metric-label">{s.label}</p>
                   <div className={`metric-value ${s.tone ?? ""}`}>{s.value}</div>
-                  {s.settledPct != null && (
+                  {s.pct != null && (
                     <div
                       className="progress"
                       role="progressbar"
-                      aria-label="Part des factures payée"
+                      aria-label={s.pctLabel}
                       aria-valuemin={0}
                       aria-valuemax={100}
-                      aria-valuenow={Math.round(s.settledPct)}
+                      aria-valuenow={Math.round(s.pct)}
                     >
-                      <div
-                        className="progress-fill"
-                        style={{ width: `${s.settledPct}%` }}
-                      />
+                      <div className="progress-fill" style={{ width: `${s.pct}%` }} />
                     </div>
                   )}
                 </div>
               ))}
             </div>
-            {billsCohort.partial && (
+            {(billsCohort.partial || incomeCohort.partial) && (
               <p className="meta">
-                {billsCohort.excluded} facture(s) exclue(s) du total : taux de
-                change manquant.
+                {billsCohort.excluded + incomeCohort.excluded} échéance(s) exclue(s)
+                des totaux : taux de change manquant.
               </p>
             )}
-            <Card title="Mes factures" icon="document">
+            <Card
+              title="Mes factures"
+              icon="document"
+              action={
+                <button
+                  className="card-action"
+                  onClick={() => edit({ type: "recurrence", recurrenceType: "bill" })}
+                >
+                  Ajouter une facture
+                </button>
+              }
+            >
               {billsActive.map((r) => subscriptionRow(r, "bills"))}
               {!billsActive.length && (
-                <div className="empty-state">
-                  <p>
-                    Ajoutez vos factures fixes (loyer, assurance, téléphone,
-                    électricité…) : elles reviennent chaque mois dans Mon mois.
-                  </p>
-                  <button
-                    className="button secondary"
-                    onClick={() => edit({ type: "recurrence", recurrenceType: "bill" })}
-                  >
-                    Ajouter une facture
-                  </button>
-                </div>
+                <p className="meta">
+                  Ajoutez vos factures fixes (loyer, assurance, téléphone,
+                  électricité…) : elles reviennent chaque mois dans Mon mois.
+                </p>
+              )}
+            </Card>
+            <Card
+              title="Mes revenus"
+              icon="arrow-down"
+              action={
+                <button
+                  className="card-action"
+                  onClick={() => edit({ type: "recurrence", kind: "income" })}
+                >
+                  Ajouter un revenu
+                </button>
+              }
+            >
+              {incomeActive.map((r) => subscriptionRow(r, "bills"))}
+              {!incomeActive.length && (
+                <p className="meta">
+                  Ajoutez vos revenus réguliers (salaire…) : ils reviennent
+                  chaque mois dans Mon mois.
+                </p>
               )}
             </Card>
             {billsInactive.length > 0 && (
               <details className="account-history">
-                <summary>Arrêtées ({billsInactive.length})</summary>
+                <summary>Factures arrêtées ({billsInactive.length})</summary>
                 {billsInactive.map((r) => subscriptionRow(r, "bills"))}
               </details>
             )}
             <p className="footer-note">
-              Chaque facture revient toute seule à chaque échéance. Le crayon
-              change le montant de {monthLabel(month)} seulement, ou de ce mois
-              et des suivants.
+              Factures et revenus reviennent tout seuls à chaque échéance. Le
+              crayon change le montant de {monthLabel(month)} seulement, ou de ce
+              mois et des suivants.
             </p>
           </>
         )}
