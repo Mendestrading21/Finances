@@ -623,6 +623,16 @@ Contre-vérification par le même relecteur : un défaut restait dans le parcour
 
 Preuves : `typecheck`, `test` (**210/210**), `build`, les **17** scénarios `test:e2e` rejoués individuellement, dont « bills: … » (étendu : retour au montant habituel suivi d'un changement « et les suivants » qui l'atteint, rechargement et déverrouillage) (facture ajoutée depuis Factures, 85 ce mois seulement puis 80 le mois suivant, 90 à partir du mois suivant, mois précédent à 80, paiement du mois ajusté sans doublon dans Mon mois). Captures iPhone de la page et de la fenêtre « Modifier » revues.
 
+## Revenus sur la page Factures (développé et testé le 24 septembre 2026)
+
+Fusion précédente : page Factures dans `main` (commit `cfb9856`, PR #50), CI et déploiement Pages vérifiés verts.
+
+Demande de l'utilisateur : mettre aussi les revenus sur la page Factures. La page montre désormais, pour le mois choisi, les factures (« Factures de … », « Reste à payer ») et les revenus fixes (« Revenus de … », « Reste à recevoir »), avec une barre de part payée/reçue ; une carte « Mes revenus » (salaire…) avec « Reçu » et le même crayon « Ce mois seulement / Ce mois et les suivants » ; « Ajouter un revenu » ouvre directement « Un revenu ». Calcul : `cohortSummary(…, ["income"])` compte les revenus attendus et reçus (la nature « revenu » est réservée aux revenus, validation.ts) ; sans filtre, comportement inchangé. Démonstration : le salaire devient un revenu mensuel déjà reçu.
+
+Relecture indépendante (`finance-verification`) : fusionnable, aucun bloquant ; `cohortSummary` sans filtre inchangé sur 18 000 comparaisons aléatoires ancien/nouveau code ; totaux Factures cohérents avec Mon mois. Corrigé ensuite : assertions e2e renforcées (le bouton « Reçu »/« Payer » disparaît, « Reste à recevoir »/« Reste à payer » valent exactement 0.00 CHF, contrôle dans Mon mois et après rechargement et déverrouillage), « Factures arrêtées » sous ses factures et section « Revenus arrêtés », barres masquées en mode « montants masqués », tri stable entre devises, titre et catégorie par défaut d'un nouveau revenu.
+
+Preuves : `typecheck`, `test` (**211/211** ; le test des revenus échoue avec l'ancien filtre, vérifié), `build`, les **18** scénarios `test:e2e` rejoués individuellement, dont « bills page also lists recurring income… » ; capture iPhone revue.
+
 ## État réel
 
 | Élément                           | État                                                                                                                                                                   | Résultat et limite                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |

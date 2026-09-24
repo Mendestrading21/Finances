@@ -70,6 +70,8 @@ export function demoData(): FinanceData {
       date: `${month}-01`,
       accountId: "demo-bank",
       category: "Revenus",
+      recurrenceId: "demo-pay-income",
+      occurrenceDate: `${month}-01`,
       source,
     },
     {
@@ -113,6 +115,22 @@ export function demoData(): FinanceData {
     },
   ];
   data.recurrences = [
+    // Revenu fixe : le salaire du mois est déjà reçu.
+    {
+      id: "demo-pay-income",
+      label: "Salaire",
+      kind: "income",
+      recurrenceType: "income",
+      amountMinor: 840000,
+      currency: "CHF",
+      accountId: "demo-bank",
+      category: "Revenus",
+      day: 1,
+      intervalMonths: 1,
+      startDate: `${month}-01`,
+      active: true,
+      source,
+    },
     // Factures fixes : le loyer est déjà payé ce mois-ci, l'assurance reste à payer.
     {
       id: "demo-rent-bill",

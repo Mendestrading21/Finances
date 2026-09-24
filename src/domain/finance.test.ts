@@ -1636,6 +1636,55 @@ describe("cohorte filtrée par classification (cohortSummary types)", () => {
       activeCount: 0,
     });
   });
+  it("avec [\"income\"], les revenus attendus, reçus et restant à recevoir", () => {
+    const salary = recurrence({
+      id: "salary",
+      label: "Salaire",
+      kind: "income",
+      recurrenceType: "income",
+      amountMinor: 520000,
+      day: 25,
+      startDate: "2026-01-25",
+    });
+    const withSalary = data({
+      accounts: [account()],
+      recurrences: [bill, netflix, saving, pausedBill, salary],
+    });
+    expect(cohortSummary(withSalary, "2026-09", "CHF", ["income"])).toMatchObject({
+      dueMinor: 520000,
+      settledMinor: 0,
+      remainingMinor: 520000,
+      activeCount: 1,
+      partial: false,
+    });
+    const received = {
+      ...withSalary,
+      transactions: [
+        transaction({
+          id: "salary:2026-09-25",
+          label: "Salaire",
+          kind: "income",
+          amountMinor: 520000,
+          status: "settled",
+          date: "2026-09-25",
+          recurrenceId: "salary",
+          occurrenceDate: "2026-09-25",
+        }),
+      ],
+    };
+    expect(cohortSummary(received, "2026-09", "CHF", ["income"])).toMatchObject({
+      dueMinor: 520000,
+      settledMinor: 520000,
+      remainingMinor: 0,
+    });
+    // Les factures ne voient jamais le revenu, et le résumé sans filtre non plus.
+    expect(cohortSummary(received, "2026-09", "CHF", ["bill"])).toMatchObject({
+      dueMinor: 8000,
+    });
+    expect(cohortSummary(received, "2026-09", "CHF")).toMatchObject({
+      dueMinor: 10000,
+    });
+  });
   it("sans filtre, comportement inchangé : dépenses hors mise de côté, toutes récurrences actives", () => {
     expect(cohortSummary(d, "2026-09", "CHF")).toMatchObject({
       dueMinor: 10000, // 80 + 20, saving excluded

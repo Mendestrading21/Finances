@@ -1960,8 +1960,11 @@ test("bills: a monthly bill shows on Factures and Mon mois; a small change appli
   // Paying this month's adjusted bill settles that same occurrence, nothing left to pay.
   await goToMonth(0);
   await billRow.getByRole("button", { name: "Payer", exact: true }).click();
+  await expect(billRow.getByRole("button", { name: "Payer", exact: true })).toHaveCount(0);
   await expect(billRow).toContainText("Payé");
-  await expect(page.locator(".stat-card", { hasText: "Reste à payer" })).toContainText("0.00");
+  await expect(
+    page.locator(".stat-card", { hasText: "Reste à payer" }).locator(".metric-value"),
+  ).toHaveText(/^0\.00\s*CHF$/);
   await nav.getByRole("button", { name: "Mon mois", exact: true }).click();
   await expect(monthRow).toHaveCount(1);
   await expect(monthRow).toContainText("85.00");
@@ -1975,5 +1978,71 @@ test("bills: a monthly bill shows on Factures and Mon mois; a small change appli
   await expect(billRow).toContainText("Payé");
   await goToMonth(1);
   await expect(billRow).toContainText("100.00");
+  expect(errors).toEqual([]);
+});
+
+test("bills page also lists recurring income: received, left to receive, changed for one month", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  const nav = page.getByRole("navigation", { name: "Navigation principale", exact: true });
+  const now = new Date();
+  await page.goto("/");
+  await page.getByLabel("Phrase secrète", { exact: true }).fill("Exemple-test-Finance-revenus");
+  await page.getByLabel("Confirmer la phrase secrète").fill("Exemple-test-Finance-revenus");
+  await page.getByRole("button", { name: "Créer mon coffre" }).click();
+  await nav.getByRole("button", { name: "Factures", exact: true }).click();
+
+  const incomeCard = page.locator(".card", {
+    has: page.locator(".card-title", { hasText: "Mes revenus" }),
+  });
+  await incomeCard.getByRole("button", { name: "Ajouter un revenu", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Un revenu" });
+  await expect(dialog.getByLabel("Type", { exact: true })).toHaveValue("income");
+  await dialog.getByLabel("Libellé", { exact: true }).fill("Prime test");
+  await dialog.getByLabel("Montant", { exact: true }).fill("300");
+  await dialog.getByLabel("Jour du mois", { exact: true }).fill("1");
+  await dialog.getByLabel("Début", { exact: true }).fill(`${now.getFullYear() - 1}-01-01`);
+  await dialog.getByRole("button", { name: "Enregistrer", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+
+  const incomeRow = incomeCard.locator(".row", { hasText: "Prime test" });
+  await expect(incomeRow).toContainText("300.00");
+  await expect(incomeRow).toContainText("Pas encore reçu");
+  await expect(page.locator(".stat-card", { hasText: "Revenus de" })).toContainText("300.00");
+  // The bills card never shows an income.
+  const billsCard = page.locator(".card", {
+    has: page.locator(".card-title", { hasText: "Mes factures" }),
+  });
+  await expect(billsCard.locator(".row", { hasText: "Prime test" })).toHaveCount(0);
+
+  // This month only: 350, then received.
+  await incomeRow.getByRole("button", { name: "Modifier Prime test", exact: true }).click();
+  const edit = page.getByRole("dialog", { name: "Modifier Prime test" });
+  await edit.getByLabel(/^Montant/).fill("350");
+  await edit.getByRole("button", { name: "Enregistrer", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(incomeRow).toContainText("350.00");
+  await incomeRow.getByRole("button", { name: "Reçu", exact: true }).click();
+  // The action is gone (the row itself now reads "Reçu"), and nothing is left to receive.
+  await expect(incomeRow.getByRole("button", { name: "Reçu", exact: true })).toHaveCount(0);
+  await expect(incomeRow).toContainText("Reçu");
+  await expect(
+    page.locator(".stat-card", { hasText: "Reste à recevoir" }).locator(".metric-value"),
+  ).toHaveText(/^0\.00\s*CHF$/);
+  // Same single income, received at 350, in Mon mois; still there after reload and unlock.
+  await nav.getByRole("button", { name: "Mon mois", exact: true }).click();
+  const monthRow = page
+    .locator(".card", { has: page.locator(".card-title", { hasText: "Les opérations" }) })
+    .locator(".row", { hasText: "Prime test" });
+  await expect(monthRow).toHaveCount(1);
+  await expect(monthRow).toContainText("350.00");
+  await page.reload();
+  await page.getByLabel("Phrase secrète", { exact: true }).fill("Exemple-test-Finance-revenus");
+  await page.getByRole("button", { name: "Déverrouiller", exact: true }).click();
+  await nav.getByRole("button", { name: "Factures", exact: true }).click();
+  await expect(incomeRow).toContainText("350.00");
+  await expect(incomeRow.getByRole("button", { name: "Reçu", exact: true })).toHaveCount(0);
   expect(errors).toEqual([]);
 });
