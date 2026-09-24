@@ -602,6 +602,7 @@ export default function App() {
   const previewDialog = useRef<HTMLDialogElement>(null);
   const lock = useCallback(() => {
     session.current++;
+    openKey.current = null;
     setData(null);
     setKey(null);
     setDemo(false);
@@ -687,6 +688,8 @@ export default function App() {
   const conflictPending = useRef(false);
   // Change quand la synchronisation est désactivée : le résultat d'une exécution en cours est ignoré.
   const syncEpoch = useRef(0);
+  // Clé du coffre ouvert, remise à null dès le verrouillage (avant le rendu suivant).
+  const openKey = useRef<CryptoKey | null>(null);
   type SyncMode =
     | { kind: "auto" | "manual" }
     | {
@@ -696,7 +699,12 @@ export default function App() {
       };
   const runSync = useCallback(
     async (mode: SyncMode = { kind: "auto" }): Promise<void> => {
-      if (!key || demo) return;
+      if (!key || demo || openKey.current !== key) return;
+      // Session et clé capturées avant toute attente : un verrouillage entre-temps annule tout.
+      const s = session.current;
+      const epoch = syncEpoch.current;
+      const sessionGone = () => s !== session.current || openKey.current !== key;
+      const stale = () => sessionGone() || epoch !== syncEpoch.current;
       const auto = mode.kind === "auto";
       if (syncRun.current) {
         if (auto) {
@@ -714,9 +722,7 @@ export default function App() {
         // Un choix explicite attend la fin de l'enregistrement en cours au lieu d'être perdu.
         while (mutating.current) await new Promise((r) => setTimeout(r, 100));
       }
-      const s = session.current;
-      const epoch = syncEpoch.current;
-      const stale = () => s !== session.current || epoch !== syncEpoch.current;
+      if (stale()) return;
       const job = (async () => {
         const stored = await loadSyncState(key).catch(
           () => ({ state: "reconfigure" }) as const,
@@ -741,6 +747,13 @@ export default function App() {
                   replaceForeign: mode.replaceForeign,
                 })
               : await syncNow(key, cfg);
+          if (sessionGone()) return;
+          // Le coffre a déjà été remplacé : l'afficher même si la synchronisation vient d'être désactivée.
+          if (r.status === "pulled") {
+            pullCount.current = vaultRevision(key);
+            setData(r.data);
+            setMessage("Mis à jour avec les modifications de vos autres appareils.");
+          }
           if (stale()) return;
           if (r.status === "foreign") {
             conflictPending.current = true;
@@ -769,11 +782,6 @@ export default function App() {
           conflictPending.current = false;
           setSyncConflict(null);
           setSyncForeign(null);
-          if (r.status === "pulled") {
-            pullCount.current = vaultRevision(key);
-            setData(r.data);
-            setMessage("Mis à jour avec les modifications de vos autres appareils.");
-          }
           setSync({ state: "ok", repo, lastSyncAt: new Date().toISOString() });
         } catch (e) {
           if (stale()) return;
@@ -922,11 +930,13 @@ export default function App() {
           if (e instanceof VaultChangedError) throw new Error(PULLED_MEANWHILE);
           throw e;
         }
-        clearTimeout(syncTimer.current);
-        syncTimer.current = setTimeout(() => void runSync(), 1500);
       }
       if (currentSession !== session.current)
         throw new Error("Coffre verrouillé.");
+      if (!demo) {
+        clearTimeout(syncTimer.current);
+        syncTimer.current = setTimeout(() => void runSync(), 1500);
+      }
       setData(valid);
       setMessage(
         demo
@@ -1044,6 +1054,7 @@ export default function App() {
         <Auth
           onOpen={(d, k) => {
             session.current++;
+            openKey.current = k;
             pullCount.current = vaultRevision(k);
             setData(d);
             setKey(k);

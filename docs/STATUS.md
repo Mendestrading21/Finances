@@ -594,6 +594,10 @@ Revue de sécurité indépendante (`finance-securite`) : aucune fuite de clair, 
 - un éditeur ouvert pendant un tirage ne réécrit pas ses anciennes valeurs (contrôle négatif e2e vérifié : le test échoue sans la garde) ;
 - jetons classiques à portée large refusés ; un gros coffre inchangé n'est plus retéléchargé ; fichier distant > 25 Mo refusé ; dépôt devenu public signalé à chaque synchronisation.
 
+Contre-vérification par le même relecteur : tous les constats corrigés, verdict « fusionnable » ; deux défauts rares restants (tirage ignoré après désactivation, tâche de synchro partie après verrouillage) corrigés dans la foulée. Le contrôle d'en-tête `x-oauth-scopes` a été retiré : non vérifiable sans le vrai GitHub et redondant avec le préfixe `github_pat_` exigé.
+
+Preuves : `typecheck`, `test` (**178/178**, dont 64 tests de coffre et de synchronisation), `build`, les **16** scénarios `test:e2e` rejoués individuellement (dont deux scénarios à deux appareils avec un faux GitHub : chiffrement seul envoyé, ouverture depuis GitHub, tirage, conflit, choix, absence d'envoi en boucle, éditeur ouvert pendant un tirage, coffre séparé jamais écrasé sans double confirmation).
+
 Limites : aucun essai contre le vrai GitHub (bloqué dans l'environnement de développement) ni sur appareil physique ; chaque envoi est un commit, l'historique du dépôt garde les anciennes versions chiffrées ; désactiver ne supprime ni le fichier ni le jeton (à révoquer sur GitHub).
 
 ## État réel

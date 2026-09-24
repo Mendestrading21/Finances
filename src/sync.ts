@@ -423,10 +423,6 @@ async function github<T>(
 export async function checkRepoPrivate(target: SyncTarget): Promise<void> {
   const body = await github(target, repoUrl(target), {}, async (response) => {
     if (!response.ok) throw httpError(response);
-    // Classic tokens report their (repository-wide) scopes; fine-grained ones do not.
-    if (response.headers.get("x-oauth-scopes")?.trim()) {
-      throw new SyncError(FINE_GRAINED_ERROR);
-    }
     return bodyJson(response);
   });
   if (!record(body)) throw unexpectedResponse();

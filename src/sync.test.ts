@@ -139,7 +139,6 @@ class FakeGitHub {
   offline = false;
   inlineLimit = 1_000_000;
   forceStatus?: number;
-  scopes?: string;
   sizeOverride?: number;
   requests: Recorded[] = [];
   beforeContents?: () => Promise<void>;
@@ -208,11 +207,7 @@ class FakeGitHub {
     const repo = this.repos.get(repoKey);
     if (!repo) return json(404, { message: "Not Found" });
     if (match[3] === undefined) {
-      return json(
-        200,
-        { full_name: repo.fullName, private: repo.private },
-        this.scopes === undefined ? {} : { "x-oauth-scopes": this.scopes },
-      );
+      return json(200, { full_name: repo.fullName, private: repo.private });
     }
     const path = match[3].split("/").map(decodeURIComponent).join("/");
     const fileKey = `${repoKey}:${path}`;
@@ -819,25 +814,6 @@ describe("synchronisation GitHub du coffre chiffré", () => {
     );
     expect(fake.requests).toHaveLength(0);
     expect(deviceA.getItem("finance.sync.v1")).toBeNull();
-  });
-
-  it("refuse un jeton classique à portée large signalé par GitHub, accepte un jeton fine-grained", async () => {
-    const key = await createVault(PASSPHRASE, sample());
-    fake.scopes = "repo, workflow";
-    await expect(configureSync(key, SETTINGS)).rejects.toThrow(
-      "Utilisez un jeton « fine-grained »",
-    );
-    await expect(openFromGitHub(SETTINGS, PASSPHRASE)).rejects.toThrow(
-      "Utilisez un jeton « fine-grained »",
-    );
-    expect(deviceA.getItem("finance.sync.v1")).toBeNull();
-    fake.scopes = "";
-    const config = await configureSync(key, SETTINGS);
-    expect(await syncNow(key, config)).toEqual({ status: "pushed" });
-    fake.scopes = "repo";
-    await expect(syncNow(key, config)).rejects.toThrow(
-      "Utilisez un jeton « fine-grained »",
-    );
   });
 
   it("donne des erreurs claires pour un jeton refusé, des droits insuffisants ou un dépôt introuvable", async () => {
