@@ -1098,6 +1098,21 @@ export default function App() {
   }
   /** "Prévu" never distinguished a due expense from a due income, and gave no explicit
    * word for the not-yet state — see docs/AUDIT_UI_V2.md. */
+  // Entrée en vert, sortie en rouge, virement ou épargne en bleu glacier.
+  function kindTone(kind: Transaction["kind"]): string {
+    return kind === "income"
+      ? "positive"
+      : kind === "transfer"
+        ? "transfer"
+        : "negative";
+  }
+  function recurrenceTone(r: Recurrence): string {
+    return r.recurrenceType === "saving"
+      ? "transfer"
+      : r.kind === "income"
+        ? "positive"
+        : "negative";
+  }
   function statusWord(t: Transaction): string {
     if (t.status === "unknown") return "À vérifier";
     if (t.status === "settled")
@@ -1197,7 +1212,7 @@ export default function App() {
         }}
       >
         <span
-          className={`row-icon${t.kind === "income" ? " positive" : t.kind === "expense" ? " negative" : ""}`}
+          className={`row-icon ${kindTone(t.kind)}`}
         >
           <Icon
             name={
@@ -1256,7 +1271,11 @@ export default function App() {
                 {SEP}
                 {accountName(t.accountId)}
                 {SEP}
-                <span className="nowrap">{statusWord(t)}</span>
+                <span
+                  className={`nowrap ${t.status === "settled" ? kindTone(t.kind) : "status-pending"}`}
+                >
+                  {statusWord(t)}
+                </span>
                 {data?.documents.some((d) => d.transactionId === t.id) &&
                   `${SEP}Justificatif joint`}
               </span>
@@ -1265,7 +1284,7 @@ export default function App() {
         })()}
         <div className="row-end">
           <span
-            className={`row-value ${t.kind === "income" ? "positive" : t.kind === "expense" ? "negative" : ""}`}
+            className={`row-value ${kindTone(t.kind)}`}
           >
             {t.kind === "income" ? "+" : ""}
             {display(t.amountMinor, t.currency)}
@@ -1329,7 +1348,7 @@ export default function App() {
             )}
             {t.status === "planned" ? (
               <button
-                className={`button small ${t.kind === "income" ? "receive" : t.kind === "transfer" ? "secondary" : "pay"}`}
+                className={`button small ${t.kind === "income" ? "receive" : t.kind === "transfer" ? "transfer" : "pay"}`}
                 onClick={() => quickSettle(t)}
               >
                 <Icon name="check" size={18} />
@@ -1380,7 +1399,7 @@ export default function App() {
         }}
       >
         <span
-          className={`row-icon ${r.kind === "income" ? "positive" : "negative"}`}
+          className={`row-icon ${recurrenceTone(r)}`}
         >
           <Icon name={recurrenceTypeIcons[r.recurrenceType]} />
         </span>
@@ -1399,7 +1418,9 @@ export default function App() {
               <>
                 <span className="nowrap">{monthLabel(month)}</span>
                 {SEP}
-                <span className="nowrap">
+                <span
+                  className={`nowrap ${!cohortItem ? "" : cohortItem.settled ? recurrenceTone(r) : "status-pending"}`}
+                >
                   {!cohortItem
                     ? "Aucune échéance"
                     : cohortItem.settled
@@ -1415,7 +1436,7 @@ export default function App() {
           </span>
         </div>
         <div className="row-end">
-          <div className={`row-value ${r.kind === "income" ? "positive" : "negative"}`}>
+          <div className={`row-value ${recurrenceTone(r)}`}>
             {amountMinor !== null ? (
               <>
                 {r.kind === "income" ? "+" : ""}
@@ -1436,7 +1457,7 @@ export default function App() {
             </button>
             {dueTxn && (
               <button
-                className={`button small ${r.kind === "income" ? "receive" : "pay"}`}
+                className={`button small ${r.kind === "income" ? "receive" : r.recurrenceType === "saving" ? "transfer" : "pay"}`}
                 onClick={() => quickSettle(dueTxn)}
               >
                 <Icon name="check" size={18} />
@@ -1790,7 +1811,7 @@ export default function App() {
                   label: "Épargne (mensuel)",
                   value: savingMonthlyOverview.totalMinor,
                   meta: `${savingMonthlyOverview.count} actif(s)`,
-                  tone: "",
+                  tone: "transfer",
                 },
               ].map((s) => (
                 <div className="stat-card" key={s.label}>
@@ -2058,7 +2079,7 @@ export default function App() {
                 .map((r) => (
                   <div className="row" key={r.id}>
                     <span
-                      className={`row-icon ${r.kind === "income" ? "positive" : "negative"}`}
+                      className={`row-icon ${recurrenceTone(r)}`}
                     >
                       <Icon name={recurrenceTypeIcons[r.recurrenceType]} />
                     </span>
@@ -2073,7 +2094,7 @@ export default function App() {
                       </span>
                     </div>
                     <span
-                      className={`row-value ${r.kind === "income" ? "positive" : "negative"}`}
+                      className={`row-value ${recurrenceTone(r)}`}
                     >
                       {r.kind === "income" ? "+" : ""}
                       {display(r.amountMinor, r.currency)}
