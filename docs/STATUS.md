@@ -550,6 +550,19 @@ Fusionné dans `main` (commit `20c2f30`, PR #46). CI et déploiement Pages véri
 
 Suite demandée par l'utilisateur (choix explicite parmi les pistes proposées) : boutons « Reçu » teinté vert, « Payer » teinté rouge, « Régler » (virements, épargne récurrente) teinté bleu glacier — voile léger et contour fin, jamais d'aplat vif ; statuts des lignes colorés (« Reçu » vert, « Payé » rouge, « Réglé » bleu, et ce qui reste à faire — « Pas encore payé/reçu », « Prévu », « À vérifier » — en ambre doux `--warning`) ; virements et épargne en bleu glacier (montants, flèches, tuile « Épargne (mensuel) », récurrences d'épargne). `design.md` consigne la règle. Contrastes par formule : pire cas 4,86:1 (texte du bouton « Payer » survolé), ambre 6,58:1 et bleu 6,21:1 pendant le flash de règlement.
 
+Fusionné dans `main` (commit `f41c697`, PR #47). CI et déploiement Pages vérifiés verts.
+
+## Correctif — avis de nouvelle version invisible, version affichée (corrigé et testé le 24 septembre 2026)
+
+L'utilisateur ne voyait toujours pas les couleurs sur son iPhone alors que tout était fusionné et déployé. Cause trouvée : coffre ouvert, l'avis « Recharger » s'affichait dans le contenu, sous l'en-tête de page ; défilé plus bas, il était hors écran et l'app restait sur l'ancienne version. Désormais :
+
+1. l'avis est un bandeau fixe en haut de l'écran, visible quel que soit le défilement (coffre ouvert comme verrouillé) ;
+2. verrouiller le coffre applique la mise à jour en attente (plus rien n'est en mémoire) ;
+3. le pied de page affiche la version (`Version <commit> du <date de build>`) pour vérifier sur l'appareil quelle version tourne.
+4. défaut trouvé par la CI sur ce lot et corrigé : une mise à jour arrivant pendant l'ouverture du coffre (clé en cours de dérivation, champs déjà vidés) rechargeait la page et annulait l'ouverture. Dès qu'une saisie ou un envoi a eu lieu sur l'écran d'accès, l'app affiche désormais le bandeau au lieu de recharger.
+
+Preuves : `typecheck`, `test` (**142/142**), `build`, les **13** scénarios `test:e2e` rejoués individuellement ; le test « PWA update: after typing on the lock screen… » échoue avec l'ancienne logique (vérifié). Le test « PWA update: a new deploy offers… » vérifie désormais, fenêtre de téléphone défilée, que « Recharger » est dans l'écran (échoue sans le bandeau fixe, vérifié) ; le nouveau test « PWA update: locking the vault applies a waiting update » échoue sans l'application au verrouillage (vérifié).
+
 ## État réel
 
 | Élément                           | État                                                                                                                                                                   | Résultat et limite                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |

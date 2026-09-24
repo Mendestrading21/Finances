@@ -1851,8 +1851,8 @@ input::file-selector-button {
   border-top: 1px solid var(--line);
 }
 
-/* Coffre : écran d'accès */
-.auth-update {
+/* Avis de nouvelle version : fixe, visible quel que soit le défilement. */
+.update-banner {
   position: fixed;
   top: calc(12px + env(safe-area-inset-top, 0px));
   left: 50%;
@@ -1861,11 +1861,13 @@ input::file-selector-button {
   max-width: calc(100vw - 32px);
   transform: translateX(-50%);
 }
-.auth-update > .notice {
+.update-banner > .notice {
   margin: 0;
   background: var(--glass-raised);
   box-shadow: var(--shadow-float);
 }
+
+/* Coffre : écran d'accès */
 .auth-screen {
   min-height: 100dvh;
   display: grid;
