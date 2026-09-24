@@ -21,6 +21,7 @@ import {
   exportVault,
   importVault,
   saveVault,
+  sealSecret,
   unlockVault,
   vaultExists,
 } from "./vault";
@@ -112,10 +113,14 @@ function base64ToUtf8(value: string): string {
   );
 }
 
-function json(status: number, body: unknown): Response {
+function json(
+  status: number,
+  body: unknown,
+  headers: Record<string, string> = {},
+): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...headers },
   });
 }
 
@@ -134,6 +139,8 @@ class FakeGitHub {
   offline = false;
   inlineLimit = 1_000_000;
   forceStatus?: number;
+  scopes?: string;
+  sizeOverride?: number;
   requests: Recorded[] = [];
   beforeContents?: () => Promise<void>;
   beforePut?: () => Promise<void>;
@@ -160,6 +167,14 @@ class FakeGitHub {
   }
   puts() {
     return this.requests.filter((r) => r.method === "PUT");
+  }
+  rawReads() {
+    return this.requests.filter((r) => r.headers.get("accept") === RAW_ACCEPT);
+  }
+  repoReads() {
+    return this.requests.filter(
+      (r) => r.method === "GET" && !r.url.includes("/contents/"),
+    );
   }
 
   fetch = async (input: RequestInfo | URL, init: RequestInit = {}) => {
@@ -193,7 +208,11 @@ class FakeGitHub {
     const repo = this.repos.get(repoKey);
     if (!repo) return json(404, { message: "Not Found" });
     if (match[3] === undefined) {
-      return json(200, { full_name: repo.fullName, private: repo.private });
+      return json(
+        200,
+        { full_name: repo.fullName, private: repo.private },
+        this.scopes === undefined ? {} : { "x-oauth-scopes": this.scopes },
+      );
     }
     const path = match[3].split("/").map(decodeURIComponent).join("/");
     const fileKey = `${repoKey}:${path}`;
@@ -206,7 +225,8 @@ class FakeGitHub {
       if (entry.headers.get("accept") === RAW_ACCEPT) {
         return new Response(file.raw, { status: 200 });
       }
-      const size = new TextEncoder().encode(file.raw).byteLength;
+      const size =
+        this.sizeOverride ?? new TextEncoder().encode(file.raw).byteLength;
       if (size > this.inlineLimit) {
         return json(200, {
           type: "file",
@@ -372,7 +392,9 @@ describe("synchronisation GitHub du coffre chiffré", () => {
     expect(fake.puts()).toHaveLength(puts);
 
     await saveVault(key, variant("EUR"));
+    const repoReads = fake.repoReads().length;
     expect(await syncNow(key, config)).toEqual({ status: "pushed" });
+    expect(fake.repoReads()).toHaveLength(repoReads + 1);
     expect(fake.file()!.raw).toBe(exportVault());
     expect(await loadSyncConfig(key)).toEqual(config);
     expect(await syncNow(key, config)).toEqual({ status: "up-to-date" });
@@ -424,6 +446,8 @@ describe("synchronisation GitHub du coffre chiffré", () => {
       status: "conflict",
       localSavedAt: envelopeInfo(exportVault()).savedAt,
       remoteSavedAt: envelopeInfo(remoteBefore.raw).savedAt,
+      localSha: await blobSha(exportVault()),
+      remoteSha: remoteBefore.sha,
     });
     expect(snapshot(deviceA)).toEqual(localBefore);
     expect(fake.file()).toEqual(remoteBefore);
@@ -498,6 +522,8 @@ describe("synchronisation GitHub du coffre chiffré", () => {
       status: "conflict",
       localSavedAt: "2026-09-05T09:00:00.000Z",
       remoteSavedAt: "2026-09-05T10:00:00.000Z",
+      localSha: await blobSha(exportVault()),
+      remoteSha: fake.file()!.sha,
     });
     expect(await resolveConflict(keyA, configA, "local")).toEqual({
       status: "pushed",
@@ -634,6 +660,8 @@ describe("synchronisation GitHub du coffre chiffré", () => {
       status: "conflict",
       localSavedAt: "2026-09-02T10:00:00.000Z",
       remoteSavedAt: "2026-09-01T10:00:00.000Z",
+      localSha: await blobSha(exportVault()),
+      remoteSha: fake.file()!.sha,
     });
     expect(snapshot(deviceA)).toEqual(before);
   });
@@ -696,6 +724,24 @@ describe("synchronisation GitHub du coffre chiffré", () => {
     );
     expect(fake.puts()).toHaveLength(0);
     expect(fake.file()).toBeUndefined();
+
+    // Nothing to send is no excuse: a repository made public is reported at once, before any read.
+    fake.setPrivate(true);
+    expect(await syncNow(key, config)).toEqual({ status: "pushed" });
+    expect(await syncNow(key, config)).toEqual({ status: "up-to-date" });
+    fake.setPrivate(false);
+    const contentReads = fake.requests.filter((r) =>
+      r.url.includes("/contents/"),
+    ).length;
+    await expect(syncNow(key, config)).rejects.toThrow(
+      "Le dépôt doit être privé",
+    );
+    await expect(resolveConflict(key, config, "local")).rejects.toThrow(
+      "Le dépôt doit être privé",
+    );
+    expect(
+      fake.requests.filter((r) => r.url.includes("/contents/")),
+    ).toHaveLength(contentReads);
   });
 
   it("refuse le dépôt du code de l’application, quelle que soit la casse, sans requête", async () => {
@@ -753,6 +799,7 @@ describe("synchronisation GitHub du coffre chiffré", () => {
       { ...SETTINGS, token: "github_pat avec un espace dedans" },
       { ...SETTINGS, token: "x".repeat(256) },
       { ...SETTINGS, token: `${TOKEN}é` },
+      { ...SETTINGS, token: "ghp_0123456789abcdefghijklmnopqrstuvwxyz" },
       null,
     ];
     const key = await createVault(PASSPHRASE, sample());
@@ -762,8 +809,35 @@ describe("synchronisation GitHub du coffre chiffré", () => {
       expect(failure).toBeInstanceOf(SyncError);
       expect(failure.message).not.toContain(TOKEN);
     }
+    expect(() =>
+      validateSyncSettings({
+        ...SETTINGS,
+        token: "ghp_0123456789abcdefghijklmnopqrstuvwxyz",
+      }),
+    ).toThrow(
+      "Utilisez un jeton « fine-grained » (il commence par github_pat_), limité à ce seul dépôt.",
+    );
     expect(fake.requests).toHaveLength(0);
     expect(deviceA.getItem("finance.sync.v1")).toBeNull();
+  });
+
+  it("refuse un jeton classique à portée large signalé par GitHub, accepte un jeton fine-grained", async () => {
+    const key = await createVault(PASSPHRASE, sample());
+    fake.scopes = "repo, workflow";
+    await expect(configureSync(key, SETTINGS)).rejects.toThrow(
+      "Utilisez un jeton « fine-grained »",
+    );
+    await expect(openFromGitHub(SETTINGS, PASSPHRASE)).rejects.toThrow(
+      "Utilisez un jeton « fine-grained »",
+    );
+    expect(deviceA.getItem("finance.sync.v1")).toBeNull();
+    fake.scopes = "";
+    const config = await configureSync(key, SETTINGS);
+    expect(await syncNow(key, config)).toEqual({ status: "pushed" });
+    fake.scopes = "repo";
+    await expect(syncNow(key, config)).rejects.toThrow(
+      "Utilisez un jeton « fine-grained »",
+    );
   });
 
   it("donne des erreurs claires pour un jeton refusé, des droits insuffisants ou un dépôt introuvable", async () => {
@@ -795,10 +869,21 @@ describe("synchronisation GitHub du coffre chiffré", () => {
     const large: FinanceData = { ...sample(), documents: [attachment] };
     const key = await createVault(PASSPHRASE, large);
     const config = await configureSync(key, SETTINGS);
+    const timers = vi.spyOn(globalThis, "setTimeout");
     await syncNow(key, config);
     expect(
       new TextEncoder().encode(fake.file()!.raw).byteLength,
     ).toBeGreaterThan(1_000_000);
+    const putBody = fake.puts().at(-1)!.body!;
+    const putDelay = 60_000 + Math.ceil(putBody.length / 50_000) * 1_000;
+    expect(putDelay).toBeGreaterThan(60_000);
+    expect(timers.mock.calls.map(([, delay]) => delay)).toContain(putDelay);
+
+    // An unchanged large vault is never downloaded again.
+    for (let i = 0; i < 3; i++) {
+      expect(await syncNow(key, config)).toEqual({ status: "up-to-date" });
+    }
+    expect(fake.rawReads()).toHaveLength(0);
 
     use(deviceB);
     const opened = await openFromGitHub(SETTINGS, PASSPHRASE);
@@ -807,9 +892,29 @@ describe("synchronisation GitHub du coffre chiffré", () => {
       (r) => r.method === "GET" && r.url.includes("/contents/"),
     );
     expect(reads.at(-1)!.headers.get("accept")).toBe(RAW_ACCEPT);
+    expect(fake.rawReads()).toHaveLength(1);
     expect(await syncNow(opened.key, opened.config)).toEqual({
       status: "up-to-date",
     });
+    expect(fake.rawReads()).toHaveLength(1);
+  });
+
+  it("refuse un fichier distant de plus de 25 Mo avant de le télécharger", async () => {
+    const key = await createVault(PASSPHRASE, sample());
+    const config = await configureSync(key, SETTINGS);
+    await syncNow(key, config);
+    await fake.setFile(exportVault().replace("}", " }"));
+    fake.inlineLimit = 0;
+    fake.sizeOverride = 25_000_001;
+    const before = snapshot(deviceA);
+    await expect(syncNow(key, config)).rejects.toThrow(
+      "Le fichier distant est trop volumineux pour un coffre Finance. Rien n’a été modifié.",
+    );
+    await expect(openFromGitHub(SETTINGS, PASSPHRASE)).rejects.toThrow(
+      "trop volumineux",
+    );
+    expect(fake.rawReads()).toHaveLength(0);
+    expect(snapshot(deviceA)).toEqual(before);
   });
 
   it("hors ligne : erreur dédiée, rien n’est cassé, puis reprise", async () => {
@@ -839,38 +944,130 @@ describe("synchronisation GitHub du coffre chiffré", () => {
     expect(fake.file()!.raw).toBe(exportVault());
   });
 
-  it("refuse de tirer un distant chiffré avec un autre sel, sans rien modifier, puis permet de le rouvrir", async () => {
+  it("coffre étranger : signalé sans rien écrire, « local » ne l’écrase qu’avec replaceForeign", async () => {
     use(deviceA);
     const keyA = await createVault(PASSPHRASE, sample());
     const configA = await configureSync(keyA, SETTINGS);
     await syncNow(keyA, configA);
 
-    // Another device created its own vault (new salt) and chose to overwrite the remote.
+    // Device D creates its own vault separately (new salt), then links the same repository.
     const deviceD = new MemoryStorage();
     use(deviceD);
     const keyD = await createVault(PASSPHRASE, variant("USD"));
     const configD = await configureSync(keyD, SETTINGS);
-    expect((await syncNow(keyD, configD)).status).toBe("conflict");
-    expect(await resolveConflict(keyD, configD, "local")).toEqual({
-      status: "pushed",
+    const remoteA = { ...fake.file()! };
+    const beforeD = snapshot(deviceD);
+    const shown = await syncNow(keyD, configD);
+    expect(shown).toEqual({
+      status: "foreign",
+      remoteSha: remoteA.sha,
+      remoteSavedAt: envelopeInfo(remoteA.raw).savedAt,
     });
+    expect(await resolveConflict(keyD, configD, "local")).toEqual(shown);
+    const mismatch = await rejection(resolveConflict(keyD, configD, "remote"));
+    expect(mismatch).toBeInstanceOf(VaultKeyMismatchError);
+    expect(mismatch.message).toContain(
+      "Exportez d’abord une sauvegarde chiffrée de ce coffre : l’ouvrir depuis GitHub le remplacera.",
+    );
+    expect(fake.file()).toEqual(remoteA);
+    expect(snapshot(deviceD)).toEqual(beforeD);
 
+    // A writes again after D was shown the foreign vault: D's replacement no longer applies.
     use(deviceA);
-    const before = snapshot(deviceA);
-    const failure = await rejection(syncNow(keyA, configA));
-    expect(failure).toBeInstanceOf(VaultKeyMismatchError);
-    expect(failure.message).toContain("verrouillez le coffre");
-    expect(snapshot(deviceA)).toEqual(before);
+    await saveVault(keyA, variant("EUR"));
+    expect(await syncNow(keyA, configA)).toEqual({ status: "pushed" });
+    const remoteA2 = { ...fake.file()! };
+    use(deviceD);
+    expect(
+      await resolveConflict(keyD, configD, "local", {
+        replaceForeign: true,
+        expected: { remoteSha: remoteA.sha },
+      }),
+    ).toEqual({
+      status: "foreign",
+      remoteSha: remoteA2.sha,
+      remoteSavedAt: envelopeInfo(remoteA2.raw).savedAt,
+    });
+    expect(fake.file()).toEqual(remoteA2);
+    expect(snapshot(deviceD)).toEqual(beforeD);
+
+    // Explicit replacement of what was just shown.
+    expect(
+      await resolveConflict(keyD, configD, "local", {
+        replaceForeign: true,
+        expected: { remoteSha: remoteA2.sha },
+      }),
+    ).toEqual({ status: "pushed" });
+    expect(fake.file()!.raw).toBe(exportVault());
+
+    // A now sees a foreign vault: never pulled, "remote" refused, nothing modified.
+    use(deviceA);
+    const beforeA = snapshot(deviceA);
+    expect((await syncNow(keyA, configA)).status).toBe("foreign");
     await expect(
       resolveConflict(keyA, configA, "remote"),
     ).rejects.toBeInstanceOf(VaultKeyMismatchError);
-    expect(snapshot(deviceA)).toEqual(before);
+    expect(snapshot(deviceA)).toEqual(beforeA);
 
     const reopened = await openFromGitHub(SETTINGS, PASSPHRASE);
     expect(reopened.data).toEqual(variant("USD"));
     expect(await syncNow(reopened.key, reopened.config)).toEqual({
       status: "up-to-date",
     });
+  });
+
+  it("le choix s’applique à ce qui a été montré : un changement depuis l’affichage donne un nouveau conflit, sans écriture", async () => {
+    const { keyA, configA, keyB, configB } = await twoDevices();
+    await saveVault(keyB, variant("USD"));
+    await syncNow(keyB, configB);
+    use(deviceA);
+    await saveVault(keyA, variant("EUR"));
+    const shown = await syncNow(keyA, configA);
+    if (shown.status !== "conflict") throw new Error("Conflit attendu");
+    expect(shown.localSha).toBe(await blobSha(exportVault()));
+    expect(shown.remoteSha).toBe(fake.file()!.sha);
+
+    // B writes again while A's conflict is on screen.
+    use(deviceB);
+    await saveVault(keyB, renamed("Encore modifié sur iPad"));
+    expect(await syncNow(keyB, configB)).toEqual({ status: "pushed" });
+    use(deviceA);
+    const remote = { ...fake.file()! };
+    const before = snapshot(deviceA);
+    const puts = fake.puts().length;
+    for (const choice of ["local", "remote"] as const) {
+      expect(
+        await resolveConflict(keyA, configA, choice, {
+          expected: { localSha: shown.localSha, remoteSha: shown.remoteSha },
+        }),
+      ).toEqual({
+        status: "conflict",
+        localSha: shown.localSha,
+        remoteSha: remote.sha,
+        localSavedAt: shown.localSavedAt,
+        remoteSavedAt: envelopeInfo(remote.raw).savedAt,
+      });
+      expect(snapshot(deviceA)).toEqual(before);
+      expect(fake.file()).toEqual(remote);
+      expect(fake.puts()).toHaveLength(puts);
+    }
+
+    // A local change since the display is detected the same way.
+    await saveVault(keyA, renamed("Encore modifié sur PC"));
+    const afterLocal = snapshot(deviceA);
+    const fresh = await resolveConflict(keyA, configA, "remote", {
+      expected: { localSha: shown.localSha, remoteSha: remote.sha },
+    });
+    if (fresh.status !== "conflict") throw new Error("Conflit attendu");
+    expect(fresh.localSha).toBe(await blobSha(exportVault()));
+    expect(snapshot(deviceA)).toEqual(afterLocal);
+
+    // The choice applied to the fresh situation goes through.
+    expect(
+      await resolveConflict(keyA, configA, "remote", {
+        expected: { localSha: fresh.localSha, remoteSha: fresh.remoteSha },
+      }),
+    ).toEqual({ status: "pulled", data: renamed("Encore modifié sur iPad") });
   });
 
   it("demande de reconfigurer quand le jeton ne se déchiffre plus avec le coffre restauré", async () => {
@@ -906,6 +1103,13 @@ describe("synchronisation GitHub du coffre chiffré", () => {
       JSON.stringify({ ...stored, owner: ".." }),
       JSON.stringify({ ...stored, extra: true }),
       JSON.stringify({ ...stored, token: { ...stored.token, ct: "AAAA" } }),
+      JSON.stringify({
+        ...stored,
+        token: await sealSecret(
+          key,
+          "ghp_0123456789abcdefghijklmnopqrstuvwxyz",
+        ),
+      }),
     ]) {
       deviceA.setItem("finance.sync.v1", altered);
       expect(await loadSyncState(key)).toEqual({ state: "reconfigure" });

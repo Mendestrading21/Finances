@@ -5,7 +5,14 @@ export type SyncView =
   | { state: "off" }
   | { state: "reconfigure" }
   | {
-      state: "idle" | "syncing" | "ok" | "offline" | "error" | "conflict";
+      state:
+        | "idle"
+        | "syncing"
+        | "ok"
+        | "offline"
+        | "error"
+        | "conflict"
+        | "foreign";
       repo: string;
       lastSyncAt?: string;
       detail?: string;
@@ -61,14 +68,19 @@ export function SyncFields({ idPrefix }: { idPrefix: string }) {
         <input
           name="token"
           type="password"
+          // Ni enregistré ni proposé comme mot de passe par le navigateur ou un gestionnaire.
           autoComplete="off"
+          data-1p-ignore=""
+          data-lpignore="true"
+          data-bwignore=""
+          spellCheck={false}
           aria-describedby={`${idPrefix}-token-help`}
           required
         />
       </label>
       <p className="meta" id={`${idPrefix}-token-help`}>
-        Jeton « fine-grained » limité à ce seul dépôt, permission Contents en
-        lecture et écriture.
+        Jeton « fine-grained » (il commence par github_pat_) limité à ce seul
+        dépôt, permission Contents en lecture et écriture.
       </p>
     </>
   );
@@ -111,6 +123,8 @@ export function syncStatusText(view: SyncView): string {
       return "Hors ligne : la synchronisation reprendra plus tard.";
     case "conflict":
       return "Choix nécessaire : ce coffre a changé ici et sur un autre appareil.";
+    case "foreign":
+      return "Arrêtée : ce dépôt contient un autre coffre. Rien n’a été modifié.";
     case "error":
       return view.detail || "La synchronisation a échoué.";
   }
@@ -191,6 +205,11 @@ export function SyncCard({
             <Icon name="close" />
             Désactiver sur cet appareil
           </button>
+          <p className="meta">
+            Désactiver ne supprime ni le fichier du dépôt ni le jeton : révoquez
+            le jeton sur GitHub si besoin. L’historique du dépôt garde les
+            anciennes versions chiffrées.
+          </p>
         </div>
       ) : (
         <form className="sync-form" onSubmit={submit}>

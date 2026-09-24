@@ -583,7 +583,18 @@ Demande de l'utilisateur : un seul coffre partagé entre iPhone, iPad et PC Wind
 - modifié des deux côtés : aucun écrasement silencieux, un bandeau demande quelle version garder ; une récupération ne remplace jamais une modification locale faite pendant la synchronisation, et un enregistrement attend la synchronisation en cours ;
 - nouvel appareil : « Ouvrir depuis GitHub » sur l'écran d'accès, avec la même phrase secrète ; rien n'est écrit si la phrase est fausse.
 
-La synchronisation n'est active qu'une fois configurée par l'utilisateur sur chaque appareil (dépôt privé et jeton « fine-grained » limité à ce dépôt, permission Contents en lecture et écriture) ; aucune synchronisation bancaire.
+La synchronisation n'est active qu'une fois configurée par l'utilisateur sur chaque appareil (dépôt privé et jeton « fine-grained » `github_pat_` limité à ce dépôt, permission Contents en lecture et écriture) ; aucune synchronisation bancaire.
+
+Revue de sécurité indépendante (`finance-securite`) : aucune fuite de clair, de phrase secrète ni de jeton ; intégrité tenue face à un distant altéré. Un défaut bloquant et cinq à corriger, tous corrigés avant fusion :
+
+- un dépôt contenant un autre coffre (créé séparément, autre phrase secrète, fichier illisible) n'est plus présenté comme un conflit ordinaire : bandeau distinct, rien d'écrit, remplacement seulement après double confirmation ;
+- le choix d'un conflit ne s'applique qu'aux versions affichées (sinon nouveau choix) ;
+- « synchronisé » n'est affiché qu'après un succès réel ;
+- un enregistrement n'attend plus le réseau : le coffre refuse une écriture calculée avant un tirage (révision vérifiée juste avant l'écriture) ;
+- un éditeur ouvert pendant un tirage ne réécrit pas ses anciennes valeurs (contrôle négatif e2e vérifié : le test échoue sans la garde) ;
+- jetons classiques à portée large refusés ; un gros coffre inchangé n'est plus retéléchargé ; fichier distant > 25 Mo refusé ; dépôt devenu public signalé à chaque synchronisation.
+
+Limites : aucun essai contre le vrai GitHub (bloqué dans l'environnement de développement) ni sur appareil physique ; chaque envoi est un commit, l'historique du dépôt garde les anciennes versions chiffrées ; désactiver ne supprime ni le fichier ni le jeton (à révoquer sur GitHub).
 
 ## État réel
 

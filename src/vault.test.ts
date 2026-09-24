@@ -14,6 +14,7 @@ import {
   VaultChangedError,
   vaultExists,
   VaultKeyMismatchError,
+  vaultRevision,
 } from "./vault";
 
 class MemoryStorage implements Storage {
@@ -650,6 +651,89 @@ describe("remplacement depuis un coffre distant et secrets scellés", () => {
     expect((await unlockVault(PASSPHRASE)).data).toEqual(sample());
     await saveVault(key, emptyData());
     expect((await unlockVault(PASSPHRASE)).data).toEqual(emptyData());
+  });
+
+  it("compte les remplacements venus d’un autre appareil, et seulement eux", async () => {
+    const key = await createVault(PASSPHRASE, sample());
+    expect(vaultRevision(key)).toBe(0);
+    const remote = exportVault();
+    await saveVault(key, emptyData());
+    await resealVault(key, exportVault());
+    expect(vaultRevision(key)).toBe(0);
+    const current = exportVault();
+    await expect(
+      replaceVaultFromRemote(key, remote, remote),
+    ).rejects.toBeInstanceOf(VaultChangedError);
+    expect(vaultRevision(key)).toBe(0);
+    expect(exportVault()).toBe(current);
+    await replaceVaultFromRemote(key, remote);
+    expect(vaultRevision(key)).toBe(1);
+    await expect(saveVault(key, emptyData(), 0)).rejects.toBeInstanceOf(
+      VaultChangedError,
+    );
+    expect(exportVault()).toBe(remote);
+    await saveVault(key, emptyData(), 1);
+    expect(vaultRevision(key)).toBe(1);
+    expect((await unlockVault(PASSPHRASE)).data).toEqual(emptyData());
+    const foreign = await crypto.subtle.generateKey(
+      { name: "AES-GCM", length: 256 },
+      false,
+      ["encrypt", "decrypt"],
+    );
+    expect(() => vaultRevision(foreign)).toThrow("Coffre verrouillé");
+  });
+
+  it("un tirage commité pendant le chiffrement d’une sauvegarde révisée l’emporte : la sauvegarde est refusée", async () => {
+    const key = await createVault(PASSPHRASE, sample());
+    const remote = exportVault();
+    await saveVault(key, emptyData());
+    const revision = vaultRevision(key);
+    const other: FinanceData = {
+      ...emptyData(),
+      preferences: { baseCurrency: "USD", locale: "fr-CH" },
+    };
+    const encrypt = crypto.subtle.encrypt.bind(crypto.subtle);
+    vi.spyOn(crypto.subtle, "encrypt").mockImplementationOnce(
+      async (...args) => {
+        await replaceVaultFromRemote(key, remote);
+        return encrypt(...args);
+      },
+    );
+    await expect(saveVault(key, other, revision)).rejects.toBeInstanceOf(
+      VaultChangedError,
+    );
+    expect(exportVault()).toBe(remote);
+    expect(vaultRevision(key)).toBe(revision + 1);
+    expect((await unlockVault(PASSPHRASE)).data).toEqual(sample());
+    await saveVault(key, other, revision + 1);
+    expect((await unlockVault(PASSPHRASE)).data).toEqual(other);
+  });
+
+  it("une sauvegarde révisée commitée pendant le déchiffrement d’un tirage l’emporte : le tirage est refusé", async () => {
+    const key = await createVault(PASSPHRASE, sample());
+    const remote = exportVault();
+    await saveVault(key, emptyData());
+    const snapshotRaw = exportVault();
+    const revision = vaultRevision(key);
+    const other: FinanceData = {
+      ...emptyData(),
+      preferences: { baseCurrency: "USD", locale: "fr-CH" },
+    };
+    let saved = "";
+    const decrypt = crypto.subtle.decrypt.bind(crypto.subtle);
+    vi.spyOn(crypto.subtle, "decrypt").mockImplementationOnce(
+      async (...args) => {
+        await saveVault(key, other, revision);
+        saved = exportVault();
+        return decrypt(...args);
+      },
+    );
+    await expect(
+      replaceVaultFromRemote(key, remote, snapshotRaw),
+    ).rejects.toBeInstanceOf(VaultChangedError);
+    expect(exportVault()).toBe(saved);
+    expect(vaultRevision(key)).toBe(revision);
+    expect((await unlockVault(PASSPHRASE)).data).toEqual(other);
   });
 
   it("scelle un secret avec la clé du coffre, sans le laisser en clair, et ne l’ouvre qu’avec cette clé", async () => {

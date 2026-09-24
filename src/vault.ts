@@ -29,7 +29,13 @@ type Envelope = {
   // "unknown age": importVault never blocks a restore it cannot date.
   savedAt?: string;
 };
-type KeyState = { salt: string; iterations: number; expectedRaw: string };
+// `revision` counts data replacements coming from another device (see replaceVaultFromRemote).
+type KeyState = {
+  salt: string;
+  iterations: number;
+  expectedRaw: string;
+  revision: number;
+};
 const keyStates = new WeakMap<CryptoKey, KeyState>();
 
 function webCrypto(): Crypto {
@@ -333,8 +339,14 @@ async function openWithKey(
   }
 }
 
-async function commit(raw: string, expected: string | null): Promise<void> {
+/** `guard` and `written` run in the same synchronous block as the check and the write. */
+async function commit(
+  raw: string,
+  expected: string | null,
+  hooks: { guard?: () => void; written?: () => void } = {},
+): Promise<void> {
   const write = () => {
+    hooks.guard?.();
     if (readRaw() !== expected) throw new Error(CONFLICT_ERROR);
     try {
       // Web Storage setItem is atomic: on quota/security failure the previous value is retained.
@@ -345,6 +357,7 @@ async function commit(raw: string, expected: string | null): Promise<void> {
         "Enregistrement impossible : espace disponible ou stockage inaccessible. Votre coffre précédent est conservé.",
       );
     }
+    hooks.written?.();
   };
   // A shared exclusive lock makes the check-and-write indivisible across cooperating tabs.
   // Older browsers still get optimistic conflict detection; the limitation is documented.
@@ -399,7 +412,12 @@ export async function createVault(
   const key = await deriveKey(passphrase, salt, ITERATIONS);
   const raw = await seal(key, { salt, iterations: ITERATIONS }, validated);
   await commit(raw, null);
-  keyStates.set(key, { salt, iterations: ITERATIONS, expectedRaw: raw });
+  keyStates.set(key, {
+    salt,
+    iterations: ITERATIONS,
+    expectedRaw: raw,
+    revision: 0,
+  });
   return key;
 }
 
@@ -416,13 +434,16 @@ export async function unlockVault(
     salt: envelope.kdf.salt,
     iterations: envelope.kdf.iterations,
     expectedRaw: raw,
+    revision: 0,
   });
   return result;
 }
 
+/** With `expectedRevision` (from vaultRevision), refuses to save over data pulled from another device since then. */
 export async function saveVault(
   key: CryptoKey,
   data: FinanceData,
+  expectedRevision?: number,
 ): Promise<void> {
   const state = keyStates.get(key);
   if (!state)
@@ -431,8 +452,30 @@ export async function saveVault(
   const expectedRaw = state.expectedRaw;
   if (readRaw() !== expectedRaw) throw new Error(CONFLICT_ERROR);
   const raw = await seal(key, state, data);
-  await commit(raw, expectedRaw);
+  await commit(
+    raw,
+    expectedRaw,
+    expectedRevision === undefined
+      ? {}
+      : {
+          guard: () => {
+            if (state.revision !== expectedRevision) {
+              throw new VaultChangedError(
+                "Vos données viennent d’être mises à jour depuis un autre appareil. Rien n’a été enregistré ; vérifiez, puis recommencez.",
+              );
+            }
+          },
+        },
+  );
   state.expectedRaw = raw;
+}
+
+/** Number of times this open vault's data was replaced from another device. */
+export function vaultRevision(key: CryptoKey): number {
+  const state = keyStates.get(key);
+  if (!state)
+    throw new Error("Coffre verrouillé. Ouvrez-le avant de continuer.");
+  return state.revision;
 }
 
 export function exportVault(): string {
@@ -484,6 +527,7 @@ export async function importVault(
     salt: envelope.kdf.salt,
     iterations: envelope.kdf.iterations,
     expectedRaw: normalized,
+    revision: 0,
   });
   return result;
 }
@@ -513,7 +557,7 @@ export function vaultEnvelopeInfo(): EnvelopeInfo | null {
 export class VaultKeyMismatchError extends Error {
   constructor() {
     super(
-      "Le coffre distant est chiffré avec une autre clé (autre phrase secrète ou autre coffre). Rien n’a été modifié : verrouillez le coffre, puis rouvrez-le depuis GitHub avec sa phrase secrète.",
+      "Le coffre distant est chiffré avec une autre clé (autre phrase secrète ou autre coffre). Rien n’a été modifié : verrouillez le coffre, puis rouvrez-le depuis GitHub avec sa phrase secrète. Exportez d’abord une sauvegarde chiffrée de ce coffre : l’ouvrir depuis GitHub le remplacera.",
     );
     this.name = "VaultKeyMismatchError";
   }
@@ -521,10 +565,10 @@ export class VaultKeyMismatchError extends Error {
 
 /** Retryable: the local vault changed after the snapshot a sync decided on; nothing was written. */
 export class VaultChangedError extends Error {
-  constructor() {
-    super(
-      "Le coffre a été modifié pendant la synchronisation. Rien n’a été remplacé ; relancez la synchronisation.",
-    );
+  constructor(
+    message = "Le coffre a été modifié pendant la synchronisation. Rien n’a été remplacé ; relancez la synchronisation.",
+  ) {
+    super(message);
     this.name = "VaultChangedError";
   }
 }
@@ -553,7 +597,12 @@ export async function replaceVaultFromRemote(
   const data = await openWithKey(key, envelope);
   const normalized = JSON.stringify(envelope);
   try {
-    await commit(normalized, expectedRaw);
+    await commit(normalized, expectedRaw, {
+      written: () => {
+        state.expectedRaw = normalized;
+        state.revision += 1;
+      },
+    });
   } catch (error) {
     // A save committed during decryption wins; report it as retryable rather than as another tab.
     if (
@@ -565,7 +614,6 @@ export async function replaceVaultFromRemote(
     }
     throw error;
   }
-  state.expectedRaw = normalized;
   return data;
 }
 

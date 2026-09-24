@@ -74,6 +74,7 @@ import {
   SyncOfflineError,
   VaultChangedError,
 } from "./sync";
+import { vaultRevision } from "./vault";
 import { UPDATE_READY_EVENT } from "./swUpdateEvent";
 const pages = [
   { id: "overview", name: "Vue d’ensemble", short: "Accueil", icon: "home" },
@@ -115,6 +116,10 @@ function monogramInitials(name: string): string {
     words.length > 1 ? words[0][0] + words[1][0] : name.replace(/\s+/g, "").slice(0, 2)
   ).toUpperCase();
 }
+const PULLED_MEANWHILE =
+  "Vos données viennent d’être mises à jour depuis un autre appareil. Vérifiez, puis recommencez.";
+const EDITED_ELSEWHERE =
+  "Cet élément a été mis à jour depuis un autre appareil pendant l’édition. Fermez, puis rouvrez-le.";
 // Espace insécable avant le point : jamais de « · » seul en début de ligne.
 const SEP = "\u00a0· ";
 const assetTypeLabels: Record<
@@ -436,7 +441,8 @@ function Auth({
               {fromGitHub && exists && (
                 <label className="notice">
                   <input type="checkbox" name="replace" /> Remplacer le
-                  coffre de cet appareil par celui du dépôt.
+                  coffre de cet appareil par celui du dépôt. Exportez d’abord
+                  une sauvegarde chiffrée de celui-ci pour le garder.
                 </label>
               )}
               {!exists && !backup && !fromGitHub && (
@@ -573,6 +579,15 @@ export default function App() {
     [syncConflict, setSyncConflict] = useState<{
       localSavedAt?: string;
       remoteSavedAt?: string;
+      localSha: string;
+      remoteSha: string;
+      changed?: boolean;
+    } | null>(null),
+    // Le dépôt contient un autre coffre (créé séparément ou autre phrase secrète).
+    [syncForeign, setSyncForeign] = useState<{
+      remoteSavedAt?: string;
+      remoteSha?: string;
+      confirming?: boolean;
     } | null>(null),
     [syncBusy, setSyncBusy] = useState(false);
   const session = useRef(0);
@@ -598,6 +613,7 @@ export default function App() {
     setError("");
     setSync({ state: "off" });
     setSyncConflict(null);
+    setSyncForeign(null);
   }, []);
   useEffect(() => {
     if (!data || demo) return;
@@ -658,36 +674,54 @@ export default function App() {
     window.addEventListener(UPDATE_READY_EVENT, onUpdateReady);
     return () => window.removeEventListener(UPDATE_READY_EVENT, onUpdateReady);
   }, []);
-  // Synchronisation : une seule exécution à la fois, jamais pendant un enregistrement
-  // (persist attend l'exécution en cours, puis refuse une modification calculée avant un tirage).
+  // Synchronisation : une seule exécution à la fois, jamais lancée pendant un enregistrement.
+  // Un enregistrement n'attend pas le réseau : le coffre refuse une modification calculée avant
+  // un tirage (révision), et un tirage refuse de remplacer une modification locale concurrente.
   const syncRun = useRef<Promise<void> | null>(null);
   const syncAgain = useRef(false);
   const syncTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  // Révision du coffre correspondant aux données affichées (incrémentée par chaque tirage).
   const pullCount = useRef(0);
+  // Révision au moment où l'éditeur a été ouvert (ses champs datent de là).
+  const editorPulls = useRef(0);
   const conflictPending = useRef(false);
+  // Change quand la synchronisation est désactivée : le résultat d'une exécution en cours est ignoré.
+  const syncEpoch = useRef(0);
+  type SyncMode =
+    | { kind: "auto" | "manual" }
+    | {
+        kind: "remote" | "local";
+        expected?: { localSha?: string; remoteSha: string };
+        replaceForeign?: boolean;
+      };
   const runSync = useCallback(
-    async (
-      mode: "auto" | "manual" | "remote" | "local" = "auto",
-    ): Promise<void> => {
+    async (mode: SyncMode = { kind: "auto" }): Promise<void> => {
       if (!key || demo) return;
+      const auto = mode.kind === "auto";
       if (syncRun.current) {
-        if (mode === "auto") {
+        if (auto) {
           syncAgain.current = true;
           return;
         }
         await syncRun.current;
       }
-      if (mode === "auto" && conflictPending.current) return;
+      if (auto && conflictPending.current) return;
       if (mutating.current) {
-        syncAgain.current = true;
-        return;
+        if (auto) {
+          syncAgain.current = true;
+          return;
+        }
+        // Un choix explicite attend la fin de l'enregistrement en cours au lieu d'être perdu.
+        while (mutating.current) await new Promise((r) => setTimeout(r, 100));
       }
       const s = session.current;
+      const epoch = syncEpoch.current;
+      const stale = () => s !== session.current || epoch !== syncEpoch.current;
       const job = (async () => {
         const stored = await loadSyncState(key).catch(
           () => ({ state: "reconfigure" }) as const,
         );
-        if (s !== session.current) return;
+        if (stale()) return;
         if (stored.state !== "ready") {
           setSync({ state: stored.state });
           return;
@@ -701,29 +735,48 @@ export default function App() {
         }));
         try {
           const r =
-            mode === "remote" || mode === "local"
-              ? await resolveConflict(key, cfg, mode)
+            mode.kind === "remote" || mode.kind === "local"
+              ? await resolveConflict(key, cfg, mode.kind, {
+                  expected: mode.expected,
+                  replaceForeign: mode.replaceForeign,
+                })
               : await syncNow(key, cfg);
-          if (s !== session.current) return;
+          if (stale()) return;
+          if (r.status === "foreign") {
+            conflictPending.current = true;
+            setSyncConflict(null);
+            setSyncForeign({
+              remoteSavedAt: r.remoteSavedAt,
+              remoteSha: r.remoteSha,
+            });
+            setSync({ state: "foreign", repo });
+            return;
+          }
           if (r.status === "conflict") {
             conflictPending.current = true;
+            setSyncForeign(null);
             setSyncConflict({
               localSavedAt: r.localSavedAt,
               remoteSavedAt: r.remoteSavedAt,
+              localSha: r.localSha,
+              remoteSha: r.remoteSha,
+              // Un choix était en cours mais les versions ont encore changé : rien n'a été écrit.
+              changed: mode.kind === "remote" || mode.kind === "local",
             });
             setSync({ state: "conflict", repo });
             return;
           }
           conflictPending.current = false;
           setSyncConflict(null);
-          if (r.status === "pulled" && r.data) {
-            pullCount.current++;
+          setSyncForeign(null);
+          if (r.status === "pulled") {
+            pullCount.current = vaultRevision(key);
             setData(r.data);
             setMessage("Mis à jour avec les modifications de vos autres appareils.");
           }
           setSync({ state: "ok", repo, lastSyncAt: new Date().toISOString() });
         } catch (e) {
-          if (s !== session.current) return;
+          if (stale()) return;
           // Un enregistrement local a eu lieu pendant la synchronisation : rien n'a été remplacé, on relance.
           if (e instanceof VaultChangedError) {
             syncAgain.current = true;
@@ -746,7 +799,7 @@ export default function App() {
       } finally {
         if (syncRun.current === job) syncRun.current = null;
       }
-      if (syncAgain.current && s === session.current) {
+      if (syncAgain.current && !stale()) {
         syncAgain.current = false;
         void runSync();
       }
@@ -769,7 +822,7 @@ export default function App() {
       clearTimeout(syncTimer.current);
     };
   }, [key, demo, runSync]);
-  async function manualSync(mode: "manual" | "remote" | "local") {
+  async function manualSync(mode: SyncMode) {
     setSyncBusy(true);
     try {
       await runSync(mode);
@@ -782,16 +835,24 @@ export default function App() {
     setSyncBusy(true);
     try {
       await configureSync(key, input);
+      syncEpoch.current++;
       conflictPending.current = false;
-      await runSync("manual");
+      await runSync({ kind: "manual" });
     } finally {
       setSyncBusy(false);
     }
   }
   function stopSync() {
-    disableSync();
+    try {
+      disableSync();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Désactivation impossible.");
+      return;
+    }
+    syncEpoch.current++;
     conflictPending.current = false;
     setSyncConflict(null);
+    setSyncForeign(null);
     setSync({ state: "off" });
     setMessage("Synchronisation désactivée sur cet appareil.");
   }
@@ -851,15 +912,16 @@ export default function App() {
     mutating.current = true;
     const currentSession = session.current;
     try {
-      if (syncRun.current) await syncRun.current;
-      if (pullCount.current !== renderPulls)
-        throw new Error(
-          "Vos données viennent d’être mises à jour depuis un autre appareil. Vérifiez, puis recommencez.",
-        );
+      if (pullCount.current !== renderPulls) throw new Error(PULLED_MEANWHILE);
       const valid = validateData(next);
       if (!demo) {
         if (!key) throw new Error("Coffre verrouillé.");
-        await saveVault(key, valid);
+        try {
+          await saveVault(key, valid, renderPulls);
+        } catch (e) {
+          if (e instanceof VaultChangedError) throw new Error(PULLED_MEANWHILE);
+          throw e;
+        }
         clearTimeout(syncTimer.current);
         syncTimer.current = setTimeout(() => void runSync(), 1500);
       }
@@ -982,6 +1044,7 @@ export default function App() {
         <Auth
           onOpen={(d, k) => {
             session.current++;
+            pullCount.current = vaultRevision(k);
             setData(d);
             setKey(k);
             setCurrency(d.preferences.baseCurrency);
@@ -1071,6 +1134,7 @@ export default function App() {
     data.accounts.find((a) => a.id === id)?.name || "Compte à préciser";
   const edit = (spec: EditorSpec) => {
     setError("");
+    editorPulls.current = pullCount.current;
     setEditor(spec);
   };
   // Distinct metaphor per nature (identite-ui.md), reusing existing icons where one already
@@ -1822,9 +1886,11 @@ export default function App() {
           <p className="footer-note">
             {demo
               ? "Des exemples pour découvrir Finance."
-              : sync.state === "off" || sync.state === "reconfigure"
-                ? "Chiffré sur cet appareil. Sauvegardez pour transférer vos données."
-                : "Chiffré, synchronisé via votre dépôt GitHub privé."}
+              : sync.state === "ok"
+                ? "Chiffré, synchronisé via votre dépôt GitHub privé."
+                : sync.state === "off"
+                  ? "Chiffré sur cet appareil. Sauvegardez pour transférer vos données."
+                  : "Chiffré sur cet appareil. Synchronisation : voir Documents et réglages."}
           </p>
           <button className="nav-item" onClick={lock}>
             <Icon name="logout" />
@@ -1937,10 +2003,10 @@ export default function App() {
             aria-labelledby="sync-conflict-title"
           >
             <p id="sync-conflict-title">
-              <strong>Deux versions différentes de votre coffre.</strong> Il a
-              été modifié ici et sur un autre appareil depuis la dernière
-              synchronisation. Choisissez la version à garder : l’autre sera
-              remplacée.
+              <strong>Deux versions différentes de votre coffre.</strong>{" "}
+              {syncConflict.changed
+                ? "Les versions ont encore changé pendant votre choix ; rien n’a été remplacé. Vérifiez les dates, puis choisissez à nouveau."
+                : "Il a été modifié ici et sur un autre appareil depuis la dernière synchronisation. Choisissez la version à garder : l’autre sera remplacée."}
             </p>
             <p className="meta">
               Cet appareil : {dateTimeLabel(syncConflict.localSavedAt)}
@@ -1950,18 +2016,105 @@ export default function App() {
               <button
                 className="button secondary small"
                 disabled={syncBusy}
-                onClick={() => void manualSync("remote")}
+                onClick={() =>
+                  void manualSync({
+                    kind: "remote",
+                    expected: {
+                      localSha: syncConflict.localSha,
+                      remoteSha: syncConflict.remoteSha,
+                    },
+                  })
+                }
               >
                 Garder l’autre appareil
               </button>
               <button
                 className="button secondary small"
                 disabled={syncBusy}
-                onClick={() => void manualSync("local")}
+                onClick={() =>
+                  void manualSync({
+                    kind: "local",
+                    expected: {
+                      localSha: syncConflict.localSha,
+                      remoteSha: syncConflict.remoteSha,
+                    },
+                  })
+                }
               >
                 Garder cet appareil
               </button>
             </div>
+          </div>
+        )}
+        {syncForeign && (
+          <div
+            className="notice warning sync-conflict"
+            role="alertdialog"
+            aria-labelledby="sync-foreign-title"
+          >
+            <p id="sync-foreign-title">
+              <strong>Ce dépôt contient un autre coffre</strong> (créé
+              séparément ou avec une autre phrase secrète), enregistré le{" "}
+              {dateTimeLabel(syncForeign.remoteSavedAt)}. Rien n’a été modifié.
+            </p>
+            <p className="meta">
+              Pour utiliser celui du dépôt sur cet appareil : exportez d’abord
+              une sauvegarde chiffrée de ce coffre-ci (Documents et réglages),
+              verrouillez, puis choisissez « Ouvrir depuis GitHub ».
+            </p>
+            {syncForeign.confirming ? (
+              <>
+                <p>
+                  Le coffre du dépôt sera remplacé par celui de cet appareil ;
+                  il ne restera que dans l’historique du dépôt.
+                </p>
+                <div className="action-row">
+                  <button
+                    className="button secondary small"
+                    disabled={syncBusy}
+                    onClick={() =>
+                      void manualSync({
+                        kind: "local",
+                        replaceForeign: true,
+                        expected: syncForeign.remoteSha
+                          ? { remoteSha: syncForeign.remoteSha }
+                          : undefined,
+                      })
+                    }
+                  >
+                    Confirmer le remplacement
+                  </button>
+                  <button
+                    className="button secondary small"
+                    disabled={syncBusy}
+                    onClick={() =>
+                      setSyncForeign({ ...syncForeign, confirming: false })
+                    }
+                  >
+                    Annuler
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="action-row">
+                <button
+                  className="button secondary small"
+                  disabled={syncBusy}
+                  onClick={() =>
+                    setSyncForeign({ ...syncForeign, confirming: true })
+                  }
+                >
+                  Remplacer celui du dépôt par ce coffre
+                </button>
+                <button
+                  className="button secondary small"
+                  disabled={syncBusy}
+                  onClick={stopSync}
+                >
+                  Désactiver la synchronisation
+                </button>
+              </div>
+            )}
           </div>
         )}
         <div className="period-bar">
@@ -2833,7 +2986,7 @@ export default function App() {
                   demo={demo}
                   busy={syncBusy}
                   onConfigure={enableSync}
-                  onSyncNow={() => void manualSync("manual")}
+                  onSyncNow={() => void manualSync({ kind: "manual" })}
                   onDisable={stopSync}
                 />
               </Card>
@@ -3031,7 +3184,12 @@ export default function App() {
           key={`${editor.type}-${editor.id || "new"}`}
           spec={editor}
           data={data}
-          onSave={persist}
+          onSave={(next) => {
+            // Un tirage pendant l'édition : les champs du formulaire datent d'avant, ne pas les réécrire.
+            if (pullCount.current !== editorPulls.current)
+              return Promise.reject(new Error(EDITED_ELSEWHERE));
+            return persist(next);
+          }}
           onClose={() => setEditor(null)}
         />
       )}

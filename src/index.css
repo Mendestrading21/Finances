@@ -1683,7 +1683,8 @@ details[open] > summary::after {
 }
 .sync-status.sync-offline,
 .sync-status.sync-conflict,
-.sync-status.sync-reconfigure {
+.sync-status.sync-reconfigure,
+.sync-status.sync-foreign {
   color: var(--warning);
 }
 .sync-status.sync-error {

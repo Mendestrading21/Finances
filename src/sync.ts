@@ -2,11 +2,13 @@ import type { FinanceData } from "./domain/types";
 import {
   envelopeInfo,
   exportVault,
+  type EnvelopeInfo,
   importVault,
   openSecret,
   replaceVaultFromRemote,
   resealVault,
   sealSecret,
+  VaultKeyMismatchError,
 } from "./vault";
 
 export { VaultChangedError, VaultKeyMismatchError } from "./vault";
@@ -21,6 +23,12 @@ const NAME_PATTERN = /^[A-Za-z0-9_.-]{1,100}$/;
 const PATH_PATTERN = /^[A-Za-z0-9_.\-/]{1,200}$/;
 // Printable ASCII only, so the token can never break or inject an HTTP header.
 const TOKEN_PATTERN = /^[\x21-\x7E]{20,255}$/;
+const TOKEN_PREFIX = "github_pat_";
+const TOKEN_ERROR = "Jeton GitHub invalide : 20 à 255 caractères, sans espace.";
+const FINE_GRAINED_ERROR =
+  "Utilisez un jeton « fine-grained » (il commence par github_pat_), limité à ce seul dépôt.";
+const MAX_REMOTE_BYTES = 25_000_000;
+const BYTES_PER_EXTRA_SECOND = 50_000;
 const SHA_PATTERN = /^[0-9a-f]{40}$/;
 const SAVED_AT_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 const APP_REPOSITORIES = [
@@ -55,12 +63,25 @@ export type SyncConfig = SyncTarget & {
 export type SyncResult =
   | { status: "pushed" | "up-to-date" }
   | { status: "pulled"; data: FinanceData }
-  | { status: "conflict"; localSavedAt?: string; remoteSavedAt?: string };
+  | {
+      status: "conflict";
+      localSavedAt?: string;
+      remoteSavedAt?: string;
+      localSha: string;
+      remoteSha: string;
+    }
+  | { status: "foreign"; remoteSavedAt?: string; remoteSha: string };
+export type ResolveOptions = {
+  expected?: { localSha?: string; remoteSha: string };
+  replaceForeign?: boolean;
+};
 export type SyncState =
   | { state: "off" }
   | { state: "ready"; config: SyncConfig }
   | { state: "reconfigure" };
-export type RemoteVault = { raw: string; sha: string };
+/** `raw` is null only when getRemote was given the matching `knownSha` for a file served without inline content. */
+export type RemoteVault = { raw: string | null; sha: string };
+type RemoteContent = { raw: string; sha: string };
 
 type SealedToken = { iv: string; ct: string };
 type StoredConfig = {
@@ -72,7 +93,13 @@ type StoredConfig = {
   lastSha?: string;
   lastSavedAt?: string;
 };
-type LocalVault = { raw: string; savedAt?: string; sha: string };
+type LocalVault = {
+  raw: string;
+  sha: string;
+  savedAt?: string;
+  salt: string;
+  iterations: number;
+};
 
 export class SyncError extends Error {
   constructor(message: string) {
@@ -144,6 +171,11 @@ function validateLocation(owner: string, repo: string, path: string): void {
   }
 }
 
+function tokenProblem(token: string): string | null {
+  if (!TOKEN_PATTERN.test(token)) return TOKEN_ERROR;
+  return token.startsWith(TOKEN_PREFIX) ? null : FINE_GRAINED_ERROR;
+}
+
 /** Normalizes and strictly validates user input; never echoes the token in an error. */
 export function validateSyncSettings(settings: SyncSettings): SyncTarget {
   if (!record(settings)) {
@@ -154,11 +186,8 @@ export function validateSyncSettings(settings: SyncSettings): SyncTarget {
   const path = trimmed(settings.path) || DEFAULT_SYNC_PATH;
   const token = trimmed(settings.token);
   validateLocation(owner, repo, path);
-  if (!TOKEN_PATTERN.test(token)) {
-    throw new SyncError(
-      "Jeton GitHub invalide : 20 à 255 caractères, sans espace.",
-    );
-  }
+  const problem = tokenProblem(token);
+  if (problem) throw new SyncError(problem);
   return { owner, repo, path, token };
 }
 
@@ -350,11 +379,20 @@ async function bodyJson(response: Response): Promise<unknown> {
 async function github<T>(
   target: SyncTarget,
   url: string,
-  options: { method?: "GET" | "PUT"; accept?: string; body?: string },
+  options: {
+    method?: "GET" | "PUT";
+    accept?: string;
+    body?: string;
+    bytes?: number;
+  },
   read: (response: Response) => Promise<T>,
 ): Promise<T> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  // One extra second per 50 kB, so a large vault on a slow connection is not cut off.
+  const timeout =
+    TIMEOUT_MS +
+    Math.ceil((options.bytes ?? 0) / BYTES_PER_EXTRA_SECOND) * 1_000;
+  const timer = setTimeout(() => controller.abort(), timeout);
   try {
     let response: Response;
     try {
@@ -385,6 +423,10 @@ async function github<T>(
 export async function checkRepoPrivate(target: SyncTarget): Promise<void> {
   const body = await github(target, repoUrl(target), {}, async (response) => {
     if (!response.ok) throw httpError(response);
+    // Classic tokens report their (repository-wide) scopes; fine-grained ones do not.
+    if (response.headers.get("x-oauth-scopes")?.trim()) {
+      throw new SyncError(FINE_GRAINED_ERROR);
+    }
     return bodyJson(response);
   });
   if (!record(body)) throw unexpectedResponse();
@@ -404,6 +446,7 @@ export async function checkRepoPrivate(target: SyncTarget): Promise<void> {
 
 export async function getRemote(
   target: SyncTarget,
+  knownSha?: string,
 ): Promise<RemoteVault | null> {
   const url = contentsUrl(target);
   const meta = await github(target, url, {}, async (response) => {
@@ -425,11 +468,18 @@ export async function getRemote(
   ) {
     return { raw: decodeBase64Utf8(meta.content), sha };
   }
-  // Files over 1 MB come without inline content: fetch the raw bytes separately.
+  const size = typeof meta.size === "number" ? meta.size : 0;
+  if (size > MAX_REMOTE_BYTES) {
+    throw new SyncError(
+      "Le fichier distant est trop volumineux pour un coffre Finance. Rien n’a été modifié.",
+    );
+  }
+  // Files over 1 MB come without inline content: skip the download when already known, else fetch the raw bytes.
+  if (knownSha !== undefined && sha === knownSha) return { raw: null, sha };
   const raw = await github(
     target,
     url,
-    { accept: "application/vnd.github.raw+json" },
+    { accept: "application/vnd.github.raw+json", bytes: size },
     async (response) => {
       if (!response.ok) throw httpError(response);
       return bodyText(response);
@@ -458,7 +508,7 @@ export async function putRemote(
   const result = await github(
     target,
     contentsUrl(target),
-    { method: "PUT", body },
+    { method: "PUT", body, bytes: body.length },
     async (response) => {
       if (response.status === 409 || response.status === 422) {
         throw new SyncConflictError();
@@ -485,16 +535,27 @@ function exclusive<T>(task: () => Promise<T>): Promise<T> {
 }
 
 async function describeLocal(raw: string): Promise<LocalVault> {
-  const { savedAt } = envelopeInfo(raw);
+  const { savedAt, salt, iterations } = envelopeInfo(raw);
   return {
     raw,
     sha: await gitBlobSha(raw),
+    salt,
+    iterations,
     ...(savedAt === undefined ? {} : { savedAt }),
   };
 }
 
 function readLocal(): Promise<LocalVault> {
   return describeLocal(exportVault());
+}
+
+async function getRemoteContent(
+  target: SyncTarget,
+): Promise<RemoteContent | null> {
+  const remote = await getRemote(target);
+  if (remote === null) return null;
+  if (remote.raw === null) throw unexpectedResponse();
+  return { raw: remote.raw, sha: remote.sha };
 }
 
 function unchangedSinceSync(local: LocalVault, config: SyncConfig): boolean {
@@ -505,30 +566,39 @@ function unchangedSinceSync(local: LocalVault, config: SyncConfig): boolean {
   );
 }
 
-function conflict(localSavedAt?: string, remoteSavedAt?: string): SyncResult {
+type Inspected = { foreign: boolean; savedAt?: string };
+
+/** Compares envelope metadata only, never decrypts; an unreadable file counts as another vault. */
+function inspectRemote(local: LocalVault, remote: RemoteContent): Inspected {
+  let info: EnvelopeInfo;
+  try {
+    info = envelopeInfo(remote.raw);
+  } catch {
+    return { foreign: true };
+  }
   return {
-    status: "conflict",
-    ...(localSavedAt === undefined ? {} : { localSavedAt }),
-    ...(remoteSavedAt === undefined ? {} : { remoteSavedAt }),
+    foreign: info.salt !== local.salt || info.iterations !== local.iterations,
+    ...(info.savedAt === undefined ? {} : { savedAt: info.savedAt }),
   };
 }
 
-function readableSavedAt(raw: string): string | undefined {
-  try {
-    return envelopeInfo(raw).savedAt;
-  } catch {
-    return undefined;
+function divergence(
+  local: LocalVault,
+  remote: RemoteContent,
+  inspected: Inspected,
+): SyncResult {
+  const remoteSavedAt =
+    inspected.savedAt === undefined ? {} : { remoteSavedAt: inspected.savedAt };
+  if (inspected.foreign) {
+    return { status: "foreign", remoteSha: remote.sha, ...remoteSavedAt };
   }
-}
-
-function remoteSavedAtOf(raw: string): string | undefined {
-  try {
-    return envelopeInfo(raw).savedAt;
-  } catch {
-    throw new SyncError(
-      "Le fichier distant n’est pas un coffre Finance lisible par cette version. Rien n’a été modifié.",
-    );
-  }
+  return {
+    status: "conflict",
+    localSha: local.sha,
+    remoteSha: remote.sha,
+    ...(local.savedAt === undefined ? {} : { localSavedAt: local.savedAt }),
+    ...remoteSavedAt,
+  };
 }
 
 /** Updates `config` in place, then persists best effort: a lost write is recovered next time by byte comparison. */
@@ -562,11 +632,24 @@ function remember(
   }
 }
 
+/** Reports the current situation without writing the vault or the remote. */
+function classify(
+  config: SyncConfig,
+  local: LocalVault,
+  remote: RemoteContent,
+): SyncResult {
+  if (remote.raw === local.raw) {
+    remember(config, remote.sha, local.savedAt);
+    return { status: "up-to-date" };
+  }
+  return divergence(local, remote, inspectRemote(local, remote));
+}
+
 async function pull(
   key: CryptoKey,
   config: SyncConfig,
   local: LocalVault,
-  remote: RemoteVault,
+  remote: RemoteContent,
   remoteSavedAt: string | undefined,
 ): Promise<SyncResult> {
   // Only the snapshot this decision was based on may be replaced; a later local save raises VaultChangedError.
@@ -579,22 +662,22 @@ async function reconcile(
   key: CryptoKey,
   config: SyncConfig,
   local: LocalVault,
-  remote: RemoteVault,
+  remote: RemoteContent,
 ): Promise<SyncResult> {
   if (remote.raw === local.raw) {
     remember(config, remote.sha, local.savedAt);
     return { status: "up-to-date" };
   }
-  const remoteSavedAt = remoteSavedAtOf(remote.raw);
+  const inspected = inspectRemote(local, remote);
   // An older remote than the last synced version is a stale read or a skewed clock: let the person decide.
   const remoteOlder =
-    remoteSavedAt !== undefined &&
+    inspected.savedAt !== undefined &&
     config.lastSavedAt !== undefined &&
-    remoteSavedAt < config.lastSavedAt;
-  if (unchangedSinceSync(local, config) && !remoteOlder) {
-    return pull(key, config, local, remote, remoteSavedAt);
+    inspected.savedAt < config.lastSavedAt;
+  if (!inspected.foreign && !remoteOlder && unchangedSinceSync(local, config)) {
+    return pull(key, config, local, remote, inspected.savedAt);
   }
-  return conflict(local.savedAt, remoteSavedAt);
+  return divergence(local, remote, inspected);
 }
 
 async function push(
@@ -602,26 +685,22 @@ async function push(
   config: SyncConfig,
   local: LocalVault,
   remote: RemoteVault | null,
-  onRace: "reconcile" | "conflict",
+  onRace: "reconcile" | "classify",
 ): Promise<SyncResult> {
   try {
-    await checkRepoPrivate(config);
     const sha = await putRemote(config, local.raw, remote?.sha);
     remember(config, sha, local.savedAt);
     return { status: "pushed" };
   } catch (error) {
     if (!(error instanceof SyncConflictError)) throw error;
   }
-  const current = await getRemote(config);
+  const current = await getRemoteContent(config);
   if (current === null || current.sha === remote?.sha) {
     throw new SyncError(REFUSED_ERROR);
   }
-  if (onRace === "reconcile") return reconcile(key, config, local, current);
-  if (current.raw === local.raw) {
-    remember(config, current.sha, local.savedAt);
-    return { status: "up-to-date" };
-  }
-  return conflict(local.savedAt, remoteSavedAtOf(current.raw));
+  return onRace === "reconcile"
+    ? reconcile(key, config, local, current)
+    : classify(config, local, current);
 }
 
 /** Validates, requires a private repository, then stores the settings with the token sealed by the vault key. */
@@ -644,7 +723,7 @@ export function configureSync(
   });
 }
 
-/** "reconfigure": settings exist but cannot be read with this vault key (e.g. vault restored with another salt). */
+/** "reconfigure": settings exist but cannot be used with this vault key (e.g. vault restored with another salt, or an older kind of token). */
 export async function loadSyncState(key: CryptoKey): Promise<SyncState> {
   const raw = readStored();
   if (raw === null) return { state: "off" };
@@ -656,7 +735,7 @@ export async function loadSyncState(key: CryptoKey): Promise<SyncState> {
   } catch {
     return { state: "reconfigure" };
   }
-  if (!TOKEN_PATTERN.test(token)) return { state: "reconfigure" };
+  if (tokenProblem(token)) return { state: "reconfigure" };
   return {
     state: "ready",
     config: {
@@ -688,16 +767,21 @@ export function disableSync(): void {
   }
 }
 
-/** Pushes, pulls or reports a conflict without writing anything; updates `config` in place. */
+/** Pushes, pulls, or reports a conflict or a foreign vault without writing anything; updates `config` in place. */
 export function syncNow(
   key: CryptoKey,
   config: SyncConfig,
 ): Promise<SyncResult> {
   return exclusive(async () => {
+    await checkRepoPrivate(config);
     const local = await readLocal();
-    const remote = await getRemote(config);
+    const remote = await getRemote(config, config.lastSha);
     if (remote !== null && remote.sha !== config.lastSha) {
-      return reconcile(key, config, local, remote);
+      if (remote.raw === null) throw unexpectedResponse();
+      return reconcile(key, config, local, {
+        raw: remote.raw,
+        sha: remote.sha,
+      });
     }
     if (remote !== null && unchangedSinceSync(local, config)) {
       return { status: "up-to-date" };
@@ -706,34 +790,59 @@ export function syncNow(
   });
 }
 
-/** Explicit choice after a conflict: "remote" replaces this vault, "local" overwrites the remote file. */
+/** Explicit choice after a conflict: "remote" replaces this vault, "local" overwrites the remote file (a foreign vault only with `replaceForeign`). */
 export function resolveConflict(
   key: CryptoKey,
   config: SyncConfig,
   choice: "remote" | "local",
+  options: ResolveOptions = {},
 ): Promise<SyncResult> {
   return exclusive(async () => {
+    await checkRepoPrivate(config);
     const local = await readLocal();
-    const remote = await getRemote(config);
+    const remote = await getRemoteContent(config);
+    const expected = options.expected;
+    if (
+      expected !== undefined &&
+      ((expected.localSha !== undefined && expected.localSha !== local.sha) ||
+        remote?.sha !== expected.remoteSha)
+    ) {
+      // The choice was made on what was shown; describe what is there now instead of applying it.
+      if (remote === null) {
+        throw new SyncError(
+          "Le coffre distant a disparu depuis l’affichage du choix. Rien n’a été modifié ; relancez la synchronisation.",
+        );
+      }
+      return classify(config, local, remote);
+    }
     if (remote !== null && remote.raw === local.raw) {
       remember(config, remote.sha, local.savedAt);
       return { status: "up-to-date" };
     }
+    const inspected = remote === null ? null : inspectRemote(local, remote);
     if (choice === "remote") {
-      if (remote === null) {
+      if (remote === null || inspected === null) {
         throw new SyncError("Aucun coffre trouvé dans ce dépôt.");
       }
-      return pull(key, config, local, remote, remoteSavedAtOf(remote.raw));
+      if (inspected.foreign) throw new VaultKeyMismatchError();
+      return pull(key, config, local, remote, inspected.savedAt);
     }
     if (choice !== "local") throw new SyncError("Choix de résolution inconnu.");
+    if (
+      remote !== null &&
+      inspected !== null &&
+      inspected.foreign &&
+      !options.replaceForeign
+    ) {
+      return divergence(local, remote, inspected);
+    }
     // A fresh savedAt makes the kept version newer than the one it replaces, so other devices pull it instead of conflicting again.
     const raw = await resealVault(
       key,
       local.raw,
-      remote === null ? undefined : readableSavedAt(remote.raw),
+      inspected !== null && !inspected.foreign ? inspected.savedAt : undefined,
     );
-    const resealed = await describeLocal(raw);
-    return push(key, config, resealed, remote, "conflict");
+    return push(key, config, await describeLocal(raw), remote, "classify");
   });
 }
 
@@ -746,7 +855,7 @@ export function openFromGitHub(
   return exclusive(async () => {
     const target = validateSyncSettings(settings);
     await checkRepoPrivate(target);
-    const remote = await getRemote(target);
+    const remote = await getRemoteContent(target);
     if (remote === null) {
       throw new SyncError("Aucun coffre trouvé dans ce dépôt.");
     }

@@ -1751,6 +1751,91 @@ test("sync: one vault on two devices through a private GitHub repository, encryp
   await wake(pageB);
   await page.waitForTimeout(3000);
   expect(github.puts).toHaveLength(before + 3);
+
+  // An editor left open on A while B's change is pulled must not write back its older fields.
+  await page.getByRole("button", { name: "Modifier Courses synchro test", exact: true }).click();
+  const staleEditor = page.getByRole("dialog");
+  await pageB.getByRole("button", { name: "Modifier Courses synchro test", exact: true }).click();
+  await pageB.getByRole("dialog").getByLabel("Montant", { exact: true }).fill("60");
+  await pageB.getByRole("dialog").getByRole("button", { name: "Enregistrer", exact: true }).click();
+  await expect.poll(() => github.puts.length).toBe(before + 4);
+  await wake(page);
+  await expect(page.getByText("Mis à jour avec les modifications")).toBeVisible();
+  await staleEditor.getByLabel("Libellé").fill("Courses renommées A");
+  await staleEditor.getByRole("button", { name: "Enregistrer", exact: true }).click();
+  await expect(staleEditor).toContainText("mis à jour depuis un autre appareil pendant l’édition");
+  await staleEditor.getByRole("button", { name: "Annuler", exact: true }).click();
+  await expect(page.getByText("Courses renommées A")).toHaveCount(0);
+  await expect(
+    page.locator(".row", { hasText: "Courses synchro test" }).first(),
+  ).toContainText("60.00");
+  expect(github.puts).toHaveLength(before + 4);
+  await pageB.close();
+  expect(errors).toEqual([]);
+});
+
+test("sync: a separately created vault in the repository is never merged or overwritten without an explicit choice", async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  const github = fakeGitHub();
+  const token = `github_pat_${"EXEMPLEFICTIF".repeat(3)}`; // Synthetic, never a real token.
+  const enableSync = async (p: Page) => {
+    await p
+      .getByRole("navigation", { name: "Navigation principale", exact: true })
+      .getByRole("button", { name: "Documents et réglages", exact: true })
+      .click();
+    const card = p.locator(".card", {
+      has: p.locator(".card-title", { hasText: "Synchronisation entre appareils" }),
+    });
+    await card.getByLabel("Propriétaire GitHub").fill("exemple-test");
+    await card.getByLabel("Dépôt privé").fill("finance-coffre-test");
+    await card.getByLabel("Jeton d’accès").fill(token);
+    await card.getByRole("button", { name: "Activer la synchronisation" }).click();
+    return card;
+  };
+  const createVault = async (p: Page, secret: string) => {
+    await p.getByLabel("Phrase secrète", { exact: true }).fill(secret);
+    await p.getByLabel("Confirmer la phrase secrète").fill(secret);
+    await p.getByRole("button", { name: "Créer mon coffre" }).click();
+  };
+
+  // A: the vault already in use, synchronized.
+  await page.context().route("https://api.github.com/**", github.handle);
+  await page.goto("/");
+  await createVault(page, "Exemple-test-Finance-coffre-A");
+  const cardA = await enableSync(page);
+  await expect(cardA.getByRole("status")).toContainText("Synchronisé");
+  const remoteA = github.file.raw;
+
+  // B: a second vault created separately, then pointed at the same repository.
+  const originB = new URL(page.url()).origin.replace("127.0.0.1", "localhost");
+  const pageB = await page.context().newPage();
+  pageB.on("pageerror", (e) => errors.push(e.message));
+  await pageB.goto(`${originB}/`);
+  await createVault(pageB, "Exemple-test-Finance-coffre-B");
+  await enableSync(pageB);
+  const foreign = pageB.getByRole("alertdialog");
+  await expect(foreign).toContainText("Ce dépôt contient un autre coffre");
+  expect(github.file.raw).toBe(remoteA);
+
+  // Replacing needs a second, explicit confirmation; cancelling writes nothing.
+  await foreign.getByRole("button", { name: "Remplacer celui du dépôt par ce coffre" }).click();
+  await foreign.getByRole("button", { name: "Annuler", exact: true }).click();
+  expect(github.puts).toHaveLength(1);
+  await foreign.getByRole("button", { name: "Remplacer celui du dépôt par ce coffre" }).click();
+  await foreign.getByRole("button", { name: "Confirmer le remplacement", exact: true }).click();
+  await expect(foreign).toHaveCount(0);
+  await expect.poll(() => github.puts.length).toBe(2);
+
+  // A is told the repository now holds another vault; nothing on A is replaced.
+  await page.bringToFront();
+  await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+  await expect(page.getByRole("alertdialog")).toContainText("Ce dépôt contient un autre coffre");
+  await expect(cardA.getByRole("status")).toContainText("autre coffre");
+  expect(github.puts).toHaveLength(2);
   await pageB.close();
   expect(errors).toEqual([]);
 });
