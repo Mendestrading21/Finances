@@ -748,6 +748,11 @@ Demande de l'utilisateur, capture de sa table Notion à l'appui : voir sur chaqu
 - Icônes ajoutées : parapluie (prévoyance), mallette (business), carte (dette), cœur (types libres).
 - La démonstration fictive montre cinq types, dont « 3e pilier » et un compte « Enfant ».
 
+Preuves :
+- `typecheck`, `test` (**257/257**, dont 3 nouveaux tests `accountTypes` : jeu de 10 comptes façon Notion, conversion USD, somme des types égale au total), `build`.
+- Les **22** scénarios `test:e2e` rejoués individuellement. Le nouveau « account types… » crée deux comptes 3e pilier, un compte « Léna » en type libre et un compte courant, puis vérifie l'ordre et les totaux des groupes sur Mes comptes, les parts sur l'Accueil et le type relu à la réouverture.
+- Captures `02` à `04` régénérées (carte « Patrimoine par type », anneau à cinq types) et revues ; aucun débordement horizontal à 1 280 ni à 390 px.
+
 ## État réel
 
 | Élément                           | État                                                                                                                                                                   | Résultat et limite                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
