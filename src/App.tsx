@@ -36,6 +36,7 @@ import {
   wealthSummary,
   findOccurrenceTransaction,
   projectedOccurrence,
+  rhythmLabel,
   simpleRepeatOf,
   withOccurrenceAmount,
   withRecurrenceAmount,
@@ -1390,7 +1391,7 @@ export default function App() {
     const linked = findOccurrenceTransaction(data.transactions, recurrenceId, occurrenceDate);
     if (scope === "following" && linked && linked.currency !== recurrence.currency)
       throw new Error(
-        "Cette échéance est dans une autre devise que la facture : choisissez « Ce mois seulement », ou changez la devise avec « Modifier le nom, le jour… ».",
+        "Cette échéance est dans une autre devise que la facture : choisissez « Ce mois seulement », ou changez la devise avec « Modifier le nom, le compte… ».",
       );
     let next: FinanceData = data;
     if (scope === "following") {
@@ -1472,6 +1473,9 @@ export default function App() {
       count = 0;
     for (const r of data.recurrences) {
       if (!r.active || r.recurrenceType !== type) continue;
+      // Un seul mois n'est pas une charge mensuelle ; une règle terminée n'en est plus une.
+      if (simpleRepeatOf(r) === "single" || nextOccurrenceDate(r, `${at.slice(0, 7)}-01`) === null)
+        continue;
       count++;
       const converted = convertMinor(
         monthlyEquivalentMinor(r, at),
@@ -1498,8 +1502,13 @@ export default function App() {
     const item = subsCohortByRecurrence.get(r.id);
     return subsStatus === "settled" ? !!item?.settled : !!item && !item.settled;
   };
+  // Ce qui s'est terminé avant le mois affiché n'y figure plus (visible dans ses propres mois).
   const subsActive = data.recurrences.filter(
-    (r) => r.active && subsMatchesType(r) && subsMatchesStatus(r),
+    (r) =>
+      r.active &&
+      !(r.endDate && r.endDate < `${month}-01`) &&
+      subsMatchesType(r) &&
+      subsMatchesStatus(r),
   );
   const subsInactive = data.recurrences
     .filter((r) => !r.active && subsMatchesType(r))
@@ -1558,7 +1567,7 @@ export default function App() {
     const ia = subsCohortByRecurrence.get(a.id)!,
       ib = subsCohortByRecurrence.get(b.id)!;
     return (
-      Number(ia.settled) - Number(ib.settled) ||
+      Number(!!ia.settled) - Number(!!ib.settled) ||
       ia.currency.localeCompare(ib.currency) ||
       ib.dueAmountMinor - ia.dueAmountMinor ||
       a.label.localeCompare(b.label)
@@ -1602,22 +1611,6 @@ export default function App() {
   const incomeActive = incomes.due,
     incomeElsewhere = incomes.elsewhere,
     incomeInactive = incomes.stopped;
-  // Rythme d'une facture ou d'un revenu, sans date : « Tous les mois », « Seulement … ».
-  const scheduleLabel = (r: Recurrence) => {
-    const start = r.startDate.slice(0, 7);
-    const repeat = simpleRepeatOf(r);
-    if (repeat === "single")
-      return start === month ? "Seulement ce mois" : `Seulement ${monthLabel(start)}`;
-    const every =
-      r.intervalMonths === 1
-        ? "Tous les mois"
-        : r.intervalMonths === 12
-          ? "Tous les ans"
-          : `Tous les ${r.intervalMonths} mois`;
-    if (start > month) return `${every} dès ${monthLabel(start)}`;
-    if (r.endDate) return `${every} jusqu’en ${monthLabel(r.endDate.slice(0, 7))}`;
-    return every;
-  };
   // Prefills "Marquer payé/reçu" from a not-yet-persisted occurrence, mirroring
   // `transactionsForMonth`'s own virtual-transaction shape and id (`recurrenceId:date`) so a
   // settlement made here and one made from Mon mois never create two different transactions
@@ -2130,7 +2123,8 @@ export default function App() {
             {!r.active ? (
               r.endDate ? (
                 <>
-                  Terminé le <span className="nowrap">{r.endDate}</span>
+                  Terminé en{" "}
+                  <span className="nowrap">{monthLabel(r.endDate.slice(0, 7))}</span>
                 </>
               ) : (
                 "En pause"
@@ -2138,7 +2132,7 @@ export default function App() {
             ) : (
               <>
                 <span className="nowrap">
-                  {bills ? scheduleLabel(r) : monthLabel(month)}
+                  {bills ? rhythmLabel(r, month) : monthLabel(month)}
                 </span>
                 {/* Factures : pas d'échéance ce mois-ci = rangée à part, sans statut ni montant. */}
                 {!(bills && !cohortItem) && SEP}

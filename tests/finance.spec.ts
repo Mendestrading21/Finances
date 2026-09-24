@@ -2045,6 +2045,23 @@ test("bills: a monthly bill shows on Factures and Mon mois; a small change appli
   await expect(taxRow).toContainText("Tous les mois");
   await expect(taxRow).toContainText("400.00");
   await expect(taxRow).toContainText("Pas encore payé");
+
+  // Stopping cleanly: « Jusqu'en {mois} » keeps every month before, nothing after.
+  await page.getByRole("button", { name: "Modifier Électricité test", exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "Modifier Électricité test" })
+    .getByRole("button", { name: "Modifier le nom, le compte, la répétition ou l’arrêter", exact: true })
+    .click();
+  dialog = page.getByRole("dialog", { name: "Une facture" });
+  await expect(dialog.getByRole("button", { name: /^Seulement / })).toHaveCount(0);
+  await dialog.getByRole("button", { name: /^Jusqu’en / }).click();
+  await dialog.getByRole("button", { name: "Enregistrer", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(billRow).toContainText("100.00");
+  await goToMonth(2);
+  await expect(billRow).toHaveCount(0);
+  await goToMonth(-1);
+  await expect(billRow).toContainText("80.00");
   expect(errors).toEqual([]);
 });
 

@@ -14,13 +14,14 @@ import {
   type Transaction,
 } from "../domain/types";
 import {
+  applySimpleEdit,
   monthLabel,
   parseMoney,
-  simpleRepeatOf,
+  rhythmLabel,
+  simpleEditOptions,
   today,
   withRecurrenceAmount,
-  withSimpleSchedule,
-  type SimpleRepeat,
+  type SimpleChoice,
 } from "../domain/finance";
 import { Icon } from "./Icon";
 /** Amount-related fields for a saved recurrence: routes an existing recurrence's amount
@@ -141,23 +142,18 @@ export default function Editor({
     spec.type === "recurrence"
       ? data.recurrences.find((r) => r.id === spec.id)
       : undefined;
+  // « Plus d'options » rouvre le formulaire complet (nature, catégorie, jour, dates).
+  const [full, setFull] = useState(false);
   const simple =
+    !full &&
     spec.type === "recurrence" &&
     (existingRecurrence
       ? existingRecurrence.recurrenceType === "bill" ||
         existingRecurrence.recurrenceType === "income"
       : !!spec.simple);
-  const currentRepeat = existingRecurrence
-    ? simpleRepeatOf(existingRecurrence)
-    : "monthly";
-  // Un seul mois qui n'est pas celui affiché, ou une cadence réglée ailleurs : gardée par défaut.
-  const keepOffered =
-    !!existingRecurrence &&
-    (currentRepeat === "other" ||
-      (currentRepeat === "single" &&
-        existingRecurrence.startDate.slice(0, 7) !== month));
-  const [repeatChoice, setRepeatChoice] = useState<SimpleRepeat | "keep">(
-    keepOffered ? "keep" : currentRepeat === "single" ? "single" : "monthly",
+  const simpleOptions = simpleEditOptions(existingRecurrence, month);
+  const [repeatChoice, setRepeatChoice] = useState<SimpleChoice>(
+    simpleOptions.initial,
   );
   const monthName = monthLabel(month);
   const item =
@@ -481,8 +477,8 @@ export default function Editor({
           : [...updated.positions, p];
       }
       if (spec.type === "recurrence" && simple) {
-        const existing = data.recurrences.find((r) => r.id === id);
-        const r = withSimpleSchedule(
+        const next = applySimpleEdit(
+          updated,
           {
             id,
             label: get("label"),
@@ -494,14 +490,13 @@ export default function Editor({
             active: get("active") === "true",
             source,
           },
-          existing,
           repeatChoice,
           month,
           num("amountMinor"),
+          crypto.randomUUID(),
         );
-        updated.recurrences = existing
-          ? updated.recurrences.map((v) => (v.id === id ? r : v))
-          : [...updated.recurrences, r];
+        updated.recurrences = next.recurrences;
+        updated.transactions = next.transactions;
       } else if (spec.type === "recurrence") {
         const existing = data.recurrences.find((r) => r.id === id);
         const amounts = recurrenceAmountFields(existing, num("amountMinor"));
@@ -887,7 +882,11 @@ export default function Editor({
                 )}
               />
               {field("Montant", "amountMinor", {
-                defaultValue: amount("amountMinor"),
+                // Le montant du mois affiché (ou de la prochaine échéance), pas un changement
+                // déjà prévu pour plus tard.
+                defaultValue: existingRecurrence
+                  ? String(simpleOptions.amountMinor / 100)
+                  : "",
                 required: true,
               })}
               {currency()}
@@ -899,13 +898,7 @@ export default function Editor({
                   role="group"
                   aria-labelledby="simple-repeat-label"
                 >
-                  {(
-                    [
-                      ...(keepOffered ? [["keep", "Comme maintenant"]] : []),
-                      ["monthly", "Tous les mois"],
-                      ["single", `Seulement ${monthName}`],
-                    ] as [SimpleRepeat | "keep", string][]
-                  ).map(([value, label]) => (
+                  {simpleOptions.choices.map((value) => (
                     <button
                       key={value}
                       type="button"
@@ -913,18 +906,25 @@ export default function Editor({
                       aria-pressed={repeatChoice === value}
                       onClick={() => setRepeatChoice(value)}
                     >
-                      {label}
+                      {value === "monthly"
+                        ? "Tous les mois"
+                        : value === "single"
+                          ? `Seulement ${monthName}`
+                          : value === "until"
+                            ? `Jusqu’en ${monthName}`
+                            : "Comme maintenant"}
                     </button>
                   ))}
                 </div>
               </div>
-              {existingRecurrence ? (
+              {existingRecurrence && !existingRecurrence.active ? (
+                // Une facture en pause peut reprendre ; pour arrêter, « Jusqu'en … » garde le passé.
                 field("Récurrence", "active", {
-                  defaultValue: val("active", "true"),
+                  defaultValue: "false",
                   children: (
                     <>
-                      <option value="true">Active</option>
-                      <option value="false">Arrêtée</option>
+                      <option value="false">En pause</option>
+                      <option value="true">Reprendre</option>
                     </>
                   ),
                 })
@@ -932,24 +932,31 @@ export default function Editor({
                 <input type="hidden" name="active" value="true" />
               )}
               <p className="footer-note field-full">
-                {repeatChoice === "single"
-                  ? `Seulement en ${monthName} : les autres mois ne l’ont pas.${
-                      existingRecurrence && currentRepeat !== "single"
-                        ? " Les paiements déjà enregistrés restent."
-                        : ""
-                    }`
-                  : repeatChoice === "monthly"
-                    ? existingRecurrence
-                      ? `Revient chaque mois. Un nouveau montant s’applique dès ${monthName}.`
-                      : `Revient chaque mois dès ${monthName}, sans date à choisir. ${
-                          recurrenceKind === "income"
-                            ? "Marquez-le reçu quand c’est fait."
-                            : "Marquez-la payée quand c’est fait."
-                        }`
-                    : "Garde son rythme actuel. Un nouveau montant s’applique dès " +
-                      monthName +
-                      "."}
+                {!existingRecurrence
+                  ? repeatChoice === "single"
+                    ? `Seulement en ${monthName}, aucun autre mois.`
+                    : `Revient chaque mois dès ${monthName}, sans date à choisir. ${
+                        recurrenceKind === "income"
+                          ? "Marquez-le reçu quand c’est fait."
+                          : "Marquez-la payée quand c’est fait."
+                      }`
+                  : repeatChoice === "single"
+                    ? `Seulement en ${monthName}, aucun autre mois.`
+                    : repeatChoice === "until"
+                      ? `Dernier mois : ${monthName}. Les mois d’avant ne changent pas.`
+                      : repeatChoice === "keep"
+                        ? `Garde son rythme : ${rhythmLabel(existingRecurrence, month).toLowerCase()}.`
+                        : simpleOptions.initial === "monthly"
+                          ? `Revient chaque mois. Un nouveau montant s’applique dès ${monthName} ; les mois d’avant gardent le leur.`
+                          : `Chaque mois à partir d’ici ; les mois d’avant ne changent pas.`}
               </p>
+              <button
+                type="button"
+                className="text-button field-full"
+                onClick={() => setFull(true)}
+              >
+                Plus d’options (nature, catégorie, dates)
+              </button>
             </>
           )}
           {spec.type === "recurrence" && !simple && (

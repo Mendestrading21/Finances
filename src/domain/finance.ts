@@ -647,16 +647,14 @@ export function recurringFlowSummary(
   };
 }
 
-/** The next date `recurrence` is due on or after `from` (inclusive), or null once it has none
- * left (inactive, or every remaining occurrence is past `endDate`). For a page listing
- * upcoming subscriptions/charges, not the cohort of a specific already-chosen month. Scans
- * forward month by month, bounded the same way `availableSummary` bounds its own scan (1200
- * months / 100 years comfortably covers `intervalMonths`'s 1–120 range). */
 /** Répétition sans date des factures et revenus : « Tous les mois » ou un seul mois. */
 export type SimpleRepeat = "monthly" | "single";
+/** Choix de l'éditeur simple : tous les mois, seulement le mois affiché, jusqu'au mois affiché
+ * (fin propre, les mois d'avant intacts), ou le rythme actuel gardé tel quel. */
+export type SimpleChoice = SimpleRepeat | "until" | "keep";
 
 /** "monthly" (every month, no end), "single" (one month only), or "other" for a cadence set
- * elsewhere (every 3 months, a dated end…), which the simple editor keeps unless changed. */
+ * elsewhere (every 3 months, a dated end…). */
 export function simpleRepeatOf(
   recurrence: Pick<Recurrence, "intervalMonths" | "startDate" | "endDate">,
 ): SimpleRepeat | "other" {
@@ -676,6 +674,117 @@ export function monthBounds(month: string): { first: string; last: string } {
   };
 }
 
+function shiftMonth(month: string, delta: number): string {
+  const [year, monthNumber] = monthParts(month);
+  const absolute = year * 12 + monthNumber - 1 + delta;
+  return `${String(Math.floor(absolute / 12)).padStart(4, "0")}-${String((absolute % 12) + 1).padStart(2, "0")}`;
+}
+
+/** The schedule alone, whether or not the recurrence is paused. */
+function scheduleOnly(recurrence: Recurrence): Recurrence {
+  return recurrence.active ? recurrence : { ...recurrence, active: true };
+}
+
+/** First date the recurrence is ever due (a pause aside), or null when its start, day and end
+ * leave no occurrence at all (an old record, e.g. started after its day in its only month). */
+export function firstOccurrenceDate(recurrence: Recurrence): string | null {
+  return nextOccurrenceDate(scheduleOnly(recurrence), recurrence.startDate);
+}
+
+function lastOccurrenceBefore(recurrence: Recurrence, before: string): string | null {
+  const schedule = scheduleOnly(recurrence);
+  const startMonth = schedule.startDate.slice(0, 7);
+  let month = before.slice(0, 7);
+  for (let i = 0; i < 1200 && month >= startMonth; i++, month = shiftMonth(month, -1)) {
+    const due = occurrenceDueDate(schedule, month);
+    if (due !== null && due < before) return due;
+  }
+  return null;
+}
+
+/** Rythme lisible, sans date : « Tous les mois », « Seulement ce mois », « Tous les ans dès
+ * mars 2027 »… Tiré de la première vraie échéance, pas du début enregistré. */
+export function rhythmLabel(recurrence: Recurrence, month: string): string {
+  const firstDue = firstOccurrenceDate(recurrence);
+  if (firstDue === null) return "Répétition à choisir";
+  const startMonth = firstDue.slice(0, 7);
+  if (simpleRepeatOf(recurrence) === "single")
+    return startMonth === month
+      ? "Seulement ce mois"
+      : `Seulement ${monthLabel(startMonth)}`;
+  const every =
+    recurrence.intervalMonths === 1
+      ? "Tous les mois"
+      : recurrence.intervalMonths === 12
+        ? "Tous les ans"
+        : `Tous les ${recurrence.intervalMonths} mois`;
+  if (startMonth > month) return `${every} dès ${monthLabel(startMonth)}`;
+  if (recurrence.endDate) {
+    const endMonth = recurrence.endDate.slice(0, 7);
+    return endMonth < month
+      ? `${every}, terminé en ${monthLabel(endMonth)}`
+      : `${every} jusqu’en ${monthLabel(endMonth)}`;
+  }
+  return every;
+}
+
+export type SimpleEditOptions = {
+  /** Offered choices, in display order. */
+  choices: SimpleChoice[];
+  initial: SimpleChoice;
+  /** The occurrence whose amount the form shows (this month's, else the next one, else the
+   * last one): a changed amount starts from its month. Null when it is never due. */
+  referenceDate: string | null;
+  amountMinor: number;
+};
+
+/** What the simple editor offers for `recurrence` (undefined: a new one) seen from `month`.
+ * « Seulement {mois} » only when nothing was due before that month (it would otherwise erase
+ * past months); « Jusqu'en {mois} » instead once it has a past and goes on after that month.
+ * A cadence the simple choices cannot express — every 3 months, a start after this month, an
+ * old record never due — is kept by default (« Comme maintenant »), so a rename never moves
+ * any date. */
+export function simpleEditOptions(
+  recurrence: Recurrence | undefined,
+  month: string,
+): SimpleEditOptions {
+  if (!recurrence)
+    return {
+      choices: ["monthly", "single"],
+      initial: "monthly",
+      referenceDate: null,
+      amountMinor: 0,
+    };
+  const { first, last } = monthBounds(month);
+  const schedule = scheduleOnly(recurrence);
+  const firstDue = firstOccurrenceDate(recurrence);
+  const hasPast = firstDue !== null && firstDue < first;
+  const due = occurrenceDueDate(schedule, month);
+  const referenceDate =
+    due ?? nextOccurrenceDate(schedule, first) ?? lastOccurrenceBefore(schedule, first);
+  const repeat = simpleRepeatOf(recurrence);
+  // Jamais due (ancien enregistrement) : rien à garder, « Tous les mois » la répare.
+  const initial: SimpleChoice =
+    firstDue === null || (repeat === "monthly" && firstDue <= last)
+      ? "monthly"
+      : repeat === "single" && due !== null
+        ? "single"
+        : "keep";
+  const choices: SimpleChoice[] = ["monthly"];
+  if (!hasPast) choices.push("single");
+  else if (!recurrence.endDate || recurrence.endDate > last) choices.push("until");
+  if (initial === "keep") choices.push("keep");
+  return {
+    choices,
+    initial,
+    referenceDate,
+    amountMinor:
+      referenceDate === null
+        ? recurrence.amountMinor
+        : recurrenceAmountAt(recurrence, referenceDate),
+  };
+}
+
 type ScheduleFields =
   | "amountMinor"
   | "amountEffectiveFrom"
@@ -685,55 +794,150 @@ type ScheduleFields =
   | "startDate"
   | "endDate";
 
-/** Schedule and amount of a bill or income entered without any date, for the month `month`
- * shown on screen. A new one starts on the 1st of `month`: every month, or that month only.
- * "single" makes an existing one that month only, keeping its day (so an occurrence already
- * paid keeps its date) and one amount, the one given: no dated history, since a change dated
- * after its only occurrence would otherwise never reach it. "monthly" keeps its day and start
- * (moved earlier at most, never later, so no dated amount or past occurrence is lost) and
- * removes any end; "keep" leaves a cadence set elsewhere as it is. For both, a changed amount
- * applies from `month` on through `withRecurrenceAmount`; an unchanged one is left untouched. */
-export function withSimpleSchedule(
+const LATER_AMOUNT_ERROR =
+  "Un autre montant est déjà prévu plus tard : changez le montant d’un mois avec son crayon (« Ce mois seulement » ou « Ce mois et les suivants »).";
+
+/** Saves a bill or income from the simple editor (no date to enter), seen from `month`.
+ * Never changes a month before `month`:
+ * - new: from the 1st of `month`, every month or that month only;
+ * - « Tous les mois »: an unbroken monthly rule just loses its end; one with nothing due
+ *   before `month` restarts there; any other (yearly, ended, an older single month) is split —
+ *   the old rule ends before this month (after its own occurrence of this month, or a payment
+ *   already recorded from it, if any), a new monthly rule `newId` takes over, so no past month
+ *   comes back as unpaid;
+ * - « Seulement {mois} » (offered only with nothing due before): that month alone;
+ * - « Jusqu'en {mois} »: ends with `month`, the months before unchanged;
+ * - « Comme maintenant »: the cadence stays as it is.
+ * A changed amount applies from the month of `simpleEditOptions`' reference occurrence. A
+ * planned occurrence no longer due is removed if it is only the app's own projection (e.g. a
+ * one-month amount); payments and anything edited by hand are kept. */
+export function applySimpleEdit(
+  data: FinanceData,
   base: Omit<Recurrence, ScheduleFields>,
-  existing: Recurrence | undefined,
-  repeat: SimpleRepeat | "keep",
+  choice: SimpleChoice,
   month: string,
   amountMinor: number,
-): Recurrence {
+  newId: string,
+): FinanceData {
   if (!Number.isSafeInteger(amountMinor) || amountMinor < 0)
     throw new Error("Montant de récurrence invalide.");
   const { first, last } = monthBounds(month);
-  const fresh = (day: number, endDate: string | null): Recurrence => ({
+  const fresh = (
+    id: string,
+    day: number,
+    startDate: string,
+    endDate: string | null,
+  ): Recurrence => ({
     ...base,
+    id,
     amountMinor,
     day,
     intervalMonths: 1,
-    startDate: first,
+    startDate,
     endDate,
   });
-  if (!existing) return fresh(1, repeat === "single" ? last : null);
-  if (repeat === "single") return fresh(existing.day, last);
-  const monthly = repeat === "monthly";
-  const scheduled: Recurrence = {
-    ...base,
-    amountMinor: existing.amountMinor,
-    ...(existing.amountEffectiveFrom === undefined
-      ? {}
-      : { amountEffectiveFrom: existing.amountEffectiveFrom }),
-    ...(existing.amountHistory === undefined
-      ? {}
-      : { amountHistory: existing.amountHistory }),
-    day: existing.day,
-    intervalMonths: monthly ? 1 : existing.intervalMonths,
-    startDate:
-      monthly && first < existing.startDate ? first : existing.startDate,
-    endDate: monthly ? null : (existing.endDate ?? null),
+  const existing = data.recurrences.find((r) => r.id === base.id);
+  if (!existing)
+    return {
+      ...data,
+      recurrences: [
+        ...data.recurrences,
+        fresh(base.id, 1, first, choice === "single" ? last : null),
+      ],
+    };
+  const options = simpleEditOptions(existing, month);
+  if (!options.choices.includes(choice))
+    throw new Error("Cette répétition n’est pas possible depuis ce mois-ci.");
+  const kept = (endDate: string | null | undefined): Recurrence => {
+    const next: Recurrence = { ...existing, ...base };
+    if (endDate !== existing.endDate) next.endDate = endDate;
+    if (amountMinor === options.amountMinor) return next;
+    if (options.referenceDate === null) {
+      // Never due: no dated amount to keep.
+      const { amountEffectiveFrom: _from, amountHistory: _history, ...rest } = next;
+      return { ...rest, amountMinor };
+    }
+    try {
+      return withRecurrenceAmount(
+        next,
+        amountMinor,
+        `${options.referenceDate.slice(0, 7)}-01`,
+      );
+    } catch {
+      throw new Error(LATER_AMOUNT_ERROR);
+    }
   };
-  return amountMinor === existing.amountMinor
-    ? scheduled
-    : withRecurrenceAmount(scheduled, amountMinor, first);
+  // Hand-made or settled lines stay; the app's own projections may go with the schedule.
+  const removable = (t: Transaction) =>
+    t.recurrenceId === existing.id &&
+    t.occurrenceDate !== undefined &&
+    t.status !== "settled" &&
+    isBareProjection(
+      data,
+      existing,
+      t,
+      projectedOccurrence(existing, t.occurrenceDate, t.amountMinor),
+    );
+  const firstDue = firstOccurrenceDate(existing);
+  const hasPast = firstDue !== null && firstDue < first;
+  const previousLast = monthBounds(shiftMonth(month, -1)).last;
+  let changed: Recurrence[];
+  if (choice === "keep") changed = [kept(existing.endDate)];
+  else if (choice === "until") changed = [kept(last)];
+  else if (choice === "single") changed = [fresh(existing.id, existing.day, first, last)];
+  else if (
+    existing.intervalMonths === 1 &&
+    firstDue !== null &&
+    firstDue <= last &&
+    (!existing.endDate || existing.endDate >= previousLast)
+  )
+    changed = [kept(null)];
+  else if (!hasPast) changed = [fresh(existing.id, existing.day, first, null)];
+  else {
+    const holds = [
+      occurrenceDueDate(scheduleOnly(existing), month),
+      ...data.transactions
+        .filter(
+          (t) =>
+            t.recurrenceId === existing.id &&
+            t.occurrenceDate !== undefined &&
+            t.occurrenceDate >= first &&
+            !removable(t),
+        )
+        .map((t) => t.occurrenceDate!),
+    ].filter((d): d is string => d !== null);
+    const latest = holds.reduce<string | null>((a, b) => (a === null || b > a ? b : a), null);
+    const splitMonth = latest === null ? month : shiftMonth(latest.slice(0, 7), 1);
+    const splitFirst = `${splitMonth}-01`;
+    const endBefore = monthBounds(shiftMonth(splitMonth, -1)).last;
+    changed = [
+      {
+        ...existing,
+        endDate:
+          existing.endDate && existing.endDate < endBefore ? existing.endDate : endBefore,
+      },
+      fresh(newId, existing.day, splitFirst, null),
+    ];
+  }
+  const owner = changed[0];
+  const recurrences = [
+    ...data.recurrences.map((r) => (r.id === existing.id ? owner : r)),
+    ...changed.slice(1),
+  ];
+  const ownerSchedule = scheduleOnly(owner);
+  const transactions = data.transactions.filter(
+    (t) =>
+      !removable(t) ||
+      occurrenceDueDate(ownerSchedule, t.occurrenceDate!.slice(0, 7)) === t.occurrenceDate,
+  );
+  return { ...data, recurrences, transactions };
 }
 
+/** The next date `recurrence` is due on or after `from` (inclusive), or null once it has none
+ * left (inactive, or every remaining occurrence is past `endDate`). For a page listing
+ * upcoming subscriptions/charges, not the cohort of a specific already-chosen month. Scans
+ * forward month by month, bounded the same way `availableSummary` bounds its own scan (1200
+ * months / 100 years comfortably covers `intervalMonths`'s 1–120 range). */
 export function nextOccurrenceDate(
   recurrence: Recurrence,
   from = today(),
