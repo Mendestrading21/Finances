@@ -930,7 +930,7 @@ Preuves :
 
 Limites :
 - **80 px non atteints pour une ligne avec « Payer ».** Placer le bouton sur la ligne du statut laisserait environ 135 px au texte « Tous les mois · Pas encore payé », qui en demande environ 190. Le statut passerait sur deux lignes (environ 87 px) et les titres perdraient 45 px. La mise en page actuelle est donc gardée (104 px). Un abonnement au nom long fait 128 px : son étiquette passe à la ligne (« Abonnement musique » dans la démo).
-- À 390 px, dans Chromium sous Linux, le titre « Dépenses du mois » passe sur deux lignes à côté de « Ajouter une dépense ». La police y est plus large que SF Pro ; ce point n'est pas vérifié sur iPhone.
+- Avec l'action raccourcie en « Ajouter », le titre « Dépenses du mois » tient sur une ligne à 390, 834 et 1440 px ; à 320 px, il passe encore sur deux lignes (Chromium sous Linux, non vérifié sur iPhone).
 - **Créer un abonnement** : « Un abonnement » est ajouté au choix « Ajouter » de l'Accueil. Une mise de côté se crée par « Ajouter une dépense », « Tous les mois » puis « Nature », ou en changeant la nature d'une facture existante. Le formulaire « Une récurrence » avec choix du type (l'ancien « Ajouter » d'Abonnements) n'est plus atteignable ; la nature enregistrée est vérifiée à la réouverture.
 - Une ligne de récurrence réglée n'a pas l'icône « Joindre », pour rester sur deux icônes : le reçu se joint depuis Documents et réglages (les lignes ponctuelles gardent l'icône). Le règlement lui-même (date, compte, état) s'ouvre en touchant la ligne.
 - « Ajouter une dépense » date l'opération d'aujourd'hui, même si un autre mois est affiché (comportement antérieur du formulaire).
@@ -945,12 +945,22 @@ Relecture indépendante (`finance-verification`), avec deux jeux fictifs import�
 Défauts réels, corrigés :
 1. **Bloquant :** dans le mois d'échéance d'une facture payée plus tard, la ligne affichait « Payé » et un montant que les totaux de ce mois ne comptent pas. Elle affiche maintenant « Payé en {mois} », avec le montant en retrait. Le scénario « one Mon mois page » vérifie ce mois-là : « Payé en … », et « Reste à payer » comme « Il me reste » à « — » : aucune dépense comptée ce mois-là (un paiement compté donnerait 0.00).
 2. Un règlement lié sans date apparaissait deux fois (sur sa ligne et dans « Opérations à dater ») : il n'apparaît plus qu'une fois, marqué « date à vérifier ».
-3. Le règlement d'une facture récurrente ne s'ouvrait plus depuis Mon mois : la ligne s'ouvre désormais elle-même (« Détail du règlement » : date, compte, état). Le crayon reste, pour « Déjà payé » et l'accès à la récurrence. Le justificatif se joint depuis Documents et réglages, sans troisième icône : une ligne réglée garde ainsi deux icônes et 80 px au plus.
+3. Le règlement d'une facture récurrente ne s'ouvrait plus depuis Mon mois : la ligne s'ouvre désormais elle-même (« Détail du règlement » : date, compte, état). Le crayon reste, pour « Déjà payé » et l'accès à la récurrence. Le justificatif se joint depuis Documents et réglages, sans troisième icône : une ligne réglée garde ainsi deux icônes : 80 px pour une ligne simple à 390 px, 87 px avec « Payé en … », 104 px pour un abonnement dont l'étiquette passe à la ligne.
 4. « Reste à payer » partiel (taux manquant, état à vérifier) : une mention indique le nombre d'opérations non comptées.
 5. Le contrôle de l'aller-retour Type/Nature est rétabli dans les e2e.
 6. Documentation encore « sept pages » ou « page Abonnements » : mise à jour.
 7. Captures pleine page : la barre mobile fixe n'y est plus dessinée.
 8. Titres de carte : les actions affichent « Ajouter », avec leur nom complet pour les lecteurs d'écran ; « Dépenses du mois » tient sur une ligne.
+
+Second passage de relecture sur la tête fusionnée : **OK, plus rien de bloquant**.
+- Jeux A et B, de juillet à novembre : écart nul entre les lignes affichées (montants en retrait exclus) et `monthSummary` ;
+- « Payé en … » et « Reçu en … » vérifiés, y compris après un déplacement de date depuis l'interface ;
+- 25/25 e2e.
+
+Suivi de ses remarques mineures :
+- un règlement sans date mais avec un mois de budget n'est compté dans aucun mois : il affiche désormais « date à vérifier », avec son montant en retrait, au lieu de « Payé » ou « Payé en … » ;
+- la mention sous les indicateurs dit « sans date, sans taux de change ou à vérifier » ;
+- les phrases dépassées de ce fichier, d'`abonnements.md` et des commentaires de `finance.ts` sont corrigées.
 
 ## État réel
 

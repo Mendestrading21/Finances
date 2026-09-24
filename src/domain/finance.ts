@@ -445,7 +445,7 @@ export type CohortSummary = {
  * the recurrence rules, not a missing observation — but a missing FX rate on any due or settled
  * amount makes the whole trio null/partial instead of silently treating that one item as zero,
  * mirroring wealthSummary.
- * With `types` (e.g. ["bill"] or ["income"] for Factures), the scope is instead the occurrences
+ * With `types` (e.g. ["bill"] or ["income"]), the scope is instead the occurrences
  * whose classification is listed — no implicit saving exclusion; "income" is reserved for income
  * recurrences (validation.ts), so ["income"] reads as "attendu / reçu / reste à recevoir" — and
  * `activeCount` counts only the active recurrences of those types. Without it, both are unchanged.
@@ -624,7 +624,7 @@ export type RecurringFlowSummary = {
   excluded: number;
 };
 /** "Payé en <mois>" / "Reçu en <mois>", scoped to recurrence-linked settlements — the flux
- * réalisé side of the Abonnements page's résumé, kept separate from `cohortSummary`'s cohort
+ * réalisé side of a recurrence résumé, kept separate from `cohortSummary`'s cohort
  * totals per amelioration-v2.md. Reuses `transactionsForMonth` (`transactionMonth`): a
  * settlement counts in its payment month — a charge due in February and paid in March counts
  * here in March — except one paid ahead of its month, which counts in its own month. A
