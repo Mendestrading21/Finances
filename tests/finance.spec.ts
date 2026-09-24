@@ -2394,6 +2394,7 @@ test("simpler screens: add chooser, no ISO date on daily pages, uncounted accoun
   await page.getByLabel("Phrase secrète", { exact: true }).fill("Exemple-test-Finance-simple");
   await page.getByLabel("Confirmer la phrase secrète").fill("Exemple-test-Finance-simple");
   await page.getByRole("button", { name: "Créer mon coffre" }).click();
+  await nav.getByRole("button", { name: "Vue d’ensemble", exact: true }).click();
   const hero = page.locator(".hero-card");
   await expect(hero).toContainText("Ajoutez un compte pour voir votre patrimoine.");
   await expect(hero.locator(".tag")).toHaveCount(0);
