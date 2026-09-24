@@ -2101,15 +2101,18 @@ test("what is left this month: a bill paid ahead counts in its own month, on Mon
     await dialog.getByRole("button", { name: "Enregistrer", exact: true }).click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
   };
-  await add("Ajouter un revenu", "Un revenu", "Salaire test", "5000");
   await add("Ajouter une facture", "Une facture", "Loyer test", "2000");
   await add("Ajouter une facture", "Une facture", "Impôts test", "500", true);
+  // No income yet: never a made-up negative « reste », an invitation instead.
+  const left = page.locator(".left-card");
+  await expect(left.locator(".metric-value")).toHaveText("—");
+  await expect(left).toContainText("Ajoutez votre salaire");
+  await add("Ajouter un revenu", "Un revenu", "Salaire test", "5000");
 
   // Factures: what is left after the fixed bills, this month.
-  const left = page.locator(".left-card");
-  await expect(left).toContainText(`Il me reste en ${monthNames[now.getMonth()].toLowerCase()}`);
+  await expect(left).toContainText(`Après mes factures en ${monthNames[now.getMonth()].toLowerCase()}`);
   await expect(left.locator(".metric-value")).toHaveText(/^2\s?500\.00\s*CHF$/);
-  await expect(left).toContainText("Revenus 5 000.00 CHF − factures 2 500.00 CHF");
+  await expect(left).toContainText("Revenus fixes 5 000.00 CHF − factures 2 500.00 CHF");
 
   // Next month's rent and salary settled ahead of time, today.
   await goToMonth(1);
@@ -2128,6 +2131,7 @@ test("what is left this month: a bill paid ahead counts in its own month, on Mon
   });
   await expect(operations.locator(".row", { hasText: "Loyer test" })).toContainText("Payé");
   await expect(operations.locator(".row", { hasText: "Salaire test" })).toContainText("Reçu");
+  await expect(left).toContainText(`Il me reste en ${monthNames[(now.getMonth() + 1) % 12].toLowerCase()}`);
   await expect(operations.locator(".row", { hasText: "Loyer test" })).not.toContainText(/\d{4}-\d{2}-\d{2}/);
   await expect(left.locator(".metric-value")).toHaveText(/^3\s?000\.00\s*CHF$/);
   await expect(page.locator(".stat-card", { hasText: "Dépenses payées" }).locator(".metric-value")).toHaveText(/^2\s?000\.00\s*CHF$/);

@@ -1615,12 +1615,13 @@ export default function App() {
     values.every((v) => v === null) ? null : values.reduce<number>((a, v) => a + (v ?? 0), 0);
   const monthIncome = sumKnown([summary.incomeSettled, summary.incomePlanned]),
     monthExpense = sumKnown([summary.expenseSettled, summary.expensePlanned]);
+  // Sans revenu saisi, pas de « reste » négatif inventé : « — » et une invite à l'ajouter.
   const monthLeft =
-    summary.unknownCount > 0 || (monthIncome === null && monthExpense === null)
+    summary.unknownCount > 0 || monthIncome === null
       ? null
-      : (monthIncome ?? 0) - (monthExpense ?? 0);
+      : monthIncome - (monthExpense ?? 0);
   const billsLeft =
-    incomeCohort.dueMinor === null || billsCohort.dueMinor === null
+    !incomes.due.length || incomeCohort.dueMinor === null || billsCohort.dueMinor === null
       ? null
       : incomeCohort.dueMinor - billsCohort.dueMinor;
   const leftCard = (
@@ -1964,13 +1965,11 @@ export default function App() {
             >
               <span className="row-title">{t.label}</span>
               <span className="row-detail">
-                {/* Facture ou revenu fixe : il compte pour son mois, sans date à l'écran (le jour
-                    interne n'est pas une échéance ; la date d'un paiement reste enregistrée). */}
-                {data?.recurrences.some(
-                  (r) =>
-                    r.id === t.recurrenceId &&
-                    (r.recurrenceType === "bill" || r.recurrenceType === "income"),
-                ) ? null : (
+                {/* Facture, abonnement, revenu fixe ou mise de côté : il compte pour son mois, sans
+                    date à l'écran (le jour interne n'est pas une échéance ; la date d'un paiement
+                    reste enregistrée). */}
+                {t.recurrenceId &&
+                data?.recurrences.some((r) => r.id === t.recurrenceId) ? null : (
                   <>
                     {t.date ? (
                       <span className="nowrap">{t.date}</span>
@@ -2882,7 +2881,9 @@ export default function App() {
               monthLeft,
               summary.unknownCount > 0
                 ? "À compléter : une opération sans date, sans taux de change ou à vérifier."
-                : `Revenus ${display(monthIncome ?? 0)} − dépenses ${display(monthExpense ?? 0)}, payées et prévues.`,
+                : monthIncome === null
+                  ? `Ajoutez votre salaire ou vos revenus de ${monthLabel(month)} pour voir ce qu’il reste.`
+                  : `Revenus ${display(monthIncome)} − dépenses ${display(monthExpense ?? 0)}, payées et prévues (hors mises de côté).`,
             )}
             <div className="stat-grid">
               {[
@@ -3057,11 +3058,13 @@ export default function App() {
         {page === "bills" && (
           <>
             {leftCard(
-              `Il me reste en ${monthLabel(month)}`,
+              `Après mes factures en ${monthLabel(month)}`,
               billsLeft,
-              billsLeft === null
-                ? "À compléter : un montant dans une autre devise sans taux de change."
-                : `Revenus ${display(incomeCohort.dueMinor)} − factures ${display(billsCohort.dueMinor)}.`,
+              !incomeActive.length
+                ? `Ajoutez votre salaire dans « Mes revenus » pour voir ce qu’il reste après vos factures.`
+                : billsLeft === null
+                  ? "À compléter : un montant dans une autre devise sans taux de change."
+                  : `Revenus fixes ${display(incomeCohort.dueMinor)} − factures ${display(billsCohort.dueMinor)}. Le reste du mois est dans Mon mois.`,
             )}
             <div className="stat-grid">
               {[

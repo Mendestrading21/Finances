@@ -297,8 +297,6 @@ function occurrenceLinks(
     byLegacyId.get(`${recurrenceId}:${date}`);
 }
 
-/** Virtual planned occurrences are replaced by an explicit transaction linked to that occurrence,
- * even if its payment date moves to another month. Only actual transaction dates determine cash month. */
 /** Month a transaction counts in: its payment month (or budget month when undated) — except a
  * recurring occurrence paid ahead of time, which counts in its own month: October's rent paid
  * on 24 September is October's rent, not a second rent in September. A late payment still
@@ -309,6 +307,9 @@ export function transactionMonth(transaction: Transaction): string | undefined {
   return due && paid && paid < due ? due : paid;
 }
 
+/** Virtual planned occurrences are replaced by an explicit transaction linked to that
+ * occurrence, even if it was paid in another month. Each transaction counts in the month of
+ * `transactionMonth`: its payment date, except an occurrence paid ahead of time. */
 export function transactionsForMonth(
   data: FinanceData,
   month: string,
@@ -614,9 +615,9 @@ export type RecurringFlowSummary = {
 };
 /** "Payé en <mois>" / "Reçu en <mois>", scoped to recurrence-linked settlements — the flux
  * réalisé side of the Abonnements page's résumé, kept separate from `cohortSummary`'s cohort
- * totals per amelioration-v2.md. Reuses `transactionsForMonth`, which already buckets a
- * settlement by its real date regardless of which month the occurrence was due in — so a
- * charge due in February and paid in March counts here in March, matching monthSummary. A
+ * totals per amelioration-v2.md. Reuses `transactionsForMonth` (`transactionMonth`): a
+ * settlement counts in its payment month — a charge due in February and paid in March counts
+ * here in March — except one paid ahead of its month, which counts in its own month. A
  * transfer/saving recurrence is excluded from both sides (amelioration-v2.md: "les transferts
  * et mises de côté ne gonflent pas dépenses et revenus"); a settled-but-undated transaction
  * makes the total partial rather than being silently skipped or counted as today. */
