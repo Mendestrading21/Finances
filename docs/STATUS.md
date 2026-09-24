@@ -880,7 +880,7 @@ Ce qui change :
 - **Chaque opération une seule fois.** L'échéance due d'une récurrence est la ligne de cette récurrence, qu'elle soit projetée, ajustée ou réglée. Toute autre opération du mois reste visible dans la carte de sa nature :
   - l'échéance d'une récurrence existante qui n'est pas celle affichée ce mois-ci, par exemple payée en retard, compte dans le mois de son paiement. Elle y porte « pour {mois} » : le mois qu'elle règle, jamais un jour ;
   - une opération dont la récurrence a disparu reste ponctuelle.
-  Les lignes affichées correspondent ainsi aux totaux du mois.
+  Dans le mois de l'échéance, un règlement fait plus tard affiche « Payé en {mois} », avec son montant en retrait : il compte dans le mois du paiement, comme dans les totaux.
 - **Conservé** :
   - « Payer », « Reçu » et « Régler » instantanés, avec leur voile ;
   - « Remettre à payer » avec « Annuler » ;
@@ -932,10 +932,25 @@ Limites :
 - **80 px non atteints pour une ligne avec « Payer ».** Placer le bouton sur la ligne du statut laisserait environ 135 px au texte « Tous les mois · Pas encore payé », qui en demande environ 190. Le statut passerait sur deux lignes (environ 87 px) et les titres perdraient 45 px. La mise en page actuelle est donc gardée (104 px). Un abonnement au nom long fait 128 px : son étiquette passe à la ligne (« Abonnement musique » dans la démo).
 - À 390 px, dans Chromium sous Linux, le titre « Dépenses du mois » passe sur deux lignes à côté de « Ajouter une dépense ». La police y est plus large que SF Pro ; ce point n'est pas vérifié sur iPhone.
 - **Créer un abonnement** : « Un abonnement » est ajouté au choix « Ajouter » de l'Accueil. Une mise de côté se crée par « Ajouter une dépense », « Tous les mois » puis « Nature », ou en changeant la nature d'une facture existante. Le formulaire « Une récurrence » avec choix du type (l'ancien « Ajouter » d'Abonnements) n'est plus atteignable ; la nature enregistrée est vérifiée à la réouverture.
-- Une ligne de récurrence réglée n'a pas l'icône « Joindre » (comme sur l'ancienne page Factures). Le reçu se joint depuis Documents et réglages ; les lignes ponctuelles gardent l'icône.
+- Une ligne de récurrence réglée n'a pas l'icône « Joindre », pour rester sur deux icônes : le reçu se joint depuis Documents et réglages (les lignes ponctuelles gardent l'icône). Le règlement lui-même (date, compte, état) s'ouvre en touchant la ligne.
 - « Ajouter une dépense » date l'opération d'aujourd'hui, même si un autre mois est affiché (comportement antérieur du formulaire).
 - `AGENTS.md`, `SKILL.md`, `design.md`, `abonnements.md` et l'agent `finance-abonnements` sont mis à jour : six pages, et Mon mois à la place des pages Abonnements et Factures.
-- Aucune relecture indépendante (`finance-designer`, `finance-verification`) : l'environnement de ce lot n'offrait pas de sous-agents. Aucun essai sur appareil physique.
+- Aucun essai sur appareil physique.
+
+Relecture indépendante (`finance-verification`), avec deux jeux fictifs importés et les lignes de juillet à novembre comparées aux calculs faits à la main :
+- les totaux concordent au centime avec `monthSummary`. Cas vérifiés : paiement anticipé, paiement en retard (« pour août »), échéance ajustée, annuelle et trimestrielle, récurrence en pause ou terminée, montant en EUR converti ;
+- les actions sont conservées : « Payer », « Reçu », « Régler », « Remettre à payer » et « Annuler », le crayon, le focus, les montants masqués ;
+- la navigation est cohérente, il n'y a pas de code mort, et rien ne déborde à 320, 390, 834 et 1440 px.
+
+Défauts réels, corrigés :
+1. **Bloquant :** dans le mois d'échéance d'une facture payée plus tard, la ligne affichait « Payé » et un montant que les totaux de ce mois ne comptent pas. Elle affiche maintenant « Payé en {mois} », avec le montant en retrait. Le scénario « one Mon mois page » vérifie ce mois-là : « Payé en … », et « Reste à payer » comme « Il me reste » à « — » : aucune dépense comptée ce mois-là (un paiement compté donnerait 0.00).
+2. Un règlement lié sans date apparaissait deux fois (sur sa ligne et dans « Opérations à dater ») : il n'apparaît plus qu'une fois, marqué « date à vérifier ».
+3. Le règlement d'une facture récurrente ne s'ouvrait plus depuis Mon mois : la ligne s'ouvre désormais elle-même (« Détail du règlement » : date, compte, état). Le crayon reste, pour « Déjà payé » et l'accès à la récurrence. Le justificatif se joint depuis Documents et réglages, sans troisième icône : une ligne réglée garde ainsi deux icônes et 80 px au plus.
+4. « Reste à payer » partiel (taux manquant, état à vérifier) : une mention indique le nombre d'opérations non comptées.
+5. Le contrôle de l'aller-retour Type/Nature est rétabli dans les e2e.
+6. Documentation encore « sept pages » ou « page Abonnements » : mise à jour.
+7. Captures pleine page : la barre mobile fixe n'y est plus dessinée.
+8. Titres de carte : les actions affichent « Ajouter », avec leur nom complet pour les lecteurs d'écran ; « Dépenses du mois » tient sur une ligne.
 
 ## État réel
 

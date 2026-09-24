@@ -1488,6 +1488,11 @@ details[open] > summary::after {
   line-height: 1.45;
   font-variant-numeric: tabular-nums;
 }
+/* Échéance réglée dans un autre mois : montrée, mais comptée dans le mois du paiement. */
+.row-value.counted-elsewhere {
+  color: var(--muted);
+  font-weight: 500;
+}
 .row-value .row-detail {
   font-weight: 400;
 }

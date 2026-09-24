@@ -7,7 +7,7 @@ Lire le skill Finance, `references/design.md`, `references/amelioration-v2.md`, 
 
 ## Mission
 
-Rendre les sept pages réellement utilisables sur iPhone, iPad et Windows. Relier les formulaires aux mêmes entités pour qu’une saisie mette à jour les vues concernées après confirmation de persistance.
+Rendre les six pages réellement utilisables sur iPhone, iPad et Windows. Relier les formulaires aux mêmes entités pour qu’une saisie mette à jour les vues concernées après confirmation de persistance.
 
 ## Périmètre
 

@@ -1654,7 +1654,9 @@ export default function App() {
     expenseOperations = operationsOf("expense"),
     savingOperations = operationsOf("saving");
   // Ni date ni mois : dans aucun mois, montrées à part tant qu'il y en a.
-  const undatedOperations = data.transactions.filter((t) => !t.date && !t.budgetMonth);
+  const undatedOperations = data.transactions.filter(
+    (t) => !t.date && !t.budgetMonth && !onRecurrenceRow.has(t),
+  );
   // « Il me reste » : revenus du mois moins dépenses du mois. Rien de saisi, ou un montant
   // inconnu : « — », jamais un zéro inventé.
   const sumKnown = (values: (number | null)[]) =>
@@ -2164,6 +2166,12 @@ export default function App() {
         : null;
     const amountMinor = cohortItem ? cohortItem.dueAmountMinor : null;
     const amountCurrency = cohortItem ? cohortItem.currency : r.currency;
+    // Réglée dans un autre mois (en retard) : elle compte dans le mois du paiement, pas dans
+    // celui-ci, ce que la ligne dit (« Payé en octobre ») et montre (montant en retrait).
+    const paidMonth = settledTxn ? transactionMonth(settledTxn) : undefined;
+    const settledElsewhere = !!settledTxn && !!paidMonth && paidMonth !== month;
+    const settledUndated = !!settledTxn && !paidMonth;
+    const settledWord = r.kind === "income" ? "Reçu" : "Payé";
     // quickSettle is called with dueTxn (a virtual "r.id:dueDate" id — it isn't in
     // data.transactions yet) and stamps that same id onto the real transaction it writes.
     // Once persisted, cohortItem.settled picks that transaction back up by
@@ -2187,7 +2195,25 @@ export default function App() {
         >
           <Icon name={recurrenceTypeIcons[r.recurrenceType]} />
         </span>
-        <div className="row-main">
+        <div
+          className={`row-main${settledTxn ? " row-main-button" : ""}`}
+          {...(settledTxn
+            ? {
+                // Le règlement lui-même (date, compte, état) s'ouvre en touchant la ligne.
+                role: "button" as const,
+                tabIndex: 0,
+                "aria-label": `Détail du règlement de ${r.label}`,
+                onClick: () =>
+                  edit({ type: "transaction", id: settledTxn.id, kind: settledTxn.kind }),
+                onKeyDown: (e: ReactKeyboardEvent) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    edit({ type: "transaction", id: settledTxn.id, kind: settledTxn.kind });
+                  }
+                },
+              }
+            : {})}
+        >
           <span className="row-title">
             {r.label}
             {/* Factures et abonnements partagent la carte : l'abonnement se reconnaît ici. */}
@@ -2219,9 +2245,11 @@ export default function App() {
                       className={`nowrap ${cohortItem.settled ? recurrenceTone(r) : "status-pending"}`}
                     >
                       {cohortItem.settled
-                        ? r.kind === "income"
-                          ? "Reçu"
-                          : "Payé"
+                        ? settledElsewhere
+                          ? `${settledWord} en ${monthLabel(paidMonth!)}`
+                          : settledUndated
+                            ? `${settledWord} · date à vérifier`
+                            : settledWord
                         : r.kind === "income"
                           ? "Pas encore reçu"
                           : "Pas encore payé"}
@@ -2242,7 +2270,9 @@ export default function App() {
           </span>
         </div>
         <div className="row-end">
-          <div className={`row-value ${recurrenceTone(r)}`}>
+          <div
+            className={`row-value ${settledElsewhere ? "counted-elsewhere" : recurrenceTone(r)}`}
+          >
             {amountMinor !== null && (
               <>
                 {r.kind === "income" ? "+" : ""}
@@ -2251,7 +2281,8 @@ export default function App() {
             )}
           </div>
           <div className="row-actions">
-            {/* L'action principale reste au bord droit. */}
+            {/* L'action principale reste au bord droit. Le crayon garde l'accès à la
+                récurrence (nom, compte, arrêt), même un mois déjà payé. */}
             <button
               className="icon-button"
               aria-label={`Modifier ${r.label}`}
@@ -2892,6 +2923,12 @@ export default function App() {
                 );
               })}
             </div>
+            {summary.unknownCount > 0 && (
+              <p className="meta">
+                {summary.unknownCount} opération(s) non comptée(s) : taux de change
+                manquant ou état à vérifier.
+              </p>
+            )}
             <Card
               title="Mes revenus"
               icon="arrow-down"
@@ -2901,8 +2938,10 @@ export default function App() {
                   onClick={() =>
                     edit({ type: "recurrence", kind: "income", simple: true })
                   }
+                  aria-label="Ajouter un revenu"
                 >
-                  Ajouter un revenu
+                  <Icon name="plus" size={18} />
+                  Ajouter
                 </button>
               }
             >
@@ -2924,8 +2963,10 @@ export default function App() {
                   onClick={() =>
                     edit({ type: "recurrence", recurrenceType: "bill", simple: true })
                   }
+                  aria-label="Ajouter une facture"
                 >
-                  Ajouter une facture
+                  <Icon name="plus" size={18} />
+                  Ajouter
                 </button>
               }
             >
@@ -2945,8 +2986,10 @@ export default function App() {
                 <button
                   className="card-action"
                   onClick={() => edit({ type: "transaction", kind: "expense" })}
+                  aria-label="Ajouter une dépense"
                 >
-                  Ajouter une dépense
+                  <Icon name="plus" size={18} />
+                  Ajouter
                 </button>
               }
             >

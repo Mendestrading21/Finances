@@ -54,7 +54,7 @@ Les missions sont dans `.claude/agents/finance-*.md`. Le coordinateur délègue 
 | Notion                     | Correspondance sourcée et ambiguïtés              | Calculs + sécurité               |
 | Calculs                    | Fonctions exactes et cas chiffrés                 | Patrimoine + vérification        |
 | Patrimoine                 | Comptes, actifs et absence de double compte       | Calculs                          |
-| Abonnements                | Modèle, occurrences, statuts, affichage dans Mon mois | Calculs + données + vérification |
+| Abonnements                | Occurrences, statuts, affichage dans Mon mois     | Calculs + données + vérification |
 | Identité visuelle          | Logo, icônes, établissements et densité           | Designer + sécurité              |
 | Designer                   | Parcours, composants, responsive et accessibilité | Frontend + vérification          |
 | Frontend                   | Pages, formulaires et interactions                | Designer + vérification          |

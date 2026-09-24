@@ -10,7 +10,7 @@ Lire `docs/AUDIT_UI_V2.md` avant de modifier l’application. Cette tranche affi
 4. Transformer les grandes grilles de comptes en listes compactes.
 5. Étendre le système d’icônes et l’identité des établissements.
 6. Refaire le logo et ses déclinaisons après validation de la direction visuelle.
-7. Vérifier les sept pages, sauvegardes, captures, CI et déploiement.
+7. Vérifier les six pages, sauvegardes, captures, CI et déploiement.
 
 Un lot métier précède le lot visuel qui le représente. Ne pas figer une maquette d’abonnement avant d’avoir défini l’occurrence, son statut et sa migration.
 

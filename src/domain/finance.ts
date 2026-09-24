@@ -291,7 +291,7 @@ export function findOccurrenceTransaction(
  * the projection's own id `${recurrenceId}:${date}`. The id fallback only accepts a
  * transaction carrying no link at all: one whose link names another occurrence is that
  * occurrence's record, never this one's. Shared by `transactionsForMonth`, `occurrenceCohort`
- * and `withOccurrenceAmount`, so Mon mois, Abonnements and Factures agree on every occurrence. */
+ * and `withOccurrenceAmount`, so Mon mois and the Accueil agree on every occurrence. */
 function occurrenceLinks(
   transactions: Transaction[],
 ): (recurrenceId: string, date: string) => Transaction | undefined {
@@ -517,7 +517,7 @@ export function cohortSummary(
  * month's first day instead). The occurrence's linked transaction (`findOccurrenceTransaction`),
  * if any, gets only its `amountMinor` replaced — status, dates, documents and provenance stay as
  * they are. Otherwise the projection (`projectedOccurrence`) is persisted, status "planned",
- * with this amount — so Mon mois, Abonnements and Factures all read the same single record, and
+ * with this amount — so Mon mois and the Accueil read the same single record, and
  * a later recurrence amount change never overrides it. `amountMinor` is read in the currency of
  * the record it lands on: the linked transaction's own (cohort item `currency`) when one
  * exists, else the recurrence's.

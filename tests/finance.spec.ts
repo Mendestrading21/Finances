@@ -102,6 +102,8 @@ test("real rendered demo screenshots at desktop, tablet and mobile; pages, priva
   await page.screenshot({
     path: "docs/captures/01-coffre-desktop.png",
     fullPage: true,
+    // Fixe en bas de l'écran, la barre mobile se dessinerait au milieu d'une capture pleine page.
+    style: ".mobile-nav { visibility: hidden; }",
   });
   // Écran du coffre : aucun débordement horizontal sur ordinateur ni sur tablette.
   for (const viewport of [
@@ -125,6 +127,8 @@ test("real rendered demo screenshots at desktop, tablet and mobile; pages, priva
   await page.screenshot({
     path: "docs/captures/02-finance-desktop.png",
     fullPage: true,
+    // Fixe en bas de l'écran, la barre mobile se dessinerait au milieu d'une capture pleine page.
+    style: ".mobile-nav { visibility: hidden; }",
   });
   for (const name of [
     "Mon mois",
@@ -159,6 +163,8 @@ test("real rendered demo screenshots at desktop, tablet and mobile; pages, priva
   await page.screenshot({
     path: "docs/captures/03-finance-ipad.png",
     fullPage: true,
+    // Fixe en bas de l'écran, la barre mobile se dessinerait au milieu d'une capture pleine page.
+    style: ".mobile-nav { visibility: hidden; }",
   });
   expect(
     await page.evaluate(
@@ -169,6 +175,8 @@ test("real rendered demo screenshots at desktop, tablet and mobile; pages, priva
   await page.screenshot({
     path: "docs/captures/04-finance-iphone.png",
     fullPage: true,
+    // Fixe en bas de l'écran, la barre mobile se dessinerait au milieu d'une capture pleine page.
+    style: ".mobile-nav { visibility: hidden; }",
   });
   expect(
     await page.evaluate(
@@ -186,6 +194,8 @@ test("real rendered demo screenshots at desktop, tablet and mobile; pages, priva
   await page.screenshot({
     path: "docs/captures/05-projets-iphone.png",
     fullPage: true,
+    // Fixe en bas de l'écran, la barre mobile se dessinerait au milieu d'une capture pleine page.
+    style: ".mobile-nav { visibility: hidden; }",
   });
   await page.getByRole("button", { name: "Ajouter", exact: true }).click();
   await expect(page.getByRole("dialog", { name: "Un projet" })).toBeVisible();
@@ -202,6 +212,8 @@ test("real rendered demo screenshots at desktop, tablet and mobile; pages, priva
   await page.screenshot({
     path: "docs/captures/06-mon-mois-iphone.png",
     fullPage: true,
+    // Fixe en bas de l'écran, la barre mobile se dessinerait au milieu d'une capture pleine page.
+    style: ".mobile-nav { visibility: hidden; }",
   });
   expect(
     await page.evaluate(
@@ -1029,7 +1041,14 @@ test("Mon mois: reçu, facture, abonnement, virement — chacun dans sa carte, �
     await dialog.getByLabel("Libellé").fill(label);
     if (options.monthly) {
       await dialog.getByRole("button", { name: "Tous les mois", exact: true }).click();
-      await dialog.getByLabel("Nature", { exact: true }).selectOption(options.monthly);
+      const nature = dialog.getByLabel("Nature", { exact: true });
+      // Nature survives a Type round trip (Dépense → Revenu → Dépense): a « Facture » chosen
+      // first is never silently reset to the default « Abonnement ».
+      await nature.selectOption("bill");
+      await dialog.locator('select[name="kind"]').selectOption("income");
+      await dialog.locator('select[name="kind"]').selectOption("expense");
+      await expect(nature).toHaveValue("bill");
+      await nature.selectOption(options.monthly);
     }
     await dialog.getByLabel("Montant", { exact: true }).fill(amount);
     await dialog
@@ -2654,7 +2673,16 @@ test("one Mon mois page: four cards, bills and subscriptions together, one-off e
     .locator(".row", { hasText: "Loyer mois test" })
     .getByRole("button", { name: "Payer", exact: true })
     .click();
-  await expect(card("Mes factures").locator(".row", { hasText: "Loyer mois test" })).toContainText("Payé");
+  // Paid only today: it counts this month, not last month. The row says so, and last month
+  // counts no expense at all: « — » (no invented zero; a counted payment would read 0.00).
+  const thisMonthLabel = `${monthNames[now.getMonth()].toLowerCase()} ${now.getFullYear()}`;
+  await expect(card("Mes factures").locator(".row", { hasText: "Loyer mois test" })).toContainText(
+    `Payé en ${thisMonthLabel}`,
+  );
+  await expect(
+    page.locator(".stat-grid .stat-card", { hasText: "Reste à payer" }).locator(".metric-value"),
+  ).toHaveText("—");
+  await expect(page.locator(".left-card .metric-value")).toHaveText("—");
   await goToMonth(0);
   await fill("Ajouter un revenu", "Salaire mois test", "3000");
   await fill("Ajouter une dépense", "Streaming mois test", "20", async (d) => {
