@@ -30,6 +30,7 @@ export default function OccurrenceDialog({
   onClose: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const amountInput = useRef<HTMLInputElement>(null);
   const [scope, setScope] = useState<OccurrenceScope>("month");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -38,6 +39,9 @@ export default function OccurrenceDialog({
     const trigger =
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
     dialog.current?.showModal();
+    // Après showModal (qui place le focus sur « Fermer ») : le montant est ce qu'on vient changer.
+    amountInput.current?.focus();
+    amountInput.current?.select();
     return () => {
       dialog.current?.close();
       if (trigger && document.body.contains(trigger)) trigger.focus();
@@ -98,8 +102,7 @@ export default function OccurrenceDialog({
               name="amount"
               inputMode="decimal"
               autoComplete="off"
-              // Le montant est ce qu'on vient changer : le focus y va directement.
-              autoFocus
+              ref={amountInput}
               aria-describedby="occurrence-scope-note"
               defaultValue={String(amountMinor / 100)}
               required

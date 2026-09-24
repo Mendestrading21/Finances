@@ -1941,6 +1941,17 @@ test("bills: a monthly bill shows on Factures and Mon mois; a small change appli
   await changeThisMonth("90");
   await expect(billRow).toContainText("90.00");
   await expect(billRow).not.toContainText("montant modifié");
+  // Back on the usual amount for real: a later "from this month on" change reaches it too.
+  await goToMonth(1);
+  await page.getByRole("button", { name: "Modifier Électricité test", exact: true }).click();
+  dialog = page.getByRole("dialog", { name: "Modifier Électricité test" });
+  await dialog.getByRole("button", { name: "Ce mois et les suivants", exact: true }).click();
+  await dialog.getByLabel(/^Montant/).fill("100");
+  await dialog.getByRole("button", { name: "Enregistrer", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await goToMonth(2);
+  await expect(billRow).toContainText("100.00");
+  await expect(billRow).not.toContainText("montant modifié");
   await goToMonth(0);
   await expect(billRow).toContainText("85.00");
   await goToMonth(-1);
@@ -1963,6 +1974,6 @@ test("bills: a monthly bill shows on Factures and Mon mois; a small change appli
   await expect(billRow).toContainText("85.00");
   await expect(billRow).toContainText("Payé");
   await goToMonth(1);
-  await expect(billRow).toContainText("90.00");
+  await expect(billRow).toContainText("100.00");
   expect(errors).toEqual([]);
 });

@@ -1184,6 +1184,11 @@ export default function App() {
     editorPulls.current = pullCount.current;
     setEditor(spec);
   };
+  const isDueOccurrence = (recurrenceId: string, occurrenceDate: string) =>
+    !!data &&
+    occurrenceCohort(data, occurrenceDate.slice(0, 7)).some(
+      (i) => i.recurrenceId === recurrenceId && i.occurrenceDate === occurrenceDate,
+    );
   const openOccurrence = (recurrenceId: string, occurrenceDate: string) => {
     setError("");
     editorPulls.current = pullCount.current;
@@ -1762,8 +1767,12 @@ export default function App() {
               // a virtual/projected one (without it, no record to edit yet) sat side by
               // side with "Payer" starting at two different x positions, since the icon
               // used to trail the button instead of leading it.
-              t.status === "planned" && t.recurrenceId && t.occurrenceDate ? (
+              t.status === "planned" &&
+              t.recurrenceId &&
+              t.occurrenceDate &&
+              isDueOccurrence(t.recurrenceId, t.occurrenceDate) ? (
                 // Échéance d'une récurrence (enregistrée ou non) : montant de ce mois ou des suivants.
+                // Une échéance qui n'est plus due (règle arrêtée, jour changé) garde l'éditeur rapide.
                 <button
                   className="icon-button"
                   aria-label={`Modifier ${t.label}`}
@@ -1905,7 +1914,7 @@ export default function App() {
                 {bills && cohortItem?.adjusted && (
                   <>
                     {SEP}
-                    <span className="nowrap">
+                    <span>
                       {cohortItem.settled ? "" : "montant modifié ce mois, "}
                       habituel {display(cohortItem.projectedAmountMinor, r.currency)}
                     </span>

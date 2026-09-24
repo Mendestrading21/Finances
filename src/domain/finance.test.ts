@@ -1951,3 +1951,58 @@ describe("argent disponible prudent", () => {
     ).toBeNull();
   });
 });
+
+describe("retour au montant habituel malgré la trace de modification manuelle", () => {
+  const stamp = (d: ReturnType<typeof billData>, at: string) => ({
+    ...d,
+    transactions: d.transactions.map((t) =>
+      t.id === "internet:2026-09-05"
+        ? {
+            ...t,
+            source: {
+              ...t.source,
+              updatedAt: at,
+              note: [t.source.note, `Modification manuelle le ${at}`].filter(Boolean).join(" · "),
+            },
+          }
+        : t,
+    ),
+  });
+  it("retire l'ajustement tracé revenu à 80, puis septembre suit « 90 dès août »", () => {
+    // Même suite d'écritures que l'app : ajustement, trace, retour à la règle, trace.
+    let d = stamp(
+      withOccurrenceAmount(billData(), "internet", "2026-09-05", 8500),
+      "2026-09-24T08:00:00.000Z",
+    );
+    d = withOccurrenceAmount(d, "internet", "2026-09-05", 8000);
+    expect(d.transactions).toEqual([]);
+    d = {
+      ...d,
+      recurrences: d.recurrences.map((r) =>
+        r.id === "internet" ? withRecurrenceAmount(r, 9000, "2026-08-01") : r,
+      ),
+    };
+    expect(occurrenceCohort(d, "2026-09")).toEqual([
+      expect.objectContaining({ dueAmountMinor: 9000, adjusted: false }),
+    ]);
+    expect(() => validateData(d)).not.toThrow();
+  });
+  it("garde un ajustement portant une autre note que la trace manuelle", () => {
+    const d = withOccurrenceAmount(billData(), "internet", "2026-09-05", 8500);
+    const noted = {
+      ...d,
+      transactions: d.transactions.map((t) => ({
+        ...t,
+        source: { ...t.source, note: "Facture reçue par courrier" },
+      })),
+    };
+    const back = withOccurrenceAmount(noted, "internet", "2026-09-05", 8000);
+    expect(back.transactions).toEqual([
+      expect.objectContaining({ amountMinor: 8000, id: "internet:2026-09-05" }),
+    ]);
+  });
+  it("réenregistrer le même montant ne change rien", () => {
+    const d = withOccurrenceAmount(billData(), "internet", "2026-09-05", 8500);
+    expect(withOccurrenceAmount(d, "internet", "2026-09-05", 8500)).toBe(d);
+  });
+});

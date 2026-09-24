@@ -544,12 +544,22 @@ export function withOccurrenceAmount(
       ...data,
       transactions: data.transactions.filter((t) => t !== linked),
     };
+  if (linked.amountMinor === amountMinor) return data;
   return {
     ...data,
     transactions: data.transactions.map((t) =>
       t === linked ? { ...t, amountMinor } : t,
     ),
   };
+}
+
+/** The app stamps « Modification manuelle le <horodatage> » on every manual change: that trace
+ * records an edit, not a fact about the occurrence, so it never blocks returning to the rule. */
+function withoutManualTraces(note: string): string {
+  return note
+    .split(" · ")
+    .filter((part) => !/^Modification manuelle le \d{4}-\d{2}-\d{2}T[\d:.]+Z$/.test(part))
+    .join(" · ");
 }
 
 /** True when `linked` states nothing the projection doesn't, apart from its amount — so
@@ -567,7 +577,7 @@ function isBareProjection(
     linked.status === "planned" &&
     !data.documents.some((d) => d.transactionId === linked.id) &&
     !note.includes("Remis à prévu") &&
-    note === (projected.source.note ?? "") &&
+    withoutManualTraces(note) === withoutManualTraces(projected.source.note ?? "") &&
     linked.source.system === projected.source.system &&
     (linked.source.sourceId === undefined ||
       linked.source.sourceId === recurrence.source.sourceId) &&
