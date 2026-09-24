@@ -2168,9 +2168,12 @@ export default function App() {
     const amountCurrency = cohortItem ? cohortItem.currency : r.currency;
     // Réglée dans un autre mois (en retard) : elle compte dans le mois du paiement, pas dans
     // celui-ci, ce que la ligne dit (« Payé en octobre ») et montre (montant en retrait).
+    // Sans date de paiement (même avec un mois de budget), un règlement n'est compté dans aucun
+    // mois : « date à vérifier », montant en retrait lui aussi.
     const paidMonth = settledTxn ? transactionMonth(settledTxn) : undefined;
-    const settledElsewhere = !!settledTxn && !!paidMonth && paidMonth !== month;
-    const settledUndated = !!settledTxn && !paidMonth;
+    const settledUndated = !!settledTxn && !settledTxn.date;
+    const settledElsewhere =
+      !!settledTxn && !settledUndated && !!paidMonth && paidMonth !== month;
     const settledWord = r.kind === "income" ? "Reçu" : "Payé";
     // quickSettle is called with dueTxn (a virtual "r.id:dueDate" id — it isn't in
     // data.transactions yet) and stamps that same id onto the real transaction it writes.
@@ -2271,7 +2274,7 @@ export default function App() {
         </div>
         <div className="row-end">
           <div
-            className={`row-value ${settledElsewhere ? "counted-elsewhere" : recurrenceTone(r)}`}
+            className={`row-value ${settledElsewhere || settledUndated ? "counted-elsewhere" : recurrenceTone(r)}`}
           >
             {amountMinor !== null && (
               <>
@@ -2925,8 +2928,8 @@ export default function App() {
             </div>
             {summary.unknownCount > 0 && (
               <p className="meta">
-                {summary.unknownCount} opération(s) non comptée(s) : taux de change
-                manquant ou état à vérifier.
+                {summary.unknownCount} opération(s) non comptée(s) : sans date, sans
+                taux de change ou à vérifier.
               </p>
             )}
             <Card
