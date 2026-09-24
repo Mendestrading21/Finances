@@ -1,7 +1,16 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+// Short commit and build date, shown in the footer so an installed app can tell which version it runs.
+const env = (globalThis as { process?: { env: Record<string, string | undefined> } })
+  .process?.env;
+const appVersion = (env?.GITHUB_SHA ?? "local").slice(0, 7);
+const builtOn = new Date().toISOString().slice(0, 10);
 export default defineConfig(({ command }) => ({
   base: "./",
+  define: {
+    __APP_VERSION__: JSON.stringify(appVersion),
+    __APP_BUILT_ON__: JSON.stringify(builtOn),
+  },
   plugins: [
     react(),
     ...(command === "build"

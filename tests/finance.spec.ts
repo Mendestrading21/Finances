@@ -1310,6 +1310,12 @@ test("PWA update: a new deploy offers an already-open tab a reload, without clos
       originalSw.replace(/finance-shell-[a-z0-9]+/, `finance-shell-${marker}`),
     );
 
+    // Scrolled down on a phone-sized window: the notice must still be on screen.
+    await page.setViewportSize({ width: 390, height: 400 });
+    await page.evaluate(() =>
+      scrollTo({ top: document.documentElement.scrollHeight, behavior: "instant" }),
+    );
+    expect(await page.evaluate(() => scrollY)).toBeGreaterThan(0);
     await page.evaluate(async () => {
       const registration = await navigator.serviceWorker.getRegistration();
       await registration?.update();
@@ -1323,6 +1329,9 @@ test("PWA update: a new deploy offers an already-open tab a reload, without clos
     await expect(
       page.getByRole("button", { name: "Recharger", exact: true }),
     ).toBeVisible({ timeout: 15000 });
+    await expect(
+      page.getByRole("button", { name: "Recharger", exact: true }),
+    ).toBeInViewport();
     await page
       .getByRole("button", { name: "Recharger", exact: true })
       .click();
@@ -1398,6 +1407,70 @@ test("PWA update: on the lock screen with nothing typed, a new deploy reloads by
     await expect(
       page.getByRole("button", { name: "Recharger", exact: true }),
     ).toHaveCount(0);
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await rm(siteDir, { recursive: true, force: true });
+  }
+});
+
+// Locking puts the vault out of memory, so a waiting update is applied right then.
+test("PWA update: locking the vault applies a waiting update", async ({ page }) => {
+  const siteDir = join(
+    await mkdtemp(join(tmpdir(), "finance-pwa-lockapply-test-")),
+    "site",
+  );
+  await cp("dist", siteDir, { recursive: true });
+  const { server, port } = await serveStaticDir(siteDir);
+
+  try {
+    const indexPath = join(siteDir, "index.html");
+    const swPath = join(siteDir, "sw.js");
+    const originalIndex = await readFile(indexPath, "utf8");
+    const originalSw = await readFile(swPath, "utf8");
+
+    await page.goto(`http://127.0.0.1:${port}/`);
+    await page
+      .getByLabel("Phrase secrète", { exact: true })
+      .fill("Exemple-test-Finance-pwa-lock-2026");
+    await page
+      .getByLabel("Confirmer la phrase secrète")
+      .fill("Exemple-test-Finance-pwa-lock-2026");
+    await page.getByRole("button", { name: "Créer mon coffre" }).click();
+    await page.waitForFunction(
+      () => navigator.serviceWorker.controller !== null,
+      null,
+      { timeout: 15000 },
+    );
+
+    const marker = `test-marker-lockapply-${Date.now()}`;
+    await writeFile(
+      indexPath,
+      originalIndex.replace(
+        "<title>",
+        `<meta name="test-marker" content="${marker}" /><title>`,
+      ),
+    );
+    await writeFile(
+      swPath,
+      originalSw.replace(/finance-shell-[a-z0-9]+/, `finance-shell-${marker}`),
+    );
+    await page.evaluate(async () => {
+      const registration = await navigator.serviceWorker.getRegistration();
+      await registration?.update();
+    });
+    await expect(
+      page.getByRole("button", { name: "Recharger", exact: true }),
+    ).toBeVisible({ timeout: 15000 });
+
+    await page.getByRole("button", { name: "Verrouiller l’espace" }).click();
+    await page.waitForFunction(
+      (expected) =>
+        document.querySelector('meta[name="test-marker"]')?.getAttribute(
+          "content",
+        ) === expected,
+      marker,
+      { timeout: 15000 },
+    );
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
     await rm(siteDir, { recursive: true, force: true });

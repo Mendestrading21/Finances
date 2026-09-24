@@ -536,8 +536,11 @@ export default function App() {
   }, [message]);
   const vaultOpen = useRef(false);
   useEffect(() => {
+    // Locking with an update waiting applies it: the vault is no longer in memory.
+    if (vaultOpen.current && data === null && updateReady)
+      window.location.reload();
     vaultOpen.current = data !== null;
-  }, [data]);
+  }, [data, updateReady]);
   useEffect(() => {
     const onUpdateReady = () => {
       // Locked with nothing typed: a reload loses nothing, so apply the new version at once.
@@ -725,7 +728,7 @@ export default function App() {
   if (!data)
     return (
       <>
-        {updateNotice && <div className="auth-update">{updateNotice}</div>}
+        {updateNotice && <div className="update-banner">{updateNotice}</div>}
         <Auth
           onOpen={(d, k) => {
             session.current++;
@@ -1674,7 +1677,7 @@ export default function App() {
             {message}
           </div>
         )}
-        {updateNotice}
+        {updateNotice && <div className="update-banner">{updateNotice}</div>}
         <div className="period-bar">
           <MonthPicker
             month={month}
@@ -2672,7 +2675,8 @@ export default function App() {
           {demo
             ? "Démonstration · Tous les montants et établissements sont fictifs."
             : "Espace privé sur cet appareil ·"}{" "}
-          Soldes observés, sources conservées.
+          Soldes observés, sources conservées. Version {__APP_VERSION__} du{" "}
+          {__APP_BUILT_ON__}.
         </footer>
       </main>
       <nav className="mobile-nav" aria-label="Navigation mobile">
