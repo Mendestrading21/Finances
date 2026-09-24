@@ -534,8 +534,19 @@ export default function App() {
       return () => clearTimeout(timer);
     }
   }, [message]);
+  const vaultOpen = useRef(false);
   useEffect(() => {
-    const onUpdateReady = () => setUpdateReady(true);
+    vaultOpen.current = data !== null;
+  }, [data]);
+  useEffect(() => {
+    const onUpdateReady = () => {
+      // Locked with nothing typed: a reload loses nothing, so apply the new version at once.
+      const typing = [...document.querySelectorAll("input")].some(
+        (input) => input.type !== "file" && input.value !== "",
+      );
+      if (!vaultOpen.current && !typing) window.location.reload();
+      else setUpdateReady(true);
+    };
     window.addEventListener(UPDATE_READY_EVENT, onUpdateReady);
     return () => window.removeEventListener(UPDATE_READY_EVENT, onUpdateReady);
   }, []);
@@ -703,22 +714,33 @@ export default function App() {
       setError("Document illisible.");
     }
   }
+  const updateNotice = updateReady && (
+    <div className="notice" role="status">
+      Une nouvelle version de Finance est disponible.{" "}
+      <button className="text-button" onClick={() => window.location.reload()}>
+        Recharger
+      </button>
+    </div>
+  );
   if (!data)
     return (
-      <Auth
-        onOpen={(d, k) => {
-          session.current++;
-          setData(d);
-          setKey(k);
-          setCurrency(d.preferences.baseCurrency);
-          setDemo(false);
-        }}
-        onDemo={() => {
-          setData(demoData());
-          setDemo(true);
-          setCurrency("CHF");
-        }}
-      />
+      <>
+        {updateNotice && <div className="auth-update">{updateNotice}</div>}
+        <Auth
+          onOpen={(d, k) => {
+            session.current++;
+            setData(d);
+            setKey(k);
+            setCurrency(d.preferences.baseCurrency);
+            setDemo(false);
+          }}
+          onDemo={() => {
+            setData(demoData());
+            setDemo(true);
+            setCurrency("CHF");
+          }}
+        />
+      </>
     );
   const available = availableSummary(data, currency, month);
   const wealth = wealthSummary(data, currency),
@@ -1631,17 +1653,7 @@ export default function App() {
             {message}
           </div>
         )}
-        {updateReady && (
-          <div className="notice" role="status">
-            Une nouvelle version de Finance est disponible.{" "}
-            <button
-              className="text-button"
-              onClick={() => window.location.reload()}
-            >
-              Recharger
-            </button>
-          </div>
-        )}
+        {updateNotice}
         <div className="period-bar">
           <MonthPicker
             month={month}

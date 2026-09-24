@@ -529,6 +529,15 @@ Preuves : `pnpm run typecheck` (0 erreur), `pnpm run test` (**142/142**), `pnpm 
 
 Fusionné dans `main` (commit `cb555fc`, PR #43). CI (`Finance verification`) et déploiement (`Deploy Finance to GitHub Pages`) vérifiés verts sur ce commit.
 
+## Correctif — l'app installée restait sur l'ancienne version (corrigé et testé le 24 septembre 2026)
+
+Après la publication de « Midnight Glass », l'utilisateur voyait encore l'ancienne version sur son iPhone. Deux défauts réels dans la mise à jour de l'app installée :
+
+1. **Aucune vérification au retour au premier plan** : une app installée qu'on rouvre depuis l'arrière-plan ne navigue pas, donc le navigateur ne revérifiait jamais `sw.js`. `main.tsx` appelle désormais `registration.update()` à chaque retour au premier plan (au plus une fois par minute).
+2. **Avis de mise à jour invisible à l'écran de déverrouillage** : l'avis « Recharger » n'existait que dans l'app ouverte, alors que l'app démarre verrouillée. Sur l'écran verrouillé, rien n'est en mémoire : la nouvelle version s'applique donc d'elle-même si rien n'est saisi ; si une saisie est en cours, l'avis « Recharger » s'affiche aussi sur cet écran. Coffre ouvert : comportement inchangé (avis, jamais de rechargement silencieux).
+
+Preuves : `typecheck` (0 erreur), `test` (**142/142**), `build`, les **11** scénarios `test:e2e` rejoués individuellement, tous verts, dont un nouveau test « PWA update: on the lock screen… » qui échoue sans la correction (vérifié en la neutralisant) et passe avec. Pour cette fois seulement, l'iPhone doit encore fermer et rouvrir l'app deux fois (l'ancienne version installée n'a pas ce correctif) ; ensuite, les versions suivantes arrivent d'elles-mêmes.
+
 ## État réel
 
 | Élément                           | État                                                                                                                                                                   | Résultat et limite                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
