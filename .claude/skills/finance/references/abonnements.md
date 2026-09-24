@@ -62,7 +62,7 @@ Séparer deux axes et les nommer dans l’interface :
 - **cohorte d’échéances** : occurrences dont la date d’échéance appartient au mois sélectionné ;
 - **flux réalisé** : opérations `settled` dont la date réelle de règlement appartient au mois sélectionné.
 
-Pour la cohorte, afficher `Dû en <mois>`, `Réglé pour <mois>` et `Reste dû`. `Réglé pour <mois>` suit le lien avec l’occurrence même si le règlement est plus tardif ; montrer alors sa date et le retard. `Reste dû` ne tombe à zéro que si le règlement rapproché couvre l’occurrence. Pour le flux, conserver les libellés `Payé en <mois>` et `Reçu en <mois>` et classer selon la date réelle.
+Pour la cohorte, afficher `Dû en <mois>`, `Réglé pour <mois>` et `Reste dû`. `Réglé pour <mois>` suit le lien avec l’occurrence même si le règlement est plus tardif ; montrer alors sa date et le retard. `Reste dû` ne tombe à zéro que si le règlement rapproché couvre l’occurrence. Tant que le modèle n’a pas de règlement partiel, une opération réglée liée à l’échéance la clôt : son montant devient le montant dû de cette échéance (Mon mois, Abonnements et Factures affichent alors le même chiffre), et l’écart avec la règle reste visible (`projectedAmountMinor`, mention « habituel … »). Pour le flux, conserver les libellés `Payé en <mois>` et `Reçu en <mois>` et classer selon la date réelle.
 
 Exemple obligatoire : une charge de 100 CHF due le 28 février et payée le 2 mars donne, pour la cohorte de février, 100 CHF dus, 100 CHF réglés et 0 CHF restant, avec la mention « payé le 2 mars ». Le flux réalisé de février vaut 0 CHF pour cette charge ; celui de mars inclut 100 CHF. L’échéance propre à mars reste une occurrence distincte.
 

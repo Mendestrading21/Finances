@@ -1927,6 +1927,20 @@ test("bills: a monthly bill shows on Factures and Mon mois; a small change appli
   await expect(billRow).toContainText("90.00");
   await goToMonth(2);
   await expect(billRow).toContainText("90.00");
+  // One month changed then set back to the usual amount follows the bill again.
+  const changeThisMonth = async (amount: string) => {
+    await page.getByRole("button", { name: "Modifier Électricité test", exact: true }).click();
+    const d = page.getByRole("dialog", { name: "Modifier Électricité test" });
+    await d.getByLabel(/^Montant/).fill(amount);
+    await d.getByRole("button", { name: "Enregistrer", exact: true }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+  };
+  await changeThisMonth("95");
+  await expect(billRow).toContainText("95.00");
+  await expect(billRow).toContainText("habituel 90.00");
+  await changeThisMonth("90");
+  await expect(billRow).toContainText("90.00");
+  await expect(billRow).not.toContainText("montant modifié");
   await goToMonth(0);
   await expect(billRow).toContainText("85.00");
   await goToMonth(-1);
@@ -1940,5 +1954,15 @@ test("bills: a monthly bill shows on Factures and Mon mois; a small change appli
   await nav.getByRole("button", { name: "Mon mois", exact: true }).click();
   await expect(monthRow).toHaveCount(1);
   await expect(monthRow).toContainText("85.00");
+
+  // Everything survives a reload and unlock.
+  await page.reload();
+  await page.getByLabel("Phrase secrète", { exact: true }).fill("Exemple-test-Finance-factures");
+  await page.getByRole("button", { name: "Déverrouiller", exact: true }).click();
+  await nav.getByRole("button", { name: "Factures", exact: true }).click();
+  await expect(billRow).toContainText("85.00");
+  await expect(billRow).toContainText("Payé");
+  await goToMonth(1);
+  await expect(billRow).toContainText("90.00");
   expect(errors).toEqual([]);
 });

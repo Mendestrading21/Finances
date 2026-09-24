@@ -609,9 +609,17 @@ Demande de l'utilisateur : une page Factures pour ses factures fixes de chaque m
 - Nouvelle page **Factures** (8ᵉ page, aussi dans la barre du bas sur téléphone : Accueil, Mon mois, Factures, Comptes, Plus) : récurrences de nature « Charge » du mois choisi, dans l'ordre des échéances (« le 5 »), avec total du mois, déjà payé, reste à payer, bouton « Payer » et « Ajouter » qui ouvre directement « Une facture ».
 - **Crayon « Modifier »** (page Factures, et désormais aussi sur les échéances pas encore enregistrées de Mon mois) : montant avec le choix **« Ce mois seulement »** (enregistre l'échéance de ce mois avec son montant, les autres mois gardent le montant habituel) ou **« Ce mois et les suivants »** (nouveau montant daté du 1er du mois, mois précédents intacts), plus un lien vers la modification complète (nom, jour, compte, arrêt).
 - Calcul (`finance-calculs`) : une opération liée à une échéance (montant ajusté ou règlement) remplace la projection dans la cohorte d'échéances comme dans Mon mois — mêmes montants sur toutes les pages ; `cohortSummary` accepte un filtre de nature ; `withOccurrenceAmount` enregistre le montant d'un seul mois sans doublon. Le modèle n'ayant pas de règlement partiel, une échéance réglée est close (reste dû 0).
-- Démonstration : le loyer (payé) et l'assurance santé (à payer) deviennent des factures mensuelles ; totaux du mois inchangés.
+- Démonstration : le loyer (payé) et l'assurance santé (à payer) deviennent des factures mensuelles ; totaux de Mon mois et disponible inchangés (la cohorte Abonnements et « Factures et charges » de l'Accueil les comptent désormais, comme prévu).
 
-Preuves : `typecheck`, `test` (**193/193**), `build`, les **17** scénarios `test:e2e` rejoués individuellement, dont « bills: … » (facture ajoutée depuis Factures, 85 ce mois seulement puis 80 le mois suivant, 90 à partir du mois suivant, mois précédent à 80, paiement du mois ajusté sans doublon dans Mon mois). Captures iPhone de la page et de la fenêtre « Modifier » revues.
+Vérification indépendante (`finance-verification`) : calcul principal, absence de doublon et totaux de la démonstration confirmés ; un défaut bloquant et cinq à corriger, tous corrigés avant fusion :
+
+- « Ce mois et les suivants » ne changeait rien quand on avançait la date d'un montant déjà programmé (message de succès trompeur) : corrigé dans `withRecurrenceAmount`, et « Aucun changement » est affiché quand rien ne change ;
+- un mois remis au montant habituel suit de nouveau la facture (l'ajustement prévu, sans justificatif ni trace de règlement, est retiré) ;
+- textes de la fenêtre exacts (un paiement déjà enregistré garde son montant ; un mois modifié seul garde le sien) ; message actionnable quand un changement plus récent existe ; « habituel … » affiché sur une échéance ajustée ; règle « un règlement lié clôt l'échéance » inscrite dans les références ;
+- **défaut antérieur corrigé** : une échéance enregistrée recopiait l'identifiant d'origine Notion/import de sa récurrence, si bien que régler une récurrence importée un deuxième mois était refusé (« source en doublon ») — la provenance reste, sans cet identifiant ;
+- garde par identifiant hérité alignée ; « Payer » ne réutilise jamais l'identifiant d'une autre échéance ; crayon de Mon mois vers la même fenêtre pour toute échéance de récurrence ; fenêtre fermée si une synchronisation retire l'échéance ; focus sur le montant.
+
+Preuves : `typecheck`, `test` (**207/207**), `build`, les **17** scénarios `test:e2e` rejoués individuellement, dont « bills: … » (étendu : retour au montant habituel, rechargement et déverrouillage) (facture ajoutée depuis Factures, 85 ce mois seulement puis 80 le mois suivant, 90 à partir du mois suivant, mois précédent à 80, paiement du mois ajusté sans doublon dans Mon mois). Captures iPhone de la page et de la fenêtre « Modifier » revues.
 
 ## État réel
 

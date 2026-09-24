@@ -3,6 +3,7 @@ import {
   availableSummary,
   cohortSummary,
   convertMinor,
+  findOccurrenceTransaction,
   latestBalance,
   money,
   monthLabel,
@@ -11,6 +12,7 @@ import {
   nextOccurrenceDate,
   occurrenceCohort,
   parseMoney,
+  projectedOccurrence,
   rankAccounts,
   rankByValue,
   recurrenceAmountAt,
@@ -21,7 +23,7 @@ import {
   withOccurrenceAmount,
   withRecurrenceAmount,
 } from "./finance";
-import { validateData } from "./validation";
+import { mergeImport, validateData } from "./validation";
 import {
   emptyData,
   type Account,
@@ -507,8 +509,47 @@ describe("mois et récurrences", () => {
     const rule = recurrence({ amountMinor: 2000, startDate: "2026-01-01" });
     const first = withRecurrenceAmount(rule, 3000, "2026-06-01"); // history: [{2000, 2026-01-01}]
     const second = withRecurrenceAmount(first, 4000, "2026-09-01"); // archives {3000, 2026-06-01}
-    expect(() => withRecurrenceAmount(second, 5000, "2026-06-01")).toThrow();
-    expect(() => withRecurrenceAmount(second, 5000, "2026-01-01")).toThrow();
+    const actionable =
+      "Un changement de montant plus récent existe déjà. Choisissez « Ce mois seulement », ou modifiez à partir d’un mois plus récent.";
+    expect(() => withRecurrenceAmount(second, 5000, "2026-06-01")).toThrow(
+      actionable,
+    );
+    expect(() => withRecurrenceAmount(second, 5000, "2026-01-01")).toThrow(
+      actionable,
+    );
+  });
+  it("avance un changement déjà programmé quand « ce mois et les suivants » reprend le même montant", () => {
+    // Facture 80 CHF le 5. « Octobre et suivants » 90, puis « Septembre et suivants » 90 :
+    // septembre doit passer à 90 (avant le correctif, le montant égal rendait l'appel sans effet).
+    const october = withRecurrenceAmount(bill, 9000, "2026-10-01");
+    const september = withRecurrenceAmount(october, 9000, "2026-09-01");
+    expect(september.amountEffectiveFrom).toBe("2026-09-01");
+    expect(september.amountHistory).toEqual([
+      { amountMinor: 8000, effectiveFrom: "2026-01-05" },
+    ]);
+    expect(recurrenceAmountAt(september, "2026-08-05")).toBe(8000);
+    expect(recurrenceAmountAt(september, "2026-09-05")).toBe(9000);
+    expect(recurrenceAmountAt(september, "2026-10-05")).toBe(9000);
+    const d = billData({ recurrences: [september] });
+    expect(occurrenceCohort(d, "2026-09")[0].dueAmountMinor).toBe(9000);
+    expect(validateData(d)).toEqual(d);
+    // Same amount, same or later date: nothing to change.
+    expect(withRecurrenceAmount(september, 9000, "2026-09-01")).toBe(september);
+    expect(withRecurrenceAmount(september, 9000, "2026-11-01")).toBe(september);
+  });
+  it("sans date explicite, un montant inchangé n'avance pas un changement programmé plus tard", () => {
+    // Chemin de l'éditeur (resauvegarde d'un libellé, date d'effet par défaut aujourd'hui).
+    const scheduled = withRecurrenceAmount(bill, 9000, "2099-01-01");
+    expect(withRecurrenceAmount(scheduled, 9000)).toBe(scheduled);
+  });
+  it("ramène au début de la récurrence une date d'effet antérieure (premier jour du mois de départ)", () => {
+    // bill starts 2026-01-05: "from 1 January" means from its first occurrence.
+    const raised = withRecurrenceAmount(bill, 8500, "2026-01-01");
+    expect(raised.amountEffectiveFrom).toBe("2026-01-05");
+    expect(raised.amountHistory).toEqual([]);
+    expect(recurrenceAmountAt(raised, "2026-01-05")).toBe(8500);
+    expect(validateData(billData({ recurrences: [raised] }))).toBeTruthy();
+    expect(withRecurrenceAmount(bill, 8000, "2026-01-01")).toBe(bill);
   });
   it("distingue prévu/reçu et prévu/payé, les transferts sont neutres", () => {
     const d = data({
@@ -1106,9 +1147,12 @@ describe("montant d'une seule échéance (withOccurrenceAmount)", () => {
       expect.objectContaining({ amountMinor: 8700 }),
     ]);
     expect(occurrenceCohort(second, "2026-09")[0].dueAmountMinor).toBe(8700);
-    // Back to the rule's amount: still the same single record, no longer flagged adjusted.
+    // Back to the rule's amount: the bare adjustment is removed, the projection is back.
     const reset = withOccurrenceAmount(second, "internet", "2026-09-05", 8000);
-    expect(reset.transactions).toHaveLength(1);
+    expect(reset.transactions).toEqual([]);
+    expect(billLines(reset, "2026-09")).toEqual([
+      expect.objectContaining({ amountMinor: 8000, status: "planned" }),
+    ]);
     expect(occurrenceCohort(reset, "2026-09")[0]).toMatchObject({
       dueAmountMinor: 8000,
       adjusted: false,
@@ -1306,6 +1350,242 @@ describe("montant d'une seule échéance (withOccurrenceAmount)", () => {
         withOccurrenceAmount(settled, "internet", "2026-09-05", 8800),
       ),
     ).toBeTruthy();
+  });
+});
+
+describe("retour au montant de la règle (withOccurrenceAmount, montant = projection)", () => {
+  const adjusted = () =>
+    withOccurrenceAmount(billData(), "internet", "2026-09-05", 8500);
+  const back = (d: FinanceData) =>
+    withOccurrenceAmount(d, "internet", "2026-09-05", 8000);
+  it("sans opération liée, ne crée rien : même référence", () => {
+    const base = billData();
+    expect(back(base)).toBe(base);
+  });
+  it("retire un ajustement ponctuel qui ne portait qu'un montant", () => {
+    const d = back(adjusted());
+    expect(d.transactions).toEqual([]);
+    expect(billLines(d, "2026-09")).toEqual([
+      expect.objectContaining({ amountMinor: 8000, status: "planned" }),
+    ]);
+    expect(validateData(d)).toEqual(d);
+  });
+  it("garde l'opération, montant mis à jour, si un document y est lié", () => {
+    const withDocument: FinanceData = {
+      ...adjusted(),
+      documents: [
+        {
+          id: "facture-sept",
+          name: "facture.pdf",
+          mimeType: "application/pdf",
+          transactionId: "internet:2026-09-05",
+          addedAt: "2026-09-02T08:00:00Z",
+          source,
+        },
+      ],
+    };
+    const d = back(withDocument);
+    expect(d.transactions).toEqual([
+      { ...withDocument.transactions[0], amountMinor: 8000 },
+    ]);
+    expect(d.documents).toBe(withDocument.documents);
+    expect(validateData(d)).toEqual(d);
+  });
+  it("garde une opération remise à prévu (trace d'un ancien règlement)", () => {
+    const base = adjusted();
+    const reset: FinanceData = {
+      ...base,
+      transactions: base.transactions.map((t) => ({
+        ...t,
+        source: {
+          ...t.source,
+          note: "Remis à prévu le 2026-09-06T10:00:00.000Z (réglé précédemment le 2026-09-05).",
+        },
+      })),
+    };
+    const d = back(reset);
+    expect(d.transactions).toEqual([
+      { ...reset.transactions[0], amountMinor: 8000 },
+    ]);
+    expect(validateData(d)).toEqual(d);
+  });
+  it("garde un règlement, une identité importée ou une date déplacée", () => {
+    const base = adjusted();
+    const variants: Partial<Transaction>[] = [
+      { status: "settled", date: "2026-09-06" },
+      { source: { system: "notion", sourceId: "ligne-42" } },
+      { date: "2026-09-12" },
+    ];
+    for (const change of variants) {
+      const kept: FinanceData = {
+        ...base,
+        transactions: [{ ...base.transactions[0], ...change }],
+      };
+      const d = back(kept);
+      expect(d.transactions).toEqual([
+        { ...kept.transactions[0], amountMinor: 8000 },
+      ]);
+      expect(validateData(d)).toEqual(d);
+    }
+  });
+});
+
+describe("provenance des échéances matérialisées (projectedOccurrence)", () => {
+  const notionSource = {
+    system: "notion" as const,
+    sourceId: "n-1",
+    url: "https://www.notion.so/n1",
+    importedAt: "2026-09-01T10:00:00Z",
+    note: "Base Charges",
+  };
+  const notionBill = { ...bill, source: notionSource };
+  const settle = (date: string, paidOn: string): Transaction => ({
+    ...projectedOccurrence(notionBill, date),
+    status: "settled",
+    date: paidOn,
+  });
+  const notionData = () =>
+    withOccurrenceAmount(
+      billData({
+        recurrences: [notionBill],
+        transactions: [
+          settle("2026-07-05", "2026-07-05"),
+          settle("2026-08-05", "2026-08-06"),
+        ],
+      }),
+      "internet",
+      "2026-09-05",
+      8500,
+    );
+  it("garde la provenance de la récurrence sans son sourceId", () => {
+    expect(projectedOccurrence(notionBill, "2026-09-05").source).toEqual({
+      system: "notion",
+      url: "https://www.notion.so/n1",
+      importedAt: "2026-09-01T10:00:00Z",
+      note: "Base Charges",
+    });
+    expect(notionBill.source.sourceId).toBe("n-1"); // not mutated
+    const virtual = billLines(
+      billData({ recurrences: [notionBill] }),
+      "2026-09",
+    );
+    expect(virtual[0].source).not.toHaveProperty("sourceId");
+  });
+  it("deux mois réglés et un troisième ajusté passent validateData", () => {
+    const d = notionData();
+    expect(d.transactions.map((t) => t.id)).toEqual([
+      "internet:2026-07-05",
+      "internet:2026-08-05",
+      "internet:2026-09-05",
+    ]);
+    expect(validateData(d)).toEqual(d);
+    // The previous shape (each occurrence carrying the recurrence's sourceId) was refused.
+    expect(() =>
+      validateData({
+        ...d,
+        transactions: d.transactions.map((t) => ({
+          ...t,
+          source: notionSource,
+        })),
+      }),
+    ).toThrow("source en doublon");
+  });
+  it("un réimport de la même récurrence ou du même coffre ne crée aucun doublon", () => {
+    const d = notionData();
+    const again = mergeImport(d, d);
+    expect(again.transactions).toHaveLength(3);
+    expect(again.recurrences).toHaveLength(1);
+    expect(again.reviewItems).toEqual([]);
+    // Notion re-import under a new local id: matched by its source, occurrences untouched.
+    const reimported = mergeImport(
+      d,
+      billData({ recurrences: [{ ...notionBill, id: "notion-internet" }] }),
+    );
+    expect(reimported.recurrences.map((r) => r.id)).toEqual(["internet"]);
+    expect(reimported.transactions).toEqual(d.transactions);
+    expect(reimported.reviewItems).toEqual([]);
+  });
+});
+
+describe("règles partagées de rapprochement d'une échéance", () => {
+  it("un règlement importé d'un montant différent clôt l'échéance, l'écart reste visible", () => {
+    // Rule 100.00 CHF due 28 Feb; Notion shows 85.00 CHF actually paid. No partial settlement
+    // in the model: cohort 85 due / 85 settled / 0 remaining, 100 still shown as projected.
+    const imported = transaction({
+      id: "notion-paiement-1",
+      label: "Loyer",
+      amountMinor: 8500,
+      status: "settled",
+      date: "2026-02-28",
+      recurrenceId: "rent",
+      occurrenceDate: "2026-02-28",
+      source: { system: "notion", sourceId: "paiement-1" },
+    });
+    const d = data({
+      accounts: [account()],
+      recurrences: [lateRecurrence],
+      transactions: [imported],
+    });
+    expect(occurrenceCohort(d, "2026-02")[0]).toMatchObject({
+      dueAmountMinor: 8500,
+      projectedAmountMinor: 10000,
+      adjusted: true,
+      settled: { transactionId: "notion-paiement-1", amountMinor: 8500 },
+    });
+    expect(cohortSummary(d, "2026-02", "CHF")).toMatchObject({
+      dueMinor: 8500,
+      settledMinor: 8500,
+      remainingMinor: 0,
+    });
+    expect(transactionsForMonth(d, "2026-02")).toEqual([imported]);
+    expect(validateData(d)).toEqual(d);
+  });
+  it("un identifiant de septembre lié à octobre ne cache pas la projection de septembre", () => {
+    const misnamed = transaction({
+      id: "internet:2026-09-05",
+      label: "Internet",
+      amountMinor: 9500,
+      date: "2026-10-05",
+      recurrenceId: "internet",
+      occurrenceDate: "2026-10-05",
+    });
+    const d = billData({ transactions: [misnamed] });
+    // September: its own projection, same as the cohort.
+    expect(billLines(d, "2026-09")).toEqual([
+      expect.objectContaining({
+        occurrenceDate: "2026-09-05",
+        amountMinor: 8000,
+        status: "planned",
+      }),
+    ]);
+    expect(occurrenceCohort(d, "2026-09")[0]).toMatchObject({
+      dueAmountMinor: 8000,
+      adjusted: false,
+    });
+    // October: the linked record replaces the projection, once.
+    expect(billLines(d, "2026-10")).toEqual([misnamed]);
+    expect(occurrenceCohort(d, "2026-10")[0]).toMatchObject({
+      dueAmountMinor: 9500,
+      adjusted: true,
+    });
+    expect(
+      findOccurrenceTransaction(d.transactions, "internet", "2026-09-05"),
+    ).toBeUndefined();
+    expect(
+      findOccurrenceTransaction(d.transactions, "internet", "2026-10-05"),
+    ).toBe(misnamed);
+  });
+  it("findOccurrenceTransaction retrouve aussi une opération d'ancien export sans lien", () => {
+    const legacy = transaction({
+      id: "internet:2026-09-05",
+      date: "2026-09-05",
+    });
+    expect(findOccurrenceTransaction([legacy], "internet", "2026-09-05")).toBe(
+      legacy,
+    );
+    expect(
+      findOccurrenceTransaction([legacy], "internet", "2026-10-05"),
+    ).toBeUndefined();
   });
 });
 

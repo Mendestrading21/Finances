@@ -98,6 +98,9 @@ export default function OccurrenceDialog({
               name="amount"
               inputMode="decimal"
               autoComplete="off"
+              // Le montant est ce qu'on vient changer : le focus y va directement.
+              autoFocus
+              aria-describedby="occurrence-scope-note"
               defaultValue={String(amountMinor / 100)}
               required
             />
@@ -127,12 +130,16 @@ export default function OccurrenceDialog({
               ))}
             </div>
           </div>
-          <p className="footer-note field-full">
+          <p className="footer-note field-full" id="occurrence-scope-note">
             {scope === "month"
               ? settled
                 ? `Corrige le montant ${income ? "reçu" : "payé"} pour ${monthName}. Les autres mois ne changent pas.`
-                : `Seule l’échéance de ${monthName} change. Les autres mois gardent ${money(usualAmountMinor, recurrence.currency)}.`
-              : `Nouveau montant habituel à partir de ${monthName}. Les mois précédents gardent leur montant.`}
+                : `Seule l’échéance de ${monthName} change. Les autres mois ne changent pas.`
+              : `Nouveau montant habituel à partir de ${monthName}. Les mois précédents gardent leur montant${
+                  settled
+                    ? `, et le ${income ? "montant reçu" : "paiement"} déjà enregistré pour ${monthName} garde le sien`
+                    : ""
+                }. Un mois déjà modifié seul garde son montant.`}
           </p>
           <button
             type="button"

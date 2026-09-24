@@ -153,23 +153,36 @@ export function recurrenceAmountAt(recurrence: Recurrence, at: string): number {
  * `amountHistory`'s strictly-increasing invariant (validateData would then reject the result)
  * and, short of that, making `recurrenceAmountAt` return an older amount for a later date than
  * for an earlier one. Reaching further back, past an already-archived change, is rejected —
- * this pure function cannot safely re-splice history that far. */
+ * this pure function cannot safely re-splice history that far.
+ * The current amount with an EXPLICIT earlier date is not a no-op: it brings that scheduled
+ * change forward (90 from October, then "90 from September" → September is 90 too). Without
+ * a date (an editor re-saving an unchanged amount, dated today by default) it stays a no-op, so
+ * a label edit never advances a change scheduled for later. A date before `startDate` means
+ * "from the start" and is clamped to it (no occurrence exists before; validateData rejects an
+ * `amountEffectiveFrom` earlier than `startDate`) — e.g. the first day of the start month. */
 export function withRecurrenceAmount(
   recurrence: Recurrence,
   amountMinor: number,
-  effectiveFrom = today(),
+  effectiveFrom?: string,
 ): Recurrence {
   if (!Number.isSafeInteger(amountMinor) || amountMinor < 0)
     throw new Error("Montant de récurrence invalide.");
-  if (!isDate(effectiveFrom)) throw new Error("Date d’effet invalide.");
-  if (amountMinor === recurrence.amountMinor) return recurrence;
+  const requested = effectiveFrom ?? today();
+  if (!isDate(requested)) throw new Error("Date d’effet invalide.");
+  const from =
+    requested < recurrence.startDate ? recurrence.startDate : requested;
   const currentFrom = currentAmountFrom(recurrence);
+  if (
+    amountMinor === recurrence.amountMinor &&
+    (effectiveFrom === undefined || from >= currentFrom)
+  )
+    return recurrence;
   const history = recurrence.amountHistory ?? [];
-  if (effectiveFrom > currentFrom)
+  if (from > currentFrom)
     return {
       ...recurrence,
       amountMinor,
-      amountEffectiveFrom: effectiveFrom,
+      amountEffectiveFrom: from,
       amountHistory: [
         ...history,
         { amountMinor: recurrence.amountMinor, effectiveFrom: currentFrom },
@@ -178,9 +191,16 @@ export function withRecurrenceAmount(
   const archivedBoundary = history.length
     ? history[history.length - 1].effectiveFrom
     : null;
-  if (archivedBoundary !== null && effectiveFrom <= archivedBoundary)
-    throw new Error("Date d’effet antérieure à un changement déjà archivé.");
-  return { ...recurrence, amountMinor, amountEffectiveFrom: effectiveFrom, amountHistory: history };
+  if (archivedBoundary !== null && from <= archivedBoundary)
+    throw new Error(
+      "Un changement de montant plus récent existe déjà. Choisissez « Ce mois seulement », ou modifiez à partir d’un mois plus récent.",
+    );
+  return {
+    ...recurrence,
+    amountMinor,
+    amountEffectiveFrom: from,
+    amountHistory: history,
+  };
 }
 
 /** Normalizes any cadence to a monthly figure for comparison — e.g. 1200/year and 100/month
@@ -215,14 +235,21 @@ function occurrenceDueDate(recurrence: Recurrence, month: string): string | null
   return date;
 }
 
-/** The planned transaction `recurrence` projects for its occurrence due on `date`. The single
- * shape shared by `transactionsForMonth`'s virtual line and `withOccurrenceAmount`'s persisted
- * one, so persisting an occurrence never changes its identity (id, link, account, source). */
-function projectedOccurrence(
+/** The planned transaction `recurrence` projects for its occurrence due on `date` (a real due
+ * date, e.g. from `occurrenceCohort`; not re-checked here). The single shape shared by
+ * `transactionsForMonth`'s virtual line, `withOccurrenceAmount` and the app's "Payer", so
+ * persisting an occurrence never changes its identity (id, link, account). Its provenance is
+ * the recurrence's WITHOUT `sourceId`: that id names the one imported record (the recurrence),
+ * and validation.ts `unique()` rejects two transactions sharing it ("source en doublon") — so
+ * copying it made the 2nd materialized occurrence of a Notion/import recurrence unsavable.
+ * system, url, importedAt, updatedAt and note are kept. */
+export function projectedOccurrence(
   recurrence: Recurrence,
   date: string,
   amountMinor = recurrenceAmountAt(recurrence, date),
 ): Transaction {
+  const source = { ...recurrence.source };
+  delete source.sourceId;
   return {
     id: `${recurrence.id}:${date}`,
     label: recurrence.label,
@@ -235,15 +262,26 @@ function projectedOccurrence(
     category: recurrence.category,
     recurrenceId: recurrence.id,
     occurrenceDate: date,
-    source: recurrence.source,
+    source,
   };
+}
+
+/** The explicit transaction recorded for `recurrenceId`'s occurrence due on `date`, if any —
+ * the one rule every view uses to replace the projection (see `occurrenceLinks`). */
+export function findOccurrenceTransaction(
+  transactions: Transaction[],
+  recurrenceId: string,
+  date: string,
+): Transaction | undefined {
+  return occurrenceLinks(transactions)(recurrenceId, date);
 }
 
 /** Finds the explicit transaction recorded for an occurrence: by its persisted link
  * (recurrenceId + occurrenceDate) or, for older exports that never persisted those fields, by
- * the projection's own id `${recurrenceId}:${date}` — the two keys `transactionsForMonth` uses
- * to hide the projection. The id fallback only accepts a transaction carrying no link at all:
- * one whose link names another occurrence is that occurrence's record, never this one's. */
+ * the projection's own id `${recurrenceId}:${date}`. The id fallback only accepts a
+ * transaction carrying no link at all: one whose link names another occurrence is that
+ * occurrence's record, never this one's. Shared by `transactionsForMonth`, `occurrenceCohort`
+ * and `withOccurrenceAmount`, so Mon mois, Abonnements and Factures agree on every occurrence. */
 function occurrenceLinks(
   transactions: Transaction[],
 ): (recurrenceId: string, date: string) => Transaction | undefined {
@@ -270,18 +308,12 @@ export function transactionsForMonth(
     (transaction) =>
       (transaction.date?.slice(0, 7) ?? transaction.budgetMonth) === month,
   );
-  const linked = new Set(
-    data.transactions
-      .filter((t) => t.recurrenceId && t.occurrenceDate)
-      .map((t) => `${t.recurrenceId}:${t.occurrenceDate}`),
-  );
+  // Link fields first; the projection's id is a second guard only for older exports that never
+  // persisted them — a transaction linked to ANOTHER occurrence does not hide this one.
+  const linkedTo = occurrenceLinks(data.transactions);
   for (const recurrence of data.recurrences) {
     const date = occurrenceDueDate(recurrence, month);
-    if (date === null || linked.has(`${recurrence.id}:${date}`)) continue;
-    const id = `${recurrence.id}:${date}`;
-    // ID matching is a second guard for older exports that have not persisted the link fields.
-    if (data.transactions.some((transaction) => transaction.id === id))
-      continue;
+    if (date === null || linkedTo(recurrence.id, date)) continue;
     result.push(projectedOccurrence(recurrence, date));
   }
   return result.sort(
@@ -461,14 +493,17 @@ export function cohortSummary(
 
 /** "Ce mois seulement" : fixes the amount of ONE occurrence, leaving its recurrence and every
  * other month untouched (for "ce mois et les suivants", use `withRecurrenceAmount` from the
- * month's first day instead). The occurrence's linked transaction, if any (same keys as
- * `occurrenceCohort`), gets only its `amountMinor` replaced — status, dates, documents and
- * provenance stay as they are. Otherwise the projection is persisted as-is (same id, link,
- * account and source as `transactionsForMonth`'s virtual line), status "planned", with this
- * amount — so Mon mois, Abonnements and Factures all read the same single record, and a later
- * recurrence amount change never overrides it. `amountMinor` is read in the currency of the
- * record it lands on: the linked transaction's own (cohort item `currency`) when one exists,
- * else the recurrence's. */
+ * month's first day instead). The occurrence's linked transaction (`findOccurrenceTransaction`),
+ * if any, gets only its `amountMinor` replaced — status, dates, documents and provenance stay as
+ * they are. Otherwise the projection (`projectedOccurrence`) is persisted, status "planned",
+ * with this amount — so Mon mois, Abonnements and Factures all read the same single record, and
+ * a later recurrence amount change never overrides it. `amountMinor` is read in the currency of
+ * the record it lands on: the linked transaction's own (cohort item `currency`) when one
+ * exists, else the recurrence's.
+ * Asking for the rule's own amount (`recurrenceAmountAt`) returns to the projection: nothing is
+ * created (same `data` reference), and a linked transaction that only carried an amount
+ * (`isBareProjection`) is removed; one holding any other fact — a settlement, a document, a
+ * « Remis à prévu » trace, an imported identity or any edited field — is kept, amount updated. */
 export function withOccurrenceAmount(
   data: FinanceData,
   recurrenceId: string,
@@ -484,28 +519,71 @@ export function withOccurrenceAmount(
     occurrenceDueDate(recurrence, occurrenceDate.slice(0, 7)) !== occurrenceDate
   )
     throw new Error("Cette date n’est pas une échéance de cette récurrence.");
-  const linked = occurrenceLinks(data.transactions)(
+  const projected = projectedOccurrence(recurrence, occurrenceDate);
+  const backToRule = amountMinor === projected.amountMinor;
+  const linked = findOccurrenceTransaction(
+    data.transactions,
     recurrence.id,
     occurrenceDate,
   );
-  if (linked)
+  if (!linked) {
+    if (backToRule) return data;
+    // Its id is taken by a transaction linked to another occurrence: never overwrite or
+    // duplicate it.
+    if (data.transactions.some((t) => t.id === projected.id))
+      throw new Error(
+        "Identifiant d’échéance déjà utilisé par une autre opération.",
+      );
     return {
       ...data,
-      transactions: data.transactions.map((t) =>
-        t === linked ? { ...t, amountMinor } : t,
-      ),
+      transactions: [...data.transactions, { ...projected, amountMinor }],
     };
-  const projected = projectedOccurrence(
-    recurrence,
-    occurrenceDate,
-    amountMinor,
+  }
+  if (backToRule && isBareProjection(data, recurrence, linked, projected))
+    return {
+      ...data,
+      transactions: data.transactions.filter((t) => t !== linked),
+    };
+  return {
+    ...data,
+    transactions: data.transactions.map((t) =>
+      t === linked ? { ...t, amountMinor } : t,
+    ),
+  };
+}
+
+/** True when `linked` states nothing the projection doesn't, apart from its amount — so
+ * removing it loses no fact: still "planned", no document attached, no « Remis à prévu »
+ * trace of an earlier settlement (nor any other note), no imported identity of its own, and
+ * the same id, label, kind, currency, date, account and category as the projection. */
+function isBareProjection(
+  data: FinanceData,
+  recurrence: Recurrence,
+  linked: Transaction,
+  projected: Transaction,
+): boolean {
+  const note = linked.source.note ?? "";
+  return (
+    linked.status === "planned" &&
+    !data.documents.some((d) => d.transactionId === linked.id) &&
+    !note.includes("Remis à prévu") &&
+    note === (projected.source.note ?? "") &&
+    linked.source.system === projected.source.system &&
+    (linked.source.sourceId === undefined ||
+      linked.source.sourceId === recurrence.source.sourceId) &&
+    linked.budgetMonth === undefined &&
+    (
+      [
+        "id",
+        "label",
+        "kind",
+        "currency",
+        "date",
+        "accountId",
+        "category",
+      ] as const
+    ).every((key) => linked[key] === projected[key])
   );
-  // Its id is taken by a transaction linked to another occurrence: never overwrite or duplicate it.
-  if (data.transactions.some((t) => t.id === projected.id))
-    throw new Error(
-      "Identifiant d’échéance déjà utilisé par une autre opération.",
-    );
-  return { ...data, transactions: [...data.transactions, projected] };
 }
 
 export type RecurringFlowSummary = {

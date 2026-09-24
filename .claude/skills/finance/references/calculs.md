@@ -33,7 +33,7 @@ Conserver une règle récurrente et ses occurrences datées ; les paiements sont
 - Supporter fréquence, date de départ, fin éventuelle et exceptions. Un 31 mensuel est ramené au dernier jour du mois sans dériver les mois suivants. Vérifier février et années bissextiles.
 - Une modification s’applique aux occurrences futures non réglées, à partir d’une date explicite. Elle ne réécrit pas les paiements historiques.
 - Une charge annuelle divisée par douze est une provision mensuelle, pas douze paiements réels.
-- Un paiement partiel laisse un reste dû. Si cette fonction n’est pas développée, refuser la conversion silencieuse vers « payé ».
+- Un paiement partiel laisse un reste dû. Si cette fonction n’est pas développée, refuser la conversion silencieuse vers « payé ». État actuel (septembre 2026) : pas de règlement partiel ; « Payer » règle toujours le montant dû complet, et une opération réglée liée à une échéance clôt cette échéance à son propre montant, l’écart avec la règle restant affiché.
 - Rapprocher une occurrence prévue et son paiement confirmé par un lien ; ne pas additionner les deux dans les dépenses à venir.
 
 ## Transferts et devises
