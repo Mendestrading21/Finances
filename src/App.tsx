@@ -3760,7 +3760,7 @@ export default function App() {
           {demo
             ? "Démonstration · Tous les montants et établissements sont fictifs."
             : "Espace privé sur cet appareil ·"}{" "}
-          Version {__APP_VERSION__} du {dayLabel(__APP_BUILT_ON__)}.
+          Version {__APP_VERSION__} du {dayLabel(__APP_BUILT_ON__)}
         </footer>
       </main>
       <nav className="mobile-nav" aria-label="Navigation mobile">
