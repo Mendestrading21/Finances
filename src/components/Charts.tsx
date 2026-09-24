@@ -260,10 +260,13 @@ export function Allocation({
   items,
   currency,
   hidden,
+  unit = "comptes",
 }: {
   items: { name: string; value: number }[];
   currency: string;
   hidden: boolean;
+  // Ce que compte le centre de l'anneau : des comptes, ou des types de compte.
+  unit?: string;
 }) {
   const positive = items.filter((i) => i.value > 0);
   const total = positive.reduce((s, i) => s + i.value, 0);
@@ -333,7 +336,7 @@ export function Allocation({
           textAnchor="middle"
           fontSize="15"
         >
-          comptes
+          {unit}
         </text>
       </svg>
       <div className="legend">

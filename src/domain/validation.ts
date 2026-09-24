@@ -163,6 +163,7 @@ function account(value: unknown, path: string): Account {
     "name",
     "institution",
     "kind",
+    "group",
     "currency",
     "valuationMode",
     "balances",
@@ -185,6 +186,9 @@ function account(value: unknown, path: string): Account {
     ),
     balances: array(raw.balances, `${path}.balances`, balance, 10000),
     source: source(raw.source, `${path}.source`),
+    ...(raw.group === undefined
+      ? {}
+      : { group: text(raw.group, `${path}.group`, 60) }),
   };
   unique(result.balances, `${path}.balances`, false);
   return result;

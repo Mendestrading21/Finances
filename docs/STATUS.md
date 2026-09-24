@@ -731,6 +731,34 @@ Preuves :
 
 Limites : on ne crée plus de récurrence annuelle ou trimestrielle, ni de jour précis (conforme à « pas de dates ») ; les existantes gardent leur rythme. Un paiement anticipé dont la répétition change ensuite reste compté dans le mois de son ancienne échéance.
 
+## Types de compte et patrimoine par type (développé et testé le 24 septembre 2026)
+
+Fusion précédente : « Il me reste » et paiements anticipés dans `main` (commit `19d7d31`, PR #54), CI et déploiement Pages vérifiés verts.
+
+Demande de l'utilisateur, capture de sa table Notion à l'appui : voir sur chaque compte ce qu'il est (compte courant, épargne, prévoyance, trading, le compte de sa fille…) et le patrimoine complet par type sur l'Accueil, pour « un contrôle total ».
+
+- **Type de compte** : champ facultatif `group` sur `Account`, validé (60 caractères, non vide).
+  - Types proposés comme dans le Notion : Compte courant, Épargne, Épargne secours, Impôts, 2e pilier, 3e pilier, Trading, Business, Dette.
+  - « Autre (ex. Léna)… » : un nom libre, et « C'est plutôt » (compte, épargne, placements, dette) qui garde les calculs justes.
+  - Le type ne sert qu'à ranger et nommer. Les calculs restent portés par la nature (`kind`), inchangée.
+  - Un compte existant sans type est rangé selon sa nature (compte bancaire → Compte courant, épargne → Épargne, investissement → Trading, dette → Dette). Aucune migration n'est nécessaire ; un ancien export reste valide.
+- **Mes comptes** : un en-tête par type avec son total, puis ses comptes du plus grand au plus petit. Sur ordinateur, les types se rangent en grille. Le type n'est plus répété sur chaque carte.
+- **Accueil** : la carte « Patrimoine par type » remplace les trois premiers comptes. Elle montre, pour chaque type, le nombre de comptes, la part du patrimoine et le total. La répartition en anneau suit les mêmes types.
+- `wealthByType` réutilise `accountValue`, donc les mêmes valeurs, taux et dates que le total. La somme des types égale le total du patrimoine (testé). Un compte sans solde daté ou sans taux est compté « exclu », jamais estimé.
+- Icônes ajoutées : parapluie (prévoyance), mallette (business), carte (dette), cœur (types libres).
+- La démonstration fictive montre cinq types, dont « 3e pilier » et un compte « Enfant ».
+
+Relecture indépendante (`finance-verification`) : les calculs sont justes dans tous les cas essayés (devises avec et sans taux, soldes non datés, dette, positions, natures mélangées dans un type), les anciens fichiers restent valides et `group` survit à l'import, au coffre et à la synchronisation. Quatre défauts réels, corrigés :
+1. **Bloquant :** un type libre nommé comme un type prédéfini d'une autre nature (« trading » en épargne) se rouvrait sur le type prédéfini, et un simple ré-enregistrement changeait la nature du compte. L'éditeur ne propose désormais un type prédéfini que si sa nature est celle du compte ; sinon il garde « Autre » et la nature choisie.
+2. « Léna » et « léna » faisaient deux groupes : casse, espaces et accents décomposés sont ignorés, le groupe garde le premier libellé écrit.
+3. Avec une dette, les parts de l'Accueil étaient calculées sur le patrimoine net (une somme à 247 %) : elles le sont sur les actifs positifs, comme la répartition.
+4. « sans solde daté » s'affichait pour un compte daté sans taux de change : « non compté (solde ou taux manquant) ».
+
+Preuves :
+- `typecheck`, `test` (**258/258**, dont 4 tests `accountTypes` : jeu de 10 comptes façon Notion, conversion USD, somme des types égale au total, types en casse mélangée), `build`.
+- Les **22** scénarios `test:e2e` rejoués individuellement. Le scénario « account types… » crée deux comptes 3e pilier, « Léna » et « léna », un compte courant, une dette et un « trading » en épargne. Il vérifie l'ordre et les totaux des groupes, la part de 53 % (13 605 / 25 755, pas / 24 755), et que le compte « trading » reste en épargne après deux ré-enregistrements ; sans le correctif 1, il échoue (« Trading » au lieu de « Autre »).
+- Captures `02` à `04` régénérées (carte « Patrimoine par type », anneau à cinq types) et revues ; aucun débordement horizontal à 1 280 ni à 390 px.
+
 ## État réel
 
 | Élément                           | État                                                                                                                                                                   | Résultat et limite                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
