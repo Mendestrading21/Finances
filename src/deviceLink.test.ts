@@ -55,8 +55,8 @@ const SETTINGS = { owner: OWNER, repo: REPO, token: TOKEN };
 const API = "https://api.github.com";
 const ORIGIN = "https://finance.test";
 const PAGE = "/Finances/";
-const INVALID = "Ce lien d'ajout n'est pas valide.";
-const WRONG = "Phrase secrète incorrecte pour ce lien.";
+const INVALID = "Ce code d'ajout n'est pas valide.";
+const WRONG = "Phrase secrète incorrecte pour ce code.";
 
 const sample = (): FinanceData => ({
   ...emptyData(),

@@ -9,8 +9,12 @@ import {
 } from "./quickUnlock";
 import {
   createVault,
+  deriveVaultKey,
+  envelopeInfo,
   exportVault,
   importVault,
+  replaceVaultFromRemote,
+  resealVault,
   saveVault,
   unlockVault,
 } from "./vault";
@@ -95,6 +99,50 @@ function b64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
+/** A vault envelope sealed with `key` under the given KDF parameters, exactly as vault.ts seals one. */
+async function sealEnvelope(
+  key: CryptoKey,
+  kdf: { salt: string; iterations: number },
+  data: FinanceData,
+): Promise<string> {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const metadata = {
+    format: "Finance",
+    version: 1,
+    kdf: {
+      name: "PBKDF2",
+      hash: "SHA-256",
+      iterations: kdf.iterations,
+      salt: kdf.salt,
+    },
+    cipher: { name: "AES-GCM", iv: b64(iv), tagLength: 128 },
+    savedAt: new Date().toISOString(),
+  };
+  const additionalData = new TextEncoder().encode(
+    JSON.stringify([
+      metadata.format,
+      metadata.version,
+      metadata.kdf.name,
+      metadata.kdf.hash,
+      metadata.kdf.iterations,
+      metadata.kdf.salt,
+      metadata.cipher.name,
+      metadata.cipher.iv,
+      metadata.cipher.tagLength,
+      metadata.savedAt,
+    ]),
+  );
+  const ciphertext = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv, tagLength: 128, additionalData },
+    key,
+    new TextEncoder().encode(JSON.stringify(data)),
+  );
+  return JSON.stringify({
+    ...metadata,
+    ciphertext: b64(new Uint8Array(ciphertext)),
+  });
+}
+
 /**
  * Platform authenticator with the PRF extension, simulated: the PRF output is
  * HMAC-SHA256(secret, salt), so another secret behaves like another authenticator.
@@ -108,6 +156,8 @@ class FakeAuthenticator {
   capabilities: Record<string, boolean> = { "extension:prf": true };
   failCreate?: string;
   failGets: string[] = [];
+  /** Runs once while the next `get` prompt is shown (e.g. another tab replacing the vault). */
+  duringGet?: () => Promise<unknown>;
   creates: CredentialCreationOptions[] = [];
   gets: CredentialRequestOptions[] = [];
   forgotten: { rpId: string; credentialId: string }[] = [];
@@ -151,6 +201,9 @@ class FakeAuthenticator {
     },
     get: async (options?: CredentialRequestOptions) => {
       this.gets.push(options!);
+      const during = this.duringGet;
+      this.duringGet = undefined;
+      await during?.();
       const failure = this.failGets.shift();
       if (failure) throw new DOMException("Refusé", failure);
       const publicKey = options!.publicKey!;
@@ -306,9 +359,20 @@ describe("déverrouillage rapide par Face ID ou empreinte (WebAuthn PRF)", () =>
 
     const config = stored();
     expect(Object.keys(config).sort()).toEqual(
-      ["createdAt", "credentialId", "ct", "iv", "prfSalt", "version"].sort(),
+      [
+        "createdAt",
+        "credentialId",
+        "ct",
+        "iv",
+        "prfSalt",
+        "vaultSalt",
+        "version",
+      ].sort(),
     );
     expect(config.version).toBe(1);
+    expect(config.vaultSalt).toBe(envelopeInfo(vaultBefore).salt);
+    // 256-byte padded block + 16-byte tag, whatever the passphrase length (up to 254 bytes).
+    expect(atob(config.ct)).toHaveLength(272);
     expect(auth.known.has(config.credentialId)).toBe(true);
     expect(atob(config.prfSalt)).toHaveLength(32);
     expect(b64(bytesOf(created.extensions!.prf!.eval!.first))).toBe(
@@ -410,13 +474,15 @@ describe("déverrouillage rapide par Face ID ou empreinte (WebAuthn PRF)", () =>
     // Annulé et phrase fausse : c'est la phrase qu'il faut corriger.
     auth.failCreate = "NotAllowedError";
     expect(
-      (await rejection(enableQuickUnlock("Une mauvaise phrase secrète"))).message,
+      (await rejection(enableQuickUnlock("Une mauvaise phrase secrète")))
+        .message,
     ).toBe(OPEN_ERROR);
     auth.failCreate = undefined;
     // Sortie PRF à obtenir par `get` : la phrase fausse l'arrête avant toute demande.
     auth.prf = "enabled-only";
     expect(
-      (await rejection(enableQuickUnlock("Une mauvaise phrase secrète"))).message,
+      (await rejection(enableQuickUnlock("Une mauvaise phrase secrète")))
+        .message,
     ).toBe(OPEN_ERROR);
     expect(auth.gets).toHaveLength(0);
     expect(snapshot()).toEqual(before);
@@ -486,7 +552,7 @@ describe("déverrouillage rapide par Face ID ou empreinte (WebAuthn PRF)", () =>
     expect((await quickUnlock()).data).toEqual(sample());
   });
 
-  it("coffre remplacé avec une autre phrase : réglage désactivé, message, coffre intact", async () => {
+  it("autre coffre importé (lien, GitHub, restauration) : réglage retiré sans solliciter Face ID", async () => {
     const other = new MemoryStorage();
     vi.stubGlobal("localStorage", other);
     await createVault(OTHER_PASSPHRASE, emptyData());
@@ -494,18 +560,162 @@ describe("déverrouillage rapide par Face ID ou empreinte (WebAuthn PRF)", () =>
     vi.stubGlobal("localStorage", local);
 
     await createVault(PASSPHRASE, sample());
+    const ownBackup = exportVault();
     await enableQuickUnlock(PASSPHRASE);
     const credentialId = stored().credentialId;
+    const gets = auth.gets.length;
     await importVault(otherBackup, OTHER_PASSPHRASE, true);
     const vaultBefore = exportVault();
 
-    await expect(quickUnlock()).rejects.toThrow(CHANGED);
-    expect(local.getItem(QUICK_KEY)).toBeNull();
+    // Checked on display: the old passphrase can no longer be recovered with Face ID.
     expect(quickUnlockEnabled()).toBe(false);
+    expect(local.getItem(QUICK_KEY)).toBeNull();
+    expect(auth.gets).toHaveLength(gets);
     expect(auth.forgotten).toContainEqual({ rpId: HOST, credentialId });
     expect(exportVault()).toBe(vaultBefore);
-    expect((await unlockVault(OTHER_PASSPHRASE)).data).toEqual(emptyData());
     await expect(quickUnlock()).rejects.toThrow("pas activé");
+
+    // Same result when the unlock button is used directly, without a prior display check.
+    await importVault(ownBackup, PASSPHRASE, true);
+    await enableQuickUnlock(PASSPHRASE);
+    await importVault(otherBackup, OTHER_PASSPHRASE, true);
+    await expect(quickUnlock()).rejects.toThrow(
+      "Face ID a été désactivé : le coffre de cet appareil a été remplacé.",
+    );
+    expect(local.getItem(QUICK_KEY)).toBeNull();
+    expect(auth.gets).toHaveLength(gets);
+    expect((await unlockVault(OTHER_PASSPHRASE)).data).toEqual(emptyData());
+
+    // No vault left at all: the setting goes too.
+    await importVault(ownBackup, PASSPHRASE, true);
+    await enableQuickUnlock(PASSPHRASE);
+    const setting = local.getItem(QUICK_KEY)!;
+    local.removeItem("finance.vault.v1");
+    await expect(quickUnlock()).rejects.toThrow("Aucun coffre enregistré");
+    expect(local.getItem(QUICK_KEY)).toBeNull();
+    local.setItem(QUICK_KEY, setting);
+    expect(quickUnlockEnabled()).toBe(false);
+    expect(local.getItem(QUICK_KEY)).toBeNull();
+    expect(auth.gets).toHaveLength(gets);
+  });
+
+  it("même coffre enregistré, tiré d’une synchronisation, ré-scellé ou restauré : le sel ne change pas, Face ID reste actif", async () => {
+    const key = await createVault(PASSPHRASE, sample());
+    const first = exportVault();
+    const salt = envelopeInfo(first).salt;
+    await enableQuickUnlock(PASSPHRASE);
+    const setting = local.getItem(QUICK_KEY);
+
+    await saveVault(key, emptyData());
+    expect(envelopeInfo(exportVault()).salt).toBe(salt);
+    expect(quickUnlockEnabled()).toBe(true);
+    expect((await quickUnlock()).data).toEqual(emptyData());
+
+    // What a sync pull does with a version of the same vault coming from another device.
+    await replaceVaultFromRemote(key, first);
+    expect(envelopeInfo(exportVault()).salt).toBe(salt);
+    expect(quickUnlockEnabled()).toBe(true);
+    expect((await quickUnlock()).data).toEqual(sample());
+
+    // « Garder ce coffre » after a conflict re-seals it.
+    await resealVault(key, exportVault());
+    expect(quickUnlockEnabled()).toBe(true);
+
+    // Restoring a backup of this same vault.
+    const backup = exportVault();
+    await saveVault(key, emptyData());
+    await importVault(backup, PASSPHRASE, true);
+    expect(envelopeInfo(exportVault()).salt).toBe(salt);
+    expect(quickUnlockEnabled()).toBe(true);
+    expect((await quickUnlock()).data).toEqual(sample());
+
+    expect(local.getItem(QUICK_KEY)).toBe(setting);
+    expect(auth.forgotten).toHaveLength(0);
+  });
+
+  it("même sel mais autre phrase secrète : réglage désactivé après Face ID, coffre intact", async () => {
+    await createVault(PASSPHRASE, sample());
+    await enableQuickUnlock(PASSPHRASE);
+    const credentialId = stored().credentialId;
+    const { salt, iterations } = envelopeInfo(exportVault());
+    const otherKey = await deriveVaultKey(OTHER_PASSPHRASE, salt, iterations);
+    const crafted = await sealEnvelope(
+      otherKey,
+      { salt, iterations },
+      emptyData(),
+    );
+    local.setItem("finance.vault.v1", crafted);
+
+    expect(quickUnlockEnabled()).toBe(true);
+    await expect(quickUnlock()).rejects.toThrow(CHANGED);
+    expect(local.getItem(QUICK_KEY)).toBeNull();
+    expect(auth.forgotten).toContainEqual({ rpId: HOST, credentialId });
+    expect(exportVault()).toBe(crafted);
+    expect((await unlockVault(OTHER_PASSPHRASE)).data).toEqual(emptyData());
+  });
+
+  it("le chiffré est lié au coffre : un réglage réattribué à un autre coffre ne s’ouvre pas", async () => {
+    // Another vault with the very same passphrase: only the binding tells them apart.
+    const other = new MemoryStorage();
+    vi.stubGlobal("localStorage", other);
+    await createVault(PASSPHRASE, emptyData());
+    const otherBackup = exportVault();
+    vi.stubGlobal("localStorage", local);
+
+    await createVault(PASSPHRASE, sample());
+    await enableQuickUnlock(PASSPHRASE);
+    const config = stored();
+    await importVault(otherBackup, PASSPHRASE, true);
+    const retargeted = JSON.stringify({
+      ...config,
+      vaultSalt: envelopeInfo(otherBackup).salt,
+    });
+    local.setItem(QUICK_KEY, retargeted);
+    const vaultBefore = exportVault();
+
+    expect(quickUnlockEnabled()).toBe(true);
+    await expect(quickUnlock()).rejects.toThrow("n’a pas pu ouvrir Finance");
+    expect(local.getItem(QUICK_KEY)).toBe(retargeted);
+    expect(exportVault()).toBe(vaultBefore);
+  });
+
+  it("coffre remplacé pendant la demande Face ID de l’activation : rien n’est enregistré", async () => {
+    const other = new MemoryStorage();
+    vi.stubGlobal("localStorage", other);
+    await createVault(OTHER_PASSPHRASE, emptyData());
+    const otherBackup = exportVault();
+    vi.stubGlobal("localStorage", local);
+
+    await createVault(PASSPHRASE, sample());
+    auth.prf = "enabled-only";
+    auth.duringGet = () => importVault(otherBackup, OTHER_PASSPHRASE, true);
+    await expect(enableQuickUnlock(PASSPHRASE)).rejects.toThrow(
+      "Le coffre a changé pendant l’activation. Rien n’a été enregistré ; recommencez.",
+    );
+    expect(local.getItem(QUICK_KEY)).toBeNull();
+    expect(auth.forgotten.map((entry) => entry.credentialId)).toEqual([
+      ...auth.known,
+    ]);
+    expect(exportVault()).toBe(otherBackup);
+  });
+
+  it("la longueur de la phrase secrète ne se voit pas dans le chiffré", async () => {
+    const sizes: number[] = [];
+    for (const passphrase of [
+      "Douze-car-ok",
+      PASSPHRASE,
+      "x".repeat(254),
+      "é".repeat(150),
+    ]) {
+      local.clear();
+      await createVault(passphrase, sample());
+      await enableQuickUnlock(passphrase);
+      sizes.push(atob(stored().ct).length);
+      expect(Object.values(snapshot()).join("\n")).not.toContain(passphrase);
+      expect((await quickUnlock()).data).toEqual(sample());
+    }
+    // Up to 254 bytes: one 256-byte block. Beyond: the next multiple of 64 (2 + 300 -> 320).
+    expect(sizes).toEqual([272, 272, 272, 336]);
   });
 
   it("réglage altéré ou illisible : désactivé avec un message clair, sans demander Face ID ni toucher au coffre", async () => {
@@ -526,6 +736,10 @@ describe("déverrouillage rapide par Face ID ou empreinte (WebAuthn PRF)", () =>
       JSON.stringify({ ...good, credentialId: `${good.credentialId}=` }),
       JSON.stringify({ ...good, credentialId: "" }),
       JSON.stringify({ ...good, ct: "AAAA" }),
+      JSON.stringify({ ...good, ct: b64(new Uint8Array(273)) }),
+      JSON.stringify({ ...good, ct: b64(new Uint8Array(208)) }),
+      JSON.stringify({ ...good, vaultSalt: undefined }),
+      JSON.stringify({ ...good, vaultSalt: b64(new Uint8Array(15)) }),
       JSON.stringify({ ...good, createdAt: "hier" }),
     ];
     for (const raw of altered) {

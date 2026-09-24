@@ -1,5 +1,12 @@
 import type { FinanceData } from "./domain/types";
-import { isVaultOpenError, unlockVault, vaultExists } from "./vault";
+import {
+  isVaultOpenError,
+  openVaultKeyInfo,
+  unlockVault,
+  vaultEnvelopeInfo,
+  vaultExists,
+  type EnvelopeInfo,
+} from "./vault";
 
 /**
  * Déverrouillage rapide (Face ID, Touch ID, empreinte, Windows Hello) par WebAuthn + extension PRF.
@@ -9,15 +16,27 @@ import { isVaultOpenError, unlockVault, vaultExists } from "./vault";
  * phrase secrète au repos sur CET appareil. Seul ce chiffré est stocké : jamais la phrase, la
  * sortie PRF ni une clé. Le déverrouillage redonne la phrase à `unlockVault`, qui reste l'unique
  * juge : aucune donnée du coffre ne dépend de ce module.
+ *
+ * Le réglage est lié au coffre qu'il ouvre par le sel de ce coffre (enregistré et authentifié dans
+ * les données associées) : dès qu'un autre coffre le remplace sur l'appareil (lien, GitHub,
+ * restauration), ou qu'il n'y en a plus, le réglage est supprimé sans solliciter Face ID. Le sel ne
+ * change ni à l'enregistrement ni lors d'une synchronisation du même coffre. La phrase est remplie
+ * à une taille fixe avant chiffrement pour que le chiffré n'en révèle pas la longueur.
  */
 const STORAGE_KEY = "finance.quick-unlock.v1";
 const INFO = "Finance/quick-unlock/v1";
 const TIMEOUT_MS = 60_000;
 const PRF_BYTES = 32;
 const SALT_BYTES = 32;
+const VAULT_SALT_BYTES = 16;
 const MAX_CREDENTIAL_ID_BYTES = 1_023;
 // A vault passphrase has at most 1 024 UTF-16 code units (see vault.ts): at most 3 072 UTF-8 bytes.
 const MAX_PASSPHRASE_BYTES = 3_072;
+// Padded plaintext: 2-byte length, the passphrase, zeros; 256 bytes, or the next multiple of 64.
+const LENGTH_PREFIX_BYTES = 2;
+const PADDED_MIN_BYTES = 256;
+const PADDED_STEP_BYTES = 64;
+const TAG_BYTES = 16;
 const CREATED_AT_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
 const UNSUPPORTED_ERROR =
@@ -34,6 +53,10 @@ const UNREADABLE_ERROR =
   "Le réglage Face ID de cet appareil était illisible ; il a été désactivé. Déverrouillez avec la phrase secrète, puis réactivez-le dans les réglages.";
 const FAILED_ERROR =
   "Face ID n’a pas pu ouvrir Finance sur cet appareil. Déverrouillez avec la phrase secrète.";
+const REPLACED_ERROR =
+  "Face ID a été désactivé : le coffre de cet appareil a été remplacé. Déverrouillez avec la phrase secrète, puis réactivez-le dans les réglages.";
+const ENABLE_RACE_ERROR =
+  "Le coffre a changé pendant l’activation. Rien n’a été enregistré ; recommencez.";
 const NO_VAULT_ERROR = "Aucun coffre enregistré sur cet appareil.";
 const STORAGE_ERROR =
   "Le stockage de cet appareil est inaccessible. Vérifiez les réglages du navigateur.";
@@ -49,6 +72,8 @@ type StoredQuickUnlock = {
   version: 1;
   credentialId: string;
   prfSalt: string;
+  /** Salt of the vault this passphrase opens (base64, 16 bytes): not secret, identifies the vault. */
+  vaultSalt: string;
   iv: string;
   ct: string;
   createdAt: string;
@@ -195,6 +220,7 @@ function parseStored(raw: string): ParsedQuickUnlock | null {
       "version",
       "credentialId",
       "prfSalt",
+      "vaultSalt",
       "iv",
       "ct",
       "createdAt",
@@ -213,14 +239,33 @@ function parseStored(raw: string): ParsedQuickUnlock | null {
     MAX_CREDENTIAL_ID_BYTES,
   );
   const prfSalt = fromBase64(value.prfSalt, SALT_BYTES, SALT_BYTES);
+  const vaultSalt = fromBase64(
+    value.vaultSalt,
+    VAULT_SALT_BYTES,
+    VAULT_SALT_BYTES,
+  );
   const iv = fromBase64(value.iv, 12, 12);
-  const ct = fromBase64(value.ct, 17, MAX_PASSPHRASE_BYTES + 16);
-  if (!credentialId || !prfSalt || !iv || !ct) return null;
+  const ct = fromBase64(
+    value.ct,
+    PADDED_MIN_BYTES + TAG_BYTES,
+    paddedSize(MAX_PASSPHRASE_BYTES) + TAG_BYTES,
+  );
+  if (
+    !credentialId ||
+    !prfSalt ||
+    !vaultSalt ||
+    !iv ||
+    !ct ||
+    (ct.length - TAG_BYTES) % PADDED_STEP_BYTES !== 0
+  ) {
+    return null;
+  }
   return {
     stored: {
       version: 1,
       credentialId: value.credentialId,
       prfSalt: value.prfSalt as string,
+      vaultSalt: value.vaultSalt as string,
       iv: value.iv as string,
       ct: value.ct as string,
       createdAt: value.createdAt,
@@ -352,8 +397,50 @@ async function wrappingKey(
   );
 }
 
-function additionalData(credentialId: string): Uint8Array<ArrayBuffer> {
-  return encoder.encode(`${INFO}|${credentialId}`);
+/** Binds the ciphertext to this passkey and to the vault it opens. */
+function additionalData(
+  credentialId: string,
+  vaultSalt: string,
+): Uint8Array<ArrayBuffer> {
+  return encoder.encode(`${INFO}|${credentialId}|${vaultSalt}`);
+}
+
+function paddedSize(secretBytes: number): number {
+  return Math.max(
+    PADDED_MIN_BYTES,
+    Math.ceil((LENGTH_PREFIX_BYTES + secretBytes) / PADDED_STEP_BYTES) *
+      PADDED_STEP_BYTES,
+  );
+}
+
+/** Length prefix, secret, zeros: every passphrase up to 254 bytes gives the same ciphertext size. */
+function pad(secret: Uint8Array): Uint8Array<ArrayBuffer> {
+  const padded = new Uint8Array(paddedSize(secret.length));
+  padded[0] = secret.length >>> 8;
+  padded[1] = secret.length & 0xff;
+  padded.set(secret, LENGTH_PREFIX_BYTES);
+  return padded;
+}
+
+/** Strict inverse of `pad` (canonical size, zero filling); a view into `padded`, or null. */
+function unpad(padded: Uint8Array): Uint8Array | null {
+  const length = (padded[0] << 8) | padded[1];
+  if (
+    padded.length < PADDED_MIN_BYTES ||
+    length < 1 ||
+    length > MAX_PASSPHRASE_BYTES ||
+    paddedSize(length) !== padded.length ||
+    padded.subarray(LENGTH_PREFIX_BYTES + length).some((byte) => byte !== 0)
+  ) {
+    return null;
+  }
+  return padded.subarray(LENGTH_PREFIX_BYTES, LENGTH_PREFIX_BYTES + length);
+}
+
+/** Salt of the vault now on this device; null when there is none. Throws the vault's own error if unreadable. */
+function currentVaultSalt(): string | null {
+  const info: EnvelopeInfo | null = vaultEnvelopeInfo();
+  return info === null ? null : info.salt;
 }
 
 /**
@@ -424,22 +511,36 @@ export async function quickUnlockSupported(): Promise<boolean> {
   }
 }
 
-/** A valid setting is stored on this device (says nothing about the authenticator itself). */
+/** A valid setting for the vault now on this device (says nothing about the authenticator itself).
+ * A setting left by another vault, or with no vault at all, is removed here, without any prompt. */
 export function quickUnlockEnabled(): boolean {
+  let raw: string | null;
+  let salt: string | null;
   try {
-    const raw = readStored();
-    return raw !== null && parseStored(raw) !== null;
+    raw = readStored();
+    if (raw === null) return false;
+    salt = currentVaultSalt();
   } catch {
+    // Unreadable storage or vault: say no, remove nothing.
     return false;
   }
+  const parsed = parseStored(raw);
+  if (!parsed) return false;
+  if (salt !== parsed.stored.vaultSalt) {
+    removeIfUnchanged(raw);
+    forgetCredential(parsed.stored.credentialId);
+    return false;
+  }
+  return true;
 }
 
-/** Rethrows the vault's own error when the passphrase did not open this device's vault. */
-async function passphraseRefused(
-  check: Promise<{ error: unknown } | undefined>,
-): Promise<void> {
-  const failure = await check;
-  if (failure) throw failure.error;
+type PassphraseCheck = Promise<{ salt: string } | { error: unknown }>;
+
+/** Salt of the vault the passphrase opened; rethrows the vault's own error when it did not. */
+async function passphraseRefused(check: PassphraseCheck): Promise<string> {
+  const outcome = await check;
+  if ("error" in outcome) throw outcome.error;
+  return outcome.salt;
 }
 
 /** Checks the passphrase against this device's vault, registers a passkey with PRF, then stores
@@ -454,8 +555,8 @@ export async function enableQuickUnlock(passphrase: string): Promise<void> {
   // (PBKDF2, up to a second on a phone) runs during the prompt: awaiting it first could let Safari
   // treat the tap as expired and refuse Face ID. A wrong passphrase stores nothing and the new
   // passkey is signalled as unknown.
-  const check = unlockVault(passphrase).then(
-    () => undefined,
+  const check: PassphraseCheck = unlockVault(passphrase).then(
+    (opened) => ({ salt: openVaultKeyInfo(opened.key).salt }),
     (error: unknown) => ({ error }),
   );
 
@@ -520,8 +621,9 @@ export async function enableQuickUnlock(passphrase: string): Promise<void> {
     prfOutput = takePrfOutput(results);
   }
   const credentialIdText = toBase64Url(credentialId);
+  let vaultSalt: string;
   try {
-    await passphraseRefused(check);
+    vaultSalt = await passphraseRefused(check);
   } catch (error) {
     prfOutput?.fill(0);
     forgetCredential(credentialIdText);
@@ -551,10 +653,13 @@ export async function enableQuickUnlock(passphrase: string): Promise<void> {
     }
   }
 
-  // 4. HKDF(PRF) -> AES-GCM key, never extractable, bound to this passkey by the additional data.
+  // 4. HKDF(PRF) -> AES-GCM key, never extractable, bound to this passkey and this vault by the
+  // additional data. The passphrase is padded so the ciphertext does not reveal its length.
   let iv: Uint8Array<ArrayBuffer>;
   let ciphertext: ArrayBuffer;
-  const plaintext = encoder.encode(passphrase);
+  const secret = encoder.encode(passphrase);
+  const plaintext = pad(secret);
+  secret.fill(0);
   try {
     const key = await wrappingKey(prfOutput);
     iv = random(12);
@@ -563,7 +668,7 @@ export async function enableQuickUnlock(passphrase: string): Promise<void> {
         name: "AES-GCM",
         iv,
         tagLength: 128,
-        additionalData: additionalData(credentialIdText),
+        additionalData: additionalData(credentialIdText, vaultSalt),
       },
       key,
       plaintext,
@@ -576,24 +681,36 @@ export async function enableQuickUnlock(passphrase: string): Promise<void> {
     prfOutput.fill(0);
   }
 
-  // 5. One atomic write, only once everything above succeeded.
+  // 5. One atomic write, only once everything above succeeded, and only for the vault still here.
   const stored: StoredQuickUnlock = {
     version: 1,
     credentialId: credentialIdText,
     prfSalt: toBase64(prfSalt),
+    vaultSalt,
     iv: toBase64(iv),
     ct: toBase64(new Uint8Array(ciphertext)),
     createdAt: new Date().toISOString(),
   };
   let previous: ParsedQuickUnlock | null = null;
   try {
+    let stillHere: boolean;
+    try {
+      stillHere = currentVaultSalt() === vaultSalt;
+    } catch {
+      stillHere = false;
+    }
+    if (!stillHere) throw new Error(ENABLE_RACE_ERROR);
     const local = storage();
     const before = local.getItem(STORAGE_KEY);
     previous = before === null ? null : parseStored(before);
     local.setItem(STORAGE_KEY, JSON.stringify(stored));
-  } catch {
+  } catch (error) {
     forgetCredential(credentialIdText);
-    throw new Error(SAVE_ERROR);
+    throw new Error(
+      error instanceof Error && error.message === ENABLE_RACE_ERROR
+        ? ENABLE_RACE_ERROR
+        : SAVE_ERROR,
+    );
   }
   if (previous && previous.stored.credentialId !== credentialIdText) {
     forgetCredential(previous.stored.credentialId);
@@ -613,7 +730,14 @@ export async function quickUnlock(): Promise<{
     removeIfUnchanged(raw);
     throw new Error(UNREADABLE_ERROR);
   }
-  if (!vaultExists()) throw new Error(NO_VAULT_ERROR);
+  // Another vault (or none) on this device: the setting is obsolete, removed without any prompt.
+  // An unreadable vault throws its own error here and removes nothing.
+  const vaultSalt = currentVaultSalt();
+  if (vaultSalt !== parsed.stored.vaultSalt) {
+    removeIfUnchanged(raw);
+    forgetCredential(parsed.stored.credentialId);
+    throw new Error(vaultSalt === null ? NO_VAULT_ERROR : REPLACED_ERROR);
+  }
   const container = credentialsApi();
   const rp = relyingPartyId();
   if (!container || !rp) throw new Error(UNSUPPORTED_ERROR);
@@ -636,7 +760,10 @@ export async function quickUnlock(): Promise<{
             name: "AES-GCM",
             iv: parsed.iv,
             tagLength: 128,
-            additionalData: additionalData(parsed.stored.credentialId),
+            additionalData: additionalData(
+              parsed.stored.credentialId,
+              parsed.stored.vaultSalt,
+            ),
           },
           key,
           parsed.ct,
@@ -647,7 +774,9 @@ export async function quickUnlock(): Promise<{
       throw new Error(FAILED_ERROR);
     }
     try {
-      passphrase = decoder.decode(plaintext);
+      const secret = unpad(plaintext);
+      if (secret === null) throw new Error(FAILED_ERROR);
+      passphrase = decoder.decode(secret);
     } catch {
       throw new Error(FAILED_ERROR);
     } finally {

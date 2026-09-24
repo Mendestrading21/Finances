@@ -12,14 +12,16 @@ import {
 } from "./vault";
 
 /**
- * « Ajouter un appareil » : un lien à partager (AirDrop, Messages, presse-papiers) qui transporte
+ * « Ajouter un appareil » : un code à copier (AirDrop, Messages, presse-papiers) qui transporte
  * les réglages GitHub (propriétaire, dépôt, chemin, jeton) chiffrés avec la clé du coffre ouvert.
- * Le nouvel appareil colle le lien et tape la phrase secrète : elle redérive la même clé (sel et
- * itérations du coffre, non secrets, inclus dans le lien), puis `openFromGitHub` fait le reste.
+ * Le nouvel appareil colle le code « FIN1.… » dans l'application et tape la phrase secrète : elle
+ * redérive la même clé (sel et itérations du coffre, non secrets, inclus dans le code), puis
+ * `openFromGitHub` fait le reste.
  *
- * Le code voyage dans le fragment (#ajouter=…), jamais envoyé au serveur. Il reste un chiffré
- * attaquable hors ligne par la seule phrase secrète, comme une sauvegarde exportée : à partager
- * seulement avec ses propres appareils.
+ * Le code est destiné à être collé, pas ouvert comme adresse : une URL resterait dans l'historique
+ * du navigateur. `url` reste fournie (code dans le fragment #ajouter=…, jamais envoyé au serveur)
+ * et une URL collée est encore acceptée. Le code reste un chiffré attaquable hors ligne par la
+ * seule phrase secrète, comme une sauvegarde exportée : à partager seulement avec ses propres appareils.
  */
 const PREFIX = "FIN1.";
 const FRAGMENT = "ajouter=";
@@ -29,8 +31,8 @@ const MAX_CODE_CHARS = 4_096;
 const MAX_INPUT_CHARS = 8_192;
 // Owner (100) + repository (100) + path (200) + token (255), ASCII, plus JSON syntax: well under 2 KiB.
 const MAX_SETTINGS_BYTES = 2_048;
-const INVALID_ERROR = "Ce lien d'ajout n'est pas valide.";
-const PASSPHRASE_ERROR = "Phrase secrète incorrecte pour ce lien.";
+const INVALID_ERROR = "Ce code d'ajout n'est pas valide.";
+const PASSPHRASE_ERROR = "Phrase secrète incorrecte pour ce code.";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder("utf-8", { fatal: true });
@@ -118,7 +120,7 @@ function webCrypto(): Crypto {
   return globalThis.crypto;
 }
 
-/** Strict shape of a link payload; returns a fresh, frozen copy or throws the one invalid-link error. */
+/** Strict shape of a code payload; returns a fresh, frozen copy or throws the one invalid-code error. */
 function validateLink(value: unknown): DeviceLink {
   if (
     !record(value) ||
@@ -206,7 +208,7 @@ export async function createDeviceLink(
   return { code, url: `${base}#${FRAGMENT}${code}` };
 }
 
-/** Accepts the full URL (any origin), the fragment alone (with or without « # ») or the bare code. */
+/** Accepts the bare code (the intended use), or a pasted URL (any origin) or fragment, with or without « # ». */
 export function readDeviceLink(input: string): DeviceLink {
   if (typeof input !== "string" || input.length > MAX_INPUT_CHARS) {
     throw new Error(INVALID_ERROR);
@@ -229,7 +231,7 @@ export function readDeviceLink(input: string): DeviceLink {
   return validateLink(value);
 }
 
-/** Nothing is written unless the passphrase opens the link; then `openFromGitHub` applies all its checks. */
+/** Nothing is written unless the passphrase opens the code; then `openFromGitHub` applies all its checks. */
 export async function openFromDeviceLink(
   link: DeviceLink,
   passphrase: string,
