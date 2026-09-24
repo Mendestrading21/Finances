@@ -3,9 +3,8 @@ import {
   isVaultOpenError,
   openVaultKeyInfo,
   unlockVault,
-  vaultEnvelopeInfo,
   vaultExists,
-  type EnvelopeInfo,
+  vaultSaltOnly,
 } from "./vault";
 
 /**
@@ -439,8 +438,8 @@ function unpad(padded: Uint8Array): Uint8Array | null {
 
 /** Salt of the vault now on this device; null when there is none. Throws the vault's own error if unreadable. */
 function currentVaultSalt(): string | null {
-  const info: EnvelopeInfo | null = vaultEnvelopeInfo();
-  return info === null ? null : info.salt;
+  // The salt alone: decoding a large vault here would delay the prompt past the tap.
+  return vaultSaltOnly();
 }
 
 /**

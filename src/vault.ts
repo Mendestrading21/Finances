@@ -554,6 +554,23 @@ export function vaultEnvelopeInfo(): EnvelopeInfo | null {
   return raw === null ? null : envelopeInfo(raw);
 }
 
+/** Only the key-derivation salt of the stored vault, without decoding its ciphertext: fast even on
+ * a vault of several megabytes (checked before a Face ID prompt, which must follow the tap closely).
+ * Null when there is no vault; throws when the envelope is unreadable. */
+export function vaultSaltOnly(): string | null {
+  const raw = readRaw();
+  if (raw === null) return null;
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    throw new Error(INVALID_ERROR);
+  }
+  if (!record(value) || !record(value.kdf)) throw new Error(INVALID_ERROR);
+  fromBase64(value.kdf.salt, 16, 16);
+  return value.kdf.salt as string;
+}
+
 export class VaultKeyMismatchError extends Error {
   constructor() {
     super(
