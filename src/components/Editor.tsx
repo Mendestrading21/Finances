@@ -15,6 +15,8 @@ import {
 } from "../domain/types";
 import {
   applySimpleEdit,
+  latestBalance,
+  money,
   monthLabel,
   nextOccurrenceDate,
   parseMoney,
@@ -56,6 +58,7 @@ export type EditorSpec = {
     | "transaction"
     | "account"
     | "balance"
+    | "balances"
     | "goal"
     | "position"
     | "recurrence"
@@ -82,6 +85,7 @@ const titles = {
   transaction: "Une opération",
   account: "Un compte",
   balance: "Actualiser le solde",
+  balances: "Mettre à jour les soldes",
   goal: "Un projet",
   position: "Une position",
   recurrence: "Une récurrence",
@@ -91,6 +95,7 @@ export default function Editor({
   spec,
   data,
   month = today().slice(0, 7),
+  hidden = false,
   onSave,
   onClose,
 }: {
@@ -98,6 +103,8 @@ export default function Editor({
   data: FinanceData;
   /** Month shown on screen (YYYY-MM): the month of « Seulement … » for a bill or income. */
   month?: string;
+  /** Montants masqués : les soldes actuels ne s'affichent pas dans la mise à jour groupée. */
+  hidden?: boolean;
   onSave: (data: FinanceData) => Promise<void>;
   onClose: () => void;
 }) {
@@ -403,6 +410,16 @@ export default function Editor({
           balances: previous?.balances || [],
           source,
         };
+        // Nouveau compte : son solde actuel, daté d'aujourd'hui, dans le même geste.
+        if (!previous && get("openingBalance"))
+          a.balances = [
+            {
+              id: crypto.randomUUID(),
+              amountMinor: num("openingBalance"),
+              asOf: today(),
+              source: { system: "manual", updatedAt: new Date().toISOString() },
+            },
+          ];
         if (
           previous &&
           previous.currency !== a.currency &&
@@ -421,9 +438,33 @@ export default function Editor({
         a.balances.push({
           id: crypto.randomUUID(),
           amountMinor: num("amountMinor"),
-          asOf: get("asOf"),
+          asOf: get("asOf") || today(),
           source: { system: "manual", updatedAt: new Date().toISOString() },
         });
+      }
+      // Seuls les soldes remplis changent ; chacun est une observation datée d'aujourd'hui.
+      if (spec.type === "balances") {
+        let changed = 0;
+        for (const a of updated.accounts) {
+          const raw = get(`balance:${a.id}`);
+          if (!raw) continue;
+          let amountMinor: number;
+          try {
+            amountMinor = parseMoney(raw);
+          } catch (e) {
+            throw new Error(
+              `${a.name} : ${e instanceof Error ? e.message : "montant invalide."}`,
+            );
+          }
+          a.balances.push({
+            id: crypto.randomUUID(),
+            amountMinor,
+            asOf: today(),
+            source: { system: "manual", updatedAt: new Date().toISOString() },
+          });
+          changed++;
+        }
+        if (!changed) throw new Error("Indiquez au moins un nouveau solde.");
       }
       if (spec.type === "transaction" && monthly) {
         const startDate = get("date") || today();
@@ -603,7 +644,6 @@ export default function Editor({
           {spec.type === "account" && (
             <>
               {field("Nom du compte", "name", { required: true })}
-              {field("Établissement", "institution")}
               {field("Type de compte", "accountType", {
                 value: accountType,
                 onChange: (e) => setAccountType(e.target.value),
@@ -643,7 +683,12 @@ export default function Editor({
                   })}
                 </>
               )}
+              {!existingAccount &&
+                field("Solde actuel", "openingBalance", {
+                  hint: "Facultatif, daté d’aujourd’hui. Signe − pour un découvert.",
+                })}
               {currency()}
+              {field("Établissement", "institution")}
               {accountKind === "investment" &&
                 field("Ce que représente le solde", "valuationMode", {
                   defaultValue: val("valuationMode", "total"),
@@ -658,10 +703,6 @@ export default function Editor({
                     </>
                   ),
                 })}
-              <p className="footer-note field-full">
-                Ajoutez ensuite son solde avec « Actualiser ». Le type range
-                le compte sur l’Accueil et dans Mes comptes.
-              </p>
             </>
           )}
           {spec.type === "balance" && (
@@ -669,20 +710,47 @@ export default function Editor({
               <p className="field-full">
                 {val("name")} · {val("currency")}
               </p>
-              {field("Solde observé", "amountMinor", {
+              {field("Nouveau solde", "amountMinor", {
                 required: true,
-                hint: "Montant du relevé, signe − si découvert.",
+                hint: "Signe − si découvert. L’ancien reste dans l’historique.",
               })}
-              {field("Date du solde", "asOf", {
-                type: "date",
-                required: true,
-                defaultValue: today(),
-                max: today(),
-              })}
+              {/* Daté d'aujourd'hui ; un relevé plus ancien se date ici. */}
+              <details className="field-full other-date">
+                <summary>Autre date</summary>
+                {field("Date du solde", "asOf", {
+                  type: "date",
+                  defaultValue: today(),
+                  max: today(),
+                })}
+              </details>
+            </>
+          )}
+          {spec.type === "balances" && (
+            <>
               <p className="footer-note field-full">
-                L’historique est conservé. Cette observation n’ajoute ni revenu
-                ni dépense.
+                Remplissez seulement ce qui a changé : datés d’aujourd’hui, les
+                autres soldes ne bougent pas.
               </p>
+              {data.accounts.map((a) => {
+                const last = latestBalance(a) ?? a.balances.at(-1);
+                return (
+                  <label className="field" key={a.id}>
+                    <span>{a.name}</span>
+                    <input
+                      aria-label={`Nouveau solde de ${a.name}`}
+                      name={`balance:${a.id}`}
+                      inputMode="decimal"
+                      maxLength={40}
+                      autoComplete="off"
+                    />
+                    <small>
+                      {hidden || !last
+                        ? a.currency
+                        : `Actuel ${money(last.amountMinor, a.currency)}`}
+                    </small>
+                  </label>
+                );
+              })}
             </>
           )}
           {spec.type === "transaction" && (

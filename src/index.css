@@ -84,7 +84,6 @@ body::before {
 .card,
 .hero-card,
 .stat-card,
-.account-card,
 .auth-card {
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -564,6 +563,7 @@ img.brand-mark {
   margin: 0 0 20px;
 }
 .currency-picker {
+  margin-left: auto;
   display: inline-flex;
   align-items: center;
   gap: 10px;
@@ -893,15 +893,18 @@ img.brand-mark {
 }
 /* display: flex retire le triangle natif : chevron fin redessiné, même trait apparent que Icon (1,25 px). */
 .chart-details summary,
-.account-history summary {
+.account-history summary,
+.other-date > summary {
   list-style: none;
 }
 .chart-details summary::-webkit-details-marker,
-.account-history summary::-webkit-details-marker {
+.account-history summary::-webkit-details-marker,
+.other-date > summary::-webkit-details-marker {
   display: none;
 }
 .chart-details summary::after,
-.account-history summary::after {
+.account-history summary::after,
+.other-date > summary::after {
   content: "";
   width: 18px;
   height: 18px;
@@ -1173,156 +1176,13 @@ details[open] > summary::after {
 .action-stack + .meta {
   margin-top: 8px;
 }
-
-/* Comptes, rangés par type (Compte courant, 3e pilier, Léna…) avec le total de chaque type. */
-.account-group-title {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 24px 0 12px;
-  font-size: 16px;
-  font-weight: 600;
-  line-height: 1.3;
-}
-.account-group-name {
-  flex: 1;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-.account-group-total {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.account-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
-}
-/* Les types se rangent en grille : un type à un compte occupe une case, un type à plusieurs comptes s'étend. */
-.account-groups {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  column-gap: 16px;
-}
 .account-group {
-  min-width: 0;
-}
-.account-group[data-count="2"] {
-  grid-column: span 2;
-}
-.account-group[data-count="3"] {
-  grid-column: 1 / -1;
-}
-.account-group[data-count="1"] > .account-grid {
-  grid-template-columns: minmax(0, 1fr);
-}
-.account-group[data-count="2"] > .account-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-.account-card {
-  position: relative;
-  min-width: 0;
-  padding: 16px;
-  transition:
-    background-color var(--ease),
-    border-color var(--ease);
-}
-@media (hover: hover) and (pointer: fine) {
-  .account-card:hover {
-    border-color: var(--line-strong);
-    background:
-      linear-gradient(rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.02)),
-      var(--glass-sheen),
-      var(--glass-card);
-  }
-}
-/* Sous-grille : en-têtes, soldes et pieds des cartes d'une même rangée partagent leurs lignes, quel que soit le nom. */
-@supports (grid-template-rows: subgrid) {
-  .account-card {
-    display: grid;
-    grid-row: span 5;
-    grid-template-rows: subgrid;
-    row-gap: 0;
-  }
-  .account-card > .account-head {
-    grid-row: 1;
-  }
-  .account-card > .balance {
-    grid-row: 2;
-  }
-  .account-card > .meta {
-    grid-row: 3;
-  }
-  .account-card > .account-card-foot {
-    grid-row: 4;
-    align-self: end;
-  }
-  .account-card > .account-history {
-    grid-row: 5;
-  }
-}
-.account-head {
-  display: flex;
-  align-items: start;
-  justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 12px;
-}
-.account-head > .account-id {
-  flex: 1;
   min-width: 0;
 }
 .account-sparkline {
   align-self: center;
   flex: 0 1 72px;
   min-width: 0;
-}
-.account-share {
-  color: var(--text-soft);
-  font-variant-numeric: tabular-nums;
-}
-/* Le nom du compte est l'identité principale ; l'établissement reste secondaire. */
-.account-head h3 {
-  margin: 0 0 4px;
-  color: var(--text);
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 1.3;
-  letter-spacing: -0.01em;
-  overflow-wrap: anywhere;
-}
-.account-sub {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-  min-width: 0;
-  margin: 0;
-}
-.institution {
-  min-width: 0;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 500;
-  overflow-wrap: anywhere;
-}
-/* Nature du compte : graphite neutre, distinguée par le libellé et l'icône, pas par la teinte. */
-.kind-badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 1px 7px;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--text-soft);
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 1.5;
-  white-space: nowrap;
-  vertical-align: middle;
 }
 .institution-icon {
   width: 40px;
@@ -1347,21 +1207,6 @@ details[open] > summary::after {
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
-/* Posée en plus de .balance quand une mini-courbe existe : le montant garde sa ligne, seule la courbe cède. */
-.balance-line {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-.balance-amount {
-  flex-shrink: 0;
-  max-width: 100%;
-}
-/* Conteneur sur le solde, pas sur la carte : l'y poser couperait la sous-grille (contexte de mise en forme indépendant). */
-.account-card > .balance {
-  container-type: inline-size;
-}
 /* Solde < 270 px (grille de deux ou trois cartes étroites) : la courbe, réduite à moins de 50 px, ne montrerait plus de tendance. */
 @container (max-width: 269px) {
   .account-sparkline {
@@ -1372,18 +1217,6 @@ details[open] > summary::after {
   color: var(--muted);
   font-size: 13px;
   line-height: 1.55;
-}
-.account-card .meta {
-  margin-bottom: 4px;
-}
-.account-card .hero-foot {
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px solid var(--line);
-}
-/* Ne contient plus que « Actualiser » : aligné à droite. */
-.account-card-foot {
-  justify-content: flex-end;
 }
 .account-history-source {
   margin: 12px 0 0;
@@ -1420,6 +1253,94 @@ details[open] > summary::after {
     color: var(--text);
   }
 }
+/* Mes comptes : une carte par type, ses comptes en lignes compactes qui s'ouvrent au toucher. */
+.account-groups {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  align-items: start;
+  margin-top: 16px;
+}
+.account-group-total {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.row.account-row {
+  flex-wrap: nowrap;
+  padding-top: 12px;
+  cursor: pointer;
+  list-style: none;
+}
+.account-row::-webkit-details-marker {
+  display: none;
+}
+.account-row > .row-main {
+  min-width: 0;
+}
+.account-row:focus-visible {
+  background-color: var(--glass-row);
+}
+/* Même chevron fin que les autres volets repliables. */
+.account-row::after {
+  content: "";
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  background: var(--muted);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.67' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 9 7 7 7-7'/%3E%3C/svg%3E") center / 16px no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.67' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 9 7 7 7-7'/%3E%3C/svg%3E") center / 16px no-repeat;
+  transition: transform var(--ease);
+}
+.account-item:last-child:not([open]) > .account-row,
+.account-item[open] > .account-row {
+  background-image: none;
+}
+.account-item-body {
+  display: grid;
+  gap: 10px;
+  padding: 2px 0 14px;
+  border-bottom: 1px solid var(--line);
+}
+.account-item:last-child > .account-item-body {
+  padding-bottom: 4px;
+  border-bottom: 0;
+}
+.account-item-body > .account-sparkline {
+  max-width: 180px;
+}
+.account-item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.account-item-body > .footer-note {
+  margin: 0;
+}
+.account-history-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+.accounts-update {
+  flex-basis: auto;
+}
+/* Solde : daté d'aujourd'hui, une autre date seulement si on la demande. */
+.other-date > summary {
+  min-height: var(--tap-h);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  color: var(--text-soft);
+  font-size: 13px;
+}
 .accounts-total-card {
   display: flex;
   align-items: center;
@@ -1447,9 +1368,6 @@ details[open] > summary::after {
 .accounts-total-note {
   flex-basis: 100%;
   margin: 0;
-}
-.accounts-total-card + .account-grid {
-  margin-top: 12px;
 }
 
 /* Listes : lignes compactes */
@@ -2380,22 +2298,11 @@ input::file-selector-button {
   .card {
     padding: 18px;
   }
-  .account-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .account-groups {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .account-group[data-count="2"],
-  .account-group[data-count="3"] {
-    grid-column: 1 / -1;
-  }
   .three-columns {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   /* Sur deux colonnes, une troisième carte seule prend toute la rangée au lieu d'en laisser la moitié vide. */
-  .three-columns > .card:not(.goal-card):last-child:nth-child(odd),
-  .account-grid > .account-card:last-child:nth-child(odd) {
+  .three-columns > .card:not(.goal-card):last-child:nth-child(odd) {
     grid-column: 1 / -1;
   }
 }
@@ -2432,23 +2339,18 @@ input::file-selector-button {
   }
   .dashboard-grid,
   .two-columns,
-  .three-columns,
-  .account-grid {
+  .three-columns {
     grid-template-columns: 1fr;
+  }
+  .account-groups {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+    margin-top: 12px;
   }
   .overview-top {
     grid-template-columns: minmax(0, 1fr);
     gap: 12px;
     margin-bottom: 12px;
-  }
-  .account-groups {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .account-group[data-count] {
-    grid-column: 1 / -1;
-  }
-  .account-group[data-count] > .account-grid {
-    grid-template-columns: minmax(0, 1fr);
   }
   .stat-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2557,8 +2459,7 @@ input::file-selector-button {
   }
   .dashboard-grid,
   .two-columns,
-  .three-columns,
-  .account-grid {
+  .three-columns {
     gap: 12px;
   }
   .two-columns,
@@ -2572,38 +2473,11 @@ input::file-selector-button {
     gap: 8px;
     margin-bottom: 14px;
   }
-  .account-card {
-    padding: 14px;
-  }
-  .account-head {
-    margin-bottom: 10px;
-  }
   .balance {
     font-size: 20px;
   }
   .accounts-total-value {
     font-size: 26px;
-  }
-  /* Historique fermé : « Actualiser » partage sa rangée ; ouvert, le détail reprend toute la largeur. */
-  @supports (grid-template-rows: subgrid) {
-    .account-card > * {
-      grid-column: 1 / -1;
-    }
-    .account-card:not(:has(> .account-history[open])) {
-      grid-row: span 4;
-      grid-template-columns: minmax(0, 1fr) auto;
-    }
-    .account-card:not(:has(> .account-history[open])) > .account-history {
-      grid-column: 1;
-      grid-row: 4;
-    }
-    .account-card:not(:has(> .account-history[open])) > .account-card-foot {
-      grid-column: 2;
-      grid-row: 4;
-      align-self: stretch;
-      align-items: center;
-      padding: 6px 0 0 12px;
-    }
   }
   .row {
     gap: 10px;
@@ -3023,7 +2897,6 @@ input::file-selector-button {
   .button,
   .card,
   .hero-card,
-  .account-card,
   .stat-card,
   .item-card.row,
   .nav-item.active,
@@ -3096,7 +2969,6 @@ input::file-selector-button {
   body,
   .card,
   .hero-card,
-  .account-card,
   .stat-card,
   .auth-card,
   .dialog,
@@ -3109,7 +2981,6 @@ input::file-selector-button {
   }
   .card,
   .hero-card,
-  .account-card,
   .auth-card,
   .dialog,
   .month-picker-panel {

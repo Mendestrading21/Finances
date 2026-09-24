@@ -31,13 +31,16 @@ test("private vault: account, dated balance, operation, lock, wrong password, re
   await expect(
     page.getByText("Banque exemple test", { exact: true }),
   ).toBeVisible();
+  // A compact row: a tap opens its detail, where « Actualiser » lives.
+  const accountRow = page.locator(".account-row", { hasText: "Banque exemple test" });
+  await accountRow.click();
   await page.getByRole("button", { name: "Actualiser", exact: true }).click();
   dialog = page.getByRole("dialog");
-  await dialog.getByLabel("Solde observé").fill("1234.56");
+  await dialog.getByLabel("Nouveau solde").fill("1234.56");
   await dialog
     .getByRole("button", { name: "Enregistrer", exact: true })
     .click();
-  await expect(page.locator(".balance")).toContainText("1");
+  await expect(accountRow.locator(".row-value")).toHaveText(/^1\s?234\.56\s*CHF$/);
   await page
     .getByRole("navigation", { name: "Navigation principale", exact: true })
     .getByRole("button", { name: "Mon mois", exact: true })
@@ -2189,18 +2192,22 @@ test("account types: accounts grouped by type with totals, on Mes comptes and th
     await dialog.getByLabel("Type de compte", { exact: true }).selectOption(type);
     if (custom) await dialog.getByLabel("Nom du type", { exact: true }).fill(custom);
     if (customKind) await dialog.getByLabel("C’est plutôt", { exact: true }).selectOption(customKind);
+    // The balance comes with the account, dated today: one dialog, not two.
+    await dialog.getByLabel("Solde actuel", { exact: true }).fill(amount);
     // Only an investment asks how its balance is valued.
     await expect(dialog.getByLabel("Ce que représente le solde", { exact: true })).toHaveCount(
       type === "Trading" || customKind === "investment" ? 1 : 0,
     );
     await dialog.getByRole("button", { name: "Enregistrer", exact: true }).click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
-    const card = page.locator(".account-card", { hasText: name });
-    await card.getByRole("button", { name: "Actualiser", exact: true }).click();
-    const balance = page.getByRole("dialog");
-    await balance.getByLabel("Solde observé", { exact: true }).fill(amount);
-    await balance.getByRole("button", { name: "Enregistrer", exact: true }).click();
-    await expect(page.getByRole("dialog")).toHaveCount(0);
+  };
+  // Opens an account's detail (Actualiser, Modifier), unless it already is.
+  const openAccount = async (name: string) => {
+    const item = page.locator(".account-item", {
+      has: page.locator(".account-row", { hasText: name }),
+    });
+    if (!(await item.evaluate((e) => (e as HTMLDetailsElement).open)))
+      await item.locator(".account-row").click();
   };
   await addAccount("Poste 3a test", "3e pilier", "8295");
   await addAccount("Helvetia 3a test", "3e pilier", "5310");
@@ -2213,7 +2220,7 @@ test("account types: accounts grouped by type with totals, on Mes comptes and th
   await addAccount("Trading épargne test", "__autre__", "200", "trading", "savings");
 
   const group = (name: string) => page.locator(".account-group", { hasText: name });
-  await expect(page.locator(".account-group-name")).toHaveText([
+  await expect(page.locator(".account-group .card-title")).toHaveText([
     "3e pilier",
     "Léna",
     "Compte courant",
@@ -2221,8 +2228,8 @@ test("account types: accounts grouped by type with totals, on Mes comptes and th
     "Dette",
   ]);
   await expect(group("3e pilier").locator(".account-group-total")).toHaveText(/^13\s?605\.00\s*CHF$/);
-  await expect(group("3e pilier").locator(".account-card")).toHaveCount(2);
-  await expect(group("Léna").locator(".account-card")).toHaveCount(2);
+  await expect(group("3e pilier").locator(".account-item")).toHaveCount(2);
+  await expect(group("Léna").locator(".account-item")).toHaveCount(2);
   await expect(group("Léna").locator(".account-group-total")).toHaveText(/^11\s?450\.00\s*CHF$/);
   await expect(group("Dette").locator(".account-group-total")).toHaveText(/^-1\s?000\.00\s*CHF$/);
   await expect(page.locator(".accounts-total-value")).toHaveText(/^24\s?755\.00\s*CHF$/);
@@ -2245,6 +2252,7 @@ test("account types: accounts grouped by type with totals, on Mes comptes and th
   // Saved again unchanged, the custom « trading » stays savings: never moved to Investissements.
   await nav.getByRole("button", { name: "Mes comptes", exact: true }).click();
   for (let i = 0; i < 2; i++) {
+    await openAccount("Trading épargne test");
     await page.getByRole("button", { name: "Modifier Trading épargne test", exact: true }).click();
     const d = page.getByRole("dialog", { name: "Un compte" });
     await expect(d.getByLabel("Type de compte", { exact: true })).toHaveValue("__autre__");
@@ -2257,10 +2265,75 @@ test("account types: accounts grouped by type with totals, on Mes comptes and th
 
   // Reopening keeps the custom type.
   await nav.getByRole("button", { name: "Mes comptes", exact: true }).click();
+  await openAccount("UBS Léna test");
   await page.getByRole("button", { name: "Modifier UBS Léna test", exact: true }).click();
   const reopened = page.getByRole("dialog", { name: "Un compte" });
   await expect(reopened.getByLabel("Type de compte", { exact: true })).toHaveValue("__autre__");
   await expect(reopened.getByLabel("Nom du type", { exact: true })).toHaveValue("Léna");
+  expect(errors).toEqual([]);
+});
+
+test("accounts: compact rows, balance with the account, all balances updated at once", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  const nav = page.getByRole("navigation", { name: "Navigation principale", exact: true });
+  await page.goto("/");
+  await page.getByLabel("Phrase secrète", { exact: true }).fill("Exemple-test-Finance-soldes");
+  await page.getByLabel("Confirmer la phrase secrète").fill("Exemple-test-Finance-soldes");
+  await page.getByRole("button", { name: "Créer mon coffre" }).click();
+  // The month changes nothing here: no month picker on Mes comptes, one on the Accueil.
+  await expect(page.locator(".month-picker-trigger")).toHaveCount(1);
+  await nav.getByRole("button", { name: "Mes comptes", exact: true }).click();
+  await expect(page.locator(".month-picker-trigger")).toHaveCount(0);
+
+  for (const [name, amount] of [["Courant soldes test", "1000"], ["Épargne soldes test", "2000"]]) {
+    await page.getByRole("button", { name: "Ajouter", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Un compte" });
+    await dialog.getByLabel("Nom du compte", { exact: true }).fill(name);
+    await dialog.getByLabel("Solde actuel", { exact: true }).fill(amount);
+    await dialog.getByRole("button", { name: "Enregistrer", exact: true }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+  }
+  const row = (name: string) => page.locator(".account-row", { hasText: name });
+  await expect(row("Courant soldes test").locator(".row-value")).toHaveText(/^1\s?000\.00\s*CHF$/);
+  // A balance of this month needs no date on its row.
+  await expect(row("Courant soldes test")).not.toContainText(/\bau \d/);
+  await expect(page.locator(".accounts-total-value")).toHaveText(/^3\s?000\.00\s*CHF$/);
+
+  // All balances in one dialog: only the filled one changes; a wrong one names its account.
+  await page.getByRole("button", { name: "Mettre à jour les soldes", exact: true }).click();
+  let update = page.getByRole("dialog", { name: "Mettre à jour les soldes" });
+  await expect(update).toContainText("Actuel 2 000.00 CHF");
+  await update.getByLabel("Nouveau solde de Courant soldes test", { exact: true }).fill("douze");
+  await update.getByRole("button", { name: "Enregistrer", exact: true }).click();
+  await expect(update.getByRole("alert")).toContainText("Courant soldes test");
+  await update.getByLabel("Nouveau solde de Courant soldes test", { exact: true }).fill("1500");
+  await update.getByRole("button", { name: "Enregistrer", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(row("Courant soldes test").locator(".row-value")).toHaveText(/^1\s?500\.00\s*CHF$/);
+  await expect(row("Épargne soldes test").locator(".row-value")).toHaveText(/^2\s?000\.00\s*CHF$/);
+  await expect(page.locator(".accounts-total-value")).toHaveText(/^3\s?500\.00\s*CHF$/);
+
+  // One field to update a single account; the history lists the newest balance first.
+  await row("Courant soldes test").click();
+  const item = page.locator(".account-item", { has: row("Courant soldes test") });
+  await item.getByRole("button", { name: "Actualiser", exact: true }).click();
+  const balance = page.getByRole("dialog", { name: "Actualiser le solde" });
+  await expect(balance.getByLabel("Date du solde", { exact: true })).toBeHidden();
+  await balance.getByLabel("Nouveau solde", { exact: true }).fill("1600");
+  await balance.getByRole("button", { name: "Enregistrer", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(row("Courant soldes test").locator(".row-value")).toHaveText(/^1\s?600\.00\s*CHF$/);
+  await expect(item.locator(".account-history-line").first()).toContainText(/1\s?600\.00/);
+  await expect(item.locator(".account-history-line")).toHaveCount(3);
+
+  // Amounts hidden: the update dialog does not show current balances either.
+  await page.getByRole("button", { name: /Masquer les montants/ }).click();
+  await page.getByRole("button", { name: "Mettre à jour les soldes", exact: true }).click();
+  update = page.getByRole("dialog", { name: "Mettre à jour les soldes" });
+  await expect(update).not.toContainText("Actuel");
   expect(errors).toEqual([]);
 });
 

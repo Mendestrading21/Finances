@@ -10,6 +10,7 @@ import {
   monthlyEquivalentMinor,
   monthSummary,
   nextOccurrenceDate,
+  shortDateLabel,
   occurrenceCohort,
   parseMoney,
   projectedOccurrence,
@@ -2357,5 +2358,13 @@ describe("factures et revenus sans date : tous les mois, un seul mois, jusqu'à 
     const rent = recurrence();
     const single = edit(withAccount({ recurrences: [rent] }), rent, "until", "2028-02", 200000);
     expect(due(single, "2028-02")).toEqual([["2028-02-29", 200000, false]]);
+  });
+});
+
+describe("date courte d'un solde", () => {
+  it("omet l'année de la date de référence, la garde sinon, refuse une date invalide", () => {
+    expect(shortDateLabel("2026-08-20", "2026-09-24")).toBe("20 août");
+    expect(shortDateLabel("2025-12-31", "2026-09-24")).toBe("31 déc. 2025");
+    expect(() => shortDateLabel("2026-02-30", "2026-09-24")).toThrow();
   });
 });

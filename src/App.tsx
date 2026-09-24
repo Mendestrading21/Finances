@@ -17,8 +17,11 @@ import {
   type Transaction,
 } from "./domain/types";
 import {
+  accountValue,
   cohortSummary,
   convertMinor,
+  dateLabel,
+  shortDateLabel,
   isDate,
   latestBalance,
   money,
@@ -54,7 +57,6 @@ import { parseTransactionCsv, CSV_TEMPLATE } from "./importCsv";
 import { Icon, type IconName } from "./components/Icon";
 import {
   accountTypeIcon,
-  accountTypeOf,
   wealthByType,
 } from "./domain/accountTypes";
 import {
@@ -192,6 +194,9 @@ function SourceLink({ source }: { source: Source }) {
 // icon set, never a new one invented per card. Kept off by default (undefined) rather than
 // defaulting every Card to an icon, matching the same reference's warning not to add an
 // icon "à chaque ligne décorative": only call sites that pass one get a chip.
+const MONTH_PAGES: readonly string[] = ["overview", "month", "bills", "subscriptions"];
+// Soldes montrés dans le détail d'un compte, du plus récent au plus ancien.
+const HISTORY_SHOWN = 6;
 function Card({
   title,
   icon,
@@ -1313,16 +1318,6 @@ export default function App() {
     summary = monthSummary(data, month, currency),
     transactions = transactionsForMonth(data, month),
     currentPage = pages.find((p) => p.id === page)!;
-  // Share only against a known positive total; a debt's share stays negative, never clamped.
-  const accountWealthShare =
-    wealth.totalMinor && wealth.totalMinor > 0
-      ? new Map(
-          accountRanking.ranked.map((r) => [
-            r.item.id,
-            (r.valueMinor / (wealth.totalMinor as number)) * 100,
-          ]),
-        )
-      : null;
   // Explicit user request: reçus (revenus) d'abord, puis factures, puis abonnements, virements
   // et le reste en dernier — puis, à l'intérieur de chaque groupe, le plus gros montant
   // d'abord. Reads the linked recurrence's own recurrenceType when there is one (a recurring
@@ -1660,15 +1655,37 @@ export default function App() {
       show = b || a.balances.at(-1);
     return { show, asOf: b?.asOf || null };
   }
-  // Le nom du compte est primaire ; l'établissement et la nature restent secondaires.
-  // Sous l'en-tête de son type, la carte n'a pas besoin de répéter le type.
-  function accountCard(a: Account, showType = true) {
+  // Une ligne par compte : nom, établissement et date du solde, montant. Le toucher ouvre le
+  // détail (courbe, actualiser, modifier, historique) sans quitter la liste.
+  function accountItem(a: Account) {
     const { show, asOf } = accountBalance(a);
+    // Même valeur que le total de son type : positions comprises, dette en négatif ; à défaut
+    // de solde daté, le dernier saisi.
+    const valued = accountValue(
+      a,
+      data?.positions ?? [],
+      a.currency,
+      data?.fxRates ?? [],
+    ).valueMinor;
+    const amount =
+      valued ??
+      (show?.amountMinor == null
+        ? null
+        : a.kind === "debt"
+          ? -Math.abs(show.amountMinor)
+          : show.amountMinor);
+    // Un solde de ce mois n'a pas besoin de date ; plus ancien, sa date courte, en ambre au-delà
+    // d'un mois (comme « À votre attention »).
     const note = asOf
-      ? `Solde au ${asOf}`
+      ? asOf.slice(0, 7) === today().slice(0, 7)
+        ? null
+        : `au ${shortDateLabel(asOf)}`
       : show
         ? "Non daté · à vérifier"
         : "Solde à renseigner";
+    const late =
+      !asOf || Date.parse(today()) - Date.parse(asOf) > 31 * 86400000;
+    const detail = [a.institution, note].filter(Boolean);
     // Un point par date connue et déjà passée, le dernier saisi l'emportant comme dans latestBalance.
     const trendByDate = new Map<string, number>();
     for (const bal of a.balances)
@@ -1677,87 +1694,71 @@ export default function App() {
     const trendPoints = [...trendByDate]
       .sort(([x], [y]) => x.localeCompare(y))
       .map(([asOf, amountMinor]) => ({ asOf, amountMinor }));
-    const trend =
-      !hidden && trendPoints.length >= SPARKLINE_MIN_POINTS ? (
-        <Sparkline id={a.id} points={trendPoints} />
-      ) : null;
-    const share = accountWealthShare?.get(a.id);
+    // Historique du plus récent au plus ancien (à date égale, le dernier saisi d'abord, comme
+    // latestBalance) ; un solde sans date en dernier.
+    const history = a.balances
+      .map((v, i) => ({ v, i }))
+      .sort((x, y) => (y.v.asOf || "").localeCompare(x.v.asOf || "") || y.i - x.i)
+      .map(({ v }) => v);
     return (
-      <article className="account-card" key={a.id}>
-        <div className="account-head">
-          <span className="institution-icon">
-            <Icon name={accountTypeIcon(accountTypeOf(a))} size={20} />
-          </span>
-          <div className="account-id">
-            <h3>{a.name}</h3>
-            <p className="account-sub">
-              <span className="institution">{a.institution}</span>
-              {showType && (
-                <span className="kind-badge">{accountTypeOf(a)}</span>
-              )}
-            </p>
-          </div>
-          <button
-            className="icon-button"
-            onClick={() => edit({ type: "account", id: a.id })}
-            aria-label={`Modifier ${a.name}`}
-          >
-            <Icon name="edit" size={18} />
-          </button>
-        </div>
-        <div className={trend ? "balance balance-line" : "balance"}>
-          <span className="balance-amount">
-            {display(show?.amountMinor ?? null, a.currency)}
-          </span>
-          {trend}
-        </div>
-        {/* Une seule ligne secondaire ; le CSS repère encore .account-share par :has(). */}
-        <p className="meta">
-          {share !== undefined && !hidden && (
-            <>
-              <span className="account-share nowrap">
-                {share >= 0 ? "" : "−"}
-                {Math.abs(share).toFixed(1)} % du patrimoine
+      <details className="account-item" key={a.id}>
+        {/* Sans icône : la carte de son type la porte déjà. */}
+        <summary className="row account-row">
+          <span className="row-main">
+            <span className="row-title">{a.name}</span>
+            {detail.length > 0 && (
+              <span className="row-detail">
+                {a.institution}
+                {a.institution && note && SEP}
+                {note && <span className={late ? "warning" : undefined}>{note}</span>}
               </span>
-              {SEP}
-            </>
+            )}
+          </span>
+          <span className="row-value">{display(amount, a.currency)}</span>
+        </summary>
+        <div className="account-item-body">
+          {!hidden && trendPoints.length >= SPARKLINE_MIN_POINTS && (
+            <Sparkline id={a.id} points={trendPoints} />
           )}
-          <span className="nowrap">{note}</span>
-        </p>
-        {/* Actualiser is the one action worth keeping always visible on this card
-            (identite-ui.md: "Ajouter un compte, actualiser un solde" is a priority action
-            for Mes comptes) — the account's provenance (SourceLink, below) is exactly the
-            kind of thing that reference asks to move into the details volet instead:
-            "Déplacer source, historique, méthode de valorisation et aide longue dans un
-            volet de détails." It used to sit here too, next to Actualiser, reading as an
-            orphaned line of text with nothing else around it (confirmed on a real
-            rendered card, not just in code). */}
-        <div className="hero-foot account-card-foot">
-          <button
-            className="button small secondary"
-            onClick={() => edit({ type: "balance", id: a.id })}
-          >
-            <Icon name="refresh" size={18} />
-            Actualiser
-          </button>
-        </div>
-        <details className="account-history">
-          <summary>Historique et valorisation</summary>
+          <div className="account-item-actions">
+            <button
+              className="button small secondary"
+              onClick={() => edit({ type: "balance", id: a.id })}
+            >
+              <Icon name="refresh" size={18} />
+              Actualiser
+            </button>
+            <button
+              className="button small secondary"
+              onClick={() => edit({ type: "account", id: a.id })}
+              aria-label={`Modifier ${a.name}`}
+            >
+              <Icon name="edit" size={18} />
+              Modifier
+            </button>
+          </div>
           <p className="footer-note">
-            {a.valuationMode === "total"
-              ? "Solde total : les positions de ce compte ne sont pas ajoutées."
-              : "Solde de liquidités : les positions datées sont ajoutées."}
+            {a.valuationMode === "components"
+              ? "Liquidités et positions datées additionnées."
+              : "Solde total, positions comprises."}
           </p>
-          {a.balances.map((v) => (
-            <p className="meta" key={v.id}>
-              {v.asOf || "Date inconnue"} · {display(v.amountMinor, a.currency)}
+          {history.slice(0, HISTORY_SHOWN).map((v) => (
+            <p className="meta account-history-line" key={v.id}>
+              <span>{v.asOf && isDate(v.asOf) ? dateLabel(v.asOf) : "Date inconnue"}</span>
+              <span>{display(v.amountMinor, a.currency)}</span>
             </p>
           ))}
+          {history.length > HISTORY_SHOWN && (
+            <p className="footer-note">
+              {history.length - HISTORY_SHOWN} solde(s) plus ancien(s), conservé(s)
+              dans l’export.
+            </p>
+          )}
           <p className="account-history-source">
             <SourceLink source={show?.source || a.source} />
           </p>
-        </details>
-      </article>
+        </div>
+      </details>
     );
   }
   /** "Prévu" never distinguished a due expense from a due income, and gave no explicit
@@ -2535,11 +2536,15 @@ export default function App() {
           </div>
         )}
         <div className="period-bar">
-          <MonthPicker
-            month={month}
-            onChange={setMonth}
-            currentMonth={today().slice(0, 7)}
-          />
+          {/* Le mois ne change que l'Accueil, Mon mois, Factures et Abonnements : ailleurs
+              (comptes, projets, placements, réglages), le sélecteur ne ferait rien. */}
+          {MONTH_PAGES.includes(page) && (
+            <MonthPicker
+              month={month}
+              onChange={setMonth}
+              currentMonth={today().slice(0, 7)}
+            />
+          )}
           <label className="currency-picker">
             <span className="sr-only">Devise d’affichage</span>
             <select
@@ -2896,34 +2901,35 @@ export default function App() {
                       taux manquant.
                     </p>
                   )}
+                  {/* Tous les soldes d'un coup, datés d'aujourd'hui : la mise à jour du mois. */}
+                  <button
+                    className="button small secondary accounts-update"
+                    onClick={() => edit({ type: "balances" })}
+                  >
+                    <Icon name="refresh" size={18} />
+                    Mettre à jour les soldes
+                  </button>
                 </div>
                 {/* Rangés par type de compte, comme dans le Notion : le total de chaque type,
                     puis ses comptes du plus grand au plus petit. */}
                 <div className="account-groups">
                   {wealthTypes.map((g) => (
-                    <section
-                      className="account-group"
+                    <Card
                       key={g.label}
-                      data-count={Math.min(g.count, 3)}
-                    >
-                      <h2 className="account-group-title">
-                        <span className="card-icon">
-                          <Icon name={accountTypeIcon(g.label)} size={18} />
-                        </span>
-                        <span className="account-group-name">{g.label}</span>
+                      className="account-group"
+                      title={g.label}
+                      icon={accountTypeIcon(g.label)}
+                      action={
                         <span className="account-group-total">
+                          {g.excluded > 0 && <span className="tag">Partiel</span>}
                           {display(g.totalMinor)}
-                          {g.excluded > 0 && (
-                            <span className="tag">Partiel</span>
-                          )}
                         </span>
-                      </h2>
-                      <div className="account-grid">
-                        {sortedAccounts
-                          .filter((a) => g.accountIds.includes(a.id))
-                          .map((a) => accountCard(a, false))}
-                      </div>
-                    </section>
+                      }
+                    >
+                      {sortedAccounts
+                        .filter((a) => g.accountIds.includes(a.id))
+                        .map(accountItem)}
+                    </Card>
                   ))}
                 </div>
               </>
@@ -3330,9 +3336,9 @@ export default function App() {
                 <div className="section-heading">
                   <h2>Comptes liés</h2>
                 </div>
-                <div className="account-grid">
-                  {investmentAccounts.map((a) => accountCard(a))}
-                </div>
+                <section className="card">
+                  {investmentAccounts.map(accountItem)}
+                </section>
               </>
             )}
             <p className="footer-note">
@@ -3680,6 +3686,7 @@ export default function App() {
           spec={editor}
           data={data}
           month={month}
+          hidden={hidden}
           onSave={(next) => {
             // Un tirage pendant l'édition : les champs du formulaire datent d'avant, ne pas les réécrire.
             if (pullCount.current !== editorPulls.current)
