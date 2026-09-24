@@ -862,6 +862,96 @@ Relecture indépendante (`finance-verification`) :
   - défilement vers l'import qui respecte la préférence « mouvement réduit » ;
   - double point du pied de page.
 
+## Lot C — une seule page « Mon mois » à la place de Factures et Abonnements (développé et testé le 24 septembre 2026)
+
+Fusion précédente : écrans plus simples (lot D) dans la PR #57, au-dessus des lots A et B (PR #56) de la même passe « carré, simple, logique ».
+
+Demande de l'utilisateur : une app « carrée, simple à suivre et logique ». L'audit avait mesuré que Mon mois, Factures et Abonnements montraient les mêmes récurrences avec les mêmes boutons « Payer » sur trois pages. Mon mois les montrait même deux fois (« Les opérations », puis « Abonnements et charges récurrentes »). Abonnements alignait six tuiles, dont deux identiques. La barre mobile comptait cinq onglets, dont Mon mois et Factures, presque identiques.
+
+Ce qui change :
+- **Navigation** : Accueil · Mon mois · Comptes · Plus (Épargne et projets, Investissements, Documents et réglages) ; six pages dans le panneau latéral. La page n'est gardée ni dans l'adresse ni dans le stockage : aucun lien persistant à rediriger. « Voir tout » (Accueil) mène à Mon mois.
+- **Mon mois**, pour le mois choisi :
+  - « Il me reste », puis « Reste à payer » et « Reste à recevoir » : les chiffres de `monthSummary`, comme « Il me reste ». Une barre montre la part déjà payée ou reçue ; elle est masquée avec les montants ;
+  - **Mes revenus** (« Ajouter un revenu ») : revenus récurrents, puis revenus ponctuels ;
+  - **Mes factures** (« Ajouter une facture ») : toutes les dépenses récurrentes (factures, abonnements, « à vérifier ») ; un abonnement porte l'étiquette « Abonnement » ;
+  - **Dépenses du mois** (« Ajouter une dépense ») : les dépenses ponctuelles ;
+  - **Mis de côté**, seulement s'il y a quelque chose : mises de côté récurrentes et virements ;
+  - « Opérations à dater » s'il y en a, les volets repliés (factures, revenus et mises de côté d'autres mois ou arrêtés), puis « Voir les autres mois ».
+- **Chaque opération une seule fois.** L'échéance due d'une récurrence est la ligne de cette récurrence, qu'elle soit projetée, ajustée ou réglée. Toute autre opération du mois reste visible dans la carte de sa nature :
+  - l'échéance d'une récurrence existante qui n'est pas celle affichée ce mois-ci, par exemple payée en retard, compte dans le mois de son paiement. Elle y porte « pour {mois} » : le mois qu'elle règle, jamais un jour ;
+  - une opération dont la récurrence a disparu reste ponctuelle.
+  Dans le mois de l'échéance, un règlement fait plus tard affiche « Payé en {mois} », avec son montant en retrait : il compte dans le mois du paiement, comme dans les totaux.
+- **Conservé** :
+  - « Payer », « Reçu » et « Régler » instantanés, avec leur voile ;
+  - « Remettre à payer » avec « Annuler » ;
+  - le crayon, qui ouvre la petite modification du mois ;
+  - l'éditeur de récurrence, les montants masqués et le focus replacé sur la ligne réglée.
+- **Retiré** :
+  - les pages Factures et Abonnements, avec les filtres, le tri et les six tuiles d'Abonnements ;
+  - les cartes « Les opérations » et « Abonnements et charges récurrentes », et les onglets Tout / Revenus / Dépenses / Virements ;
+  - la règle CSS `.sort-picker`, devenue morte.
+  `recurringFlowSummary`, `rankByValue`, `monthlyEquivalentMinor` et `nextOccurrenceDate` ne sont plus importés par l'interface ; ils restent inchangés et testés dans `finance.ts`.
+- **Téléphone** : icônes de ligne compactes de 32 px, à la hauteur de « Payer ». Au doigt, la cible reste de 44 px, avec 12 px entre deux icônes pour que les cibles se touchent sans se chevaucher.
+- **Défaut antérieur corrigé** (le scénario « simpler screens » échouait déjà sur `f03f3db`) : en quittant la démonstration, le nouveau coffre s'ouvrait sur la dernière page de la démo. Il s'ouvre désormais sur l'Accueil ; déverrouiller le même coffre garde la page.
+- Texte de l'éditeur : une récurrence « revient chaque mois dans Mon mois, où elle se modifie » (et non plus « depuis Abonnements »).
+
+Aucun calcul monétaire ne change : `finance.ts`, `monthSummary`, `cohortSummary`, « Il me reste » et `calculs.md` sont intacts.
+
+Mesures (démonstration fictive, Chromium, 390 × 844) :
+
+| Mesure                            | Avant (`f03f3db`)                                  | Après                       |
+| --------------------------------- | -------------------------------------------------- | --------------------------- |
+| Hauteur de Mon mois               | 1 953 px, plus Factures 1 261 et Abonnements 1 358 | 1 637 px, page unique       |
+| Même page, en émulation tactile   | 1 980 px                                           | 1 672 px                    |
+| Lignes sur Mon mois               | 10, dont 4 en double                               | 6, chacune une fois         |
+| Ligne sans bouton (réglée…)       | 84 px                                              | 80 px                       |
+| Ligne avec « Payer »              | 108 px                                             | 104 px                      |
+| Onglets mobiles                   | 5                                                  | 4                           |
+
+Le premier « Payer » descend de 783 à 842 px : « Mes revenus » vient désormais en premier.
+
+Preuves :
+- `typecheck`, `test` (**259/259**), `build`.
+- Les **25** scénarios `test:e2e` passent en une seule exécution (`--workers=1`, port dédié). Le nouveau scénario, « one Mon mois page… », vérifie :
+  - les quatre cartes, dans l'ordre ;
+  - une facture et un abonnement étiqueté dans « Mes factures », la dépense ponctuelle à part ;
+  - chaque opération une seule fois, et le loyer du mois précédent payé en retard montré une fois, « pour {mois} » ;
+  - les indicateurs exacts ;
+  - les quatre onglets mobiles, le menu « Plus » et une ligne réglée de 80 px au plus.
+- Contrôles négatifs : sans le dédoublonnage, trois lignes de loyer apparaissent au lieu de deux ; si l'on masque toute opération liée à une récurrence existante, le loyer payé en retard disparaît. Le scénario échoue dans les deux cas.
+- Les scénarios qui utilisaient Factures, Abonnements ou « Les opérations » sont réécrits sur Mon mois, sans perdre ce qu'ils vérifient :
+  - statuts, flash, focus et « Remettre à payer » / « Annuler » ;
+  - absence de doublon après rechargement et déverrouillage ;
+  - montant d'un seul mois ou des suivants, paiement anticipé ;
+  - tri (à régler d'abord, puis montant décroissant), alignement des boutons, couleurs par nature ;
+  - revenus reçus et reste à recevoir.
+  Les tuiles disparues sont remplacées par « Reste à payer » et « Reste à recevoir », avec des valeurs exactes. La date de règlement écrite par « Payer » est vérifiée dans « Lier à une opération ».
+- Captures `02` à `05` régénérées : panneau latéral à six pages, barre mobile à quatre onglets. Elles montraient encore l'état d'avant le lot D. Capture `06` ajoutée (Mon mois à 390 px) ; `01` est inchangée.
+
+Limites :
+- **80 px non atteints pour une ligne avec « Payer ».** Placer le bouton sur la ligne du statut laisserait environ 135 px au texte « Tous les mois · Pas encore payé », qui en demande environ 190. Le statut passerait sur deux lignes (environ 87 px) et les titres perdraient 45 px. La mise en page actuelle est donc gardée (104 px). Un abonnement au nom long fait 128 px : son étiquette passe à la ligne (« Abonnement musique » dans la démo).
+- À 390 px, dans Chromium sous Linux, le titre « Dépenses du mois » passe sur deux lignes à côté de « Ajouter une dépense ». La police y est plus large que SF Pro ; ce point n'est pas vérifié sur iPhone.
+- **Créer un abonnement** : « Un abonnement » est ajouté au choix « Ajouter » de l'Accueil. Une mise de côté se crée par « Ajouter une dépense », « Tous les mois » puis « Nature », ou en changeant la nature d'une facture existante. Le formulaire « Une récurrence » avec choix du type (l'ancien « Ajouter » d'Abonnements) n'est plus atteignable ; la nature enregistrée est vérifiée à la réouverture.
+- Une ligne de récurrence réglée n'a pas l'icône « Joindre », pour rester sur deux icônes : le reçu se joint depuis Documents et réglages (les lignes ponctuelles gardent l'icône). Le règlement lui-même (date, compte, état) s'ouvre en touchant la ligne.
+- « Ajouter une dépense » date l'opération d'aujourd'hui, même si un autre mois est affiché (comportement antérieur du formulaire).
+- `AGENTS.md`, `SKILL.md`, `design.md`, `abonnements.md` et l'agent `finance-abonnements` sont mis à jour : six pages, et Mon mois à la place des pages Abonnements et Factures.
+- Aucun essai sur appareil physique.
+
+Relecture indépendante (`finance-verification`), avec deux jeux fictifs importés et les lignes de juillet à novembre comparées aux calculs faits à la main :
+- les totaux concordent au centime avec `monthSummary`. Cas vérifiés : paiement anticipé, paiement en retard (« pour août »), échéance ajustée, annuelle et trimestrielle, récurrence en pause ou terminée, montant en EUR converti ;
+- les actions sont conservées : « Payer », « Reçu », « Régler », « Remettre à payer » et « Annuler », le crayon, le focus, les montants masqués ;
+- la navigation est cohérente, il n'y a pas de code mort, et rien ne déborde à 320, 390, 834 et 1440 px.
+
+Défauts réels, corrigés :
+1. **Bloquant :** dans le mois d'échéance d'une facture payée plus tard, la ligne affichait « Payé » et un montant que les totaux de ce mois ne comptent pas. Elle affiche maintenant « Payé en {mois} », avec le montant en retrait. Le scénario « one Mon mois page » vérifie ce mois-là : « Payé en … », et « Reste à payer » comme « Il me reste » à « — » : aucune dépense comptée ce mois-là (un paiement compté donnerait 0.00).
+2. Un règlement lié sans date apparaissait deux fois (sur sa ligne et dans « Opérations à dater ») : il n'apparaît plus qu'une fois, marqué « date à vérifier ».
+3. Le règlement d'une facture récurrente ne s'ouvrait plus depuis Mon mois : la ligne s'ouvre désormais elle-même (« Détail du règlement » : date, compte, état). Le crayon reste, pour « Déjà payé » et l'accès à la récurrence. Le justificatif se joint depuis Documents et réglages, sans troisième icône : une ligne réglée garde ainsi deux icônes et 80 px au plus.
+4. « Reste à payer » partiel (taux manquant, état à vérifier) : une mention indique le nombre d'opérations non comptées.
+5. Le contrôle de l'aller-retour Type/Nature est rétabli dans les e2e.
+6. Documentation encore « sept pages » ou « page Abonnements » : mise à jour.
+7. Captures pleine page : la barre mobile fixe n'y est plus dessinée.
+8. Titres de carte : les actions affichent « Ajouter », avec leur nom complet pour les lecteurs d'écran ; « Dépenses du mois » tient sur une ligne.
+
 ## État réel
 
 | Élément                           | État                                                                                                                                                                   | Résultat et limite                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
@@ -929,6 +1019,7 @@ Ces preuves n’attestent pas encore l’implémentation de la V2 au-delà de V2
 | [03 — Tablette](captures/03-finance-ipad.png)       | Tableau de bord à 834 px.          |
 | [04 — Téléphone](captures/04-finance-iphone.png)    | Tableau de bord à 390 px.          |
 | [05 — Projets](captures/05-projets-iphone.png)      | Épargne et projets sur téléphone.  |
+| [06 — Mon mois](captures/06-mon-mois-iphone.png)    | Mon mois à 390 px (lot C).         |
 
 Toutes les captures utilisent la démonstration fictive. Elles ne prouvent ni Safari/WebKit ni un appareil physique. Chaque lot visuel V2 devra ajouter ses propres captures après développement.
 

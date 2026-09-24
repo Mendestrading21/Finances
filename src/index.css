@@ -1384,6 +1384,16 @@ details[open] > summary::after {
 .month-group {
   margin-top: 16px;
 }
+/* Mon mois : « Voir les autres mois » sous les volets repliés, les mois ouverts dans une carte. */
+.other-months {
+  margin-top: 10px;
+}
+.other-months > .card {
+  margin-top: 8px;
+}
+.other-months > .card > .month-group:first-child {
+  margin-top: 0;
+}
 .month-group-heading {
   margin: 0 0 4px;
   color: var(--muted);
@@ -1477,6 +1487,11 @@ details[open] > summary::after {
   font-weight: 600;
   line-height: 1.45;
   font-variant-numeric: tabular-nums;
+}
+/* Échéance réglée dans un autre mois : montrée, mais comptée dans le mois du paiement. */
+.row-value.counted-elsewhere {
+  color: var(--muted);
+  font-weight: 500;
 }
 .row-value .row-detail {
   font-weight: 400;
@@ -2274,12 +2289,6 @@ input::file-selector-button {
   font-size: 14px;
   line-height: 1.5;
 }
-/* Sélecteur de tri des Abonnements : ne touche plus la première ligne de la liste. */
-.sort-picker {
-  display: flex;
-  margin: 0 0 12px;
-}
-
 /* Sans flou d'arrière-plan, les barres deviennent quasi opaques pour que rien ne se lise au travers. */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .topbar {
@@ -2575,6 +2584,18 @@ input::file-selector-button {
   .row-actions:empty {
     display: none;
   }
+  /* Icônes de ligne en taille compacte, à la hauteur de « Payer » (32 px) : une ligne sans bouton
+     tient en 80 px. Au doigt, la cible invisible reste de 44 × 44 px (pointer: coarse). */
+  .row-actions .icon-button {
+    min-width: 32px;
+    height: 32px;
+  }
+  /* 12 px = deux débords de 6 px : les cibles de 44 px voisines se touchent sans se chevaucher. */
+  @media (pointer: coarse) {
+    .row-actions {
+      --actions-gap: 12px;
+    }
+  }
   /* Avec « Payer » / « Reçu » : titre face au montant, détail sur toute la largeur, action dessous. */
   .row:has(> .row-end .button) > .row-main:not([role]) {
     display: contents;
@@ -2692,8 +2713,8 @@ input::file-selector-button {
     z-index: 40;
     inset: auto 0 0;
     display: grid;
-    /* Quatre pages + « Plus » (MOBILE_TABS dans App.tsx). */
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    /* Accueil, Mon mois, Comptes + « Plus » (MOBILE_TABS dans App.tsx). */
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 2px;
     padding: 6px 6px calc(6px + env(safe-area-inset-bottom, 0px));
     border-top: 1px solid var(--line);

@@ -74,9 +74,9 @@ export type EditorSpec = {
    * row) instead of the full field set. Every other field is preserved unchanged via hidden
    * inputs — this narrows what is editable, not what is stored. */
   quick?: boolean;
-  /** recurrence only: nature proposée pour une nouvelle récurrence (page Factures : "bill"). */
+  /** recurrence only: nature proposée pour une nouvelle récurrence (« Ajouter une facture » : "bill"). */
   recurrenceType?: Exclude<Recurrence["recurrenceType"], "income">;
-  /** recurrence only: new bill or income without any date (page Factures) — « Tous les mois »
+  /** recurrence only: new bill or income without any date (Mon mois) — « Tous les mois »
    * or « Seulement {mois} » instead of day, cadence, start and end. An existing bill or income
    * always opens this way. */
   simple?: boolean;
@@ -935,7 +935,7 @@ export default function Editor({
                   )}
                   <p className="footer-note field-full">
                     {monthly
-                      ? "Enregistrée comme récurrence : elle revient chaque mois au même jour et se modifie depuis Abonnements. Chaque échéance reste à confirmer."
+                      ? "Enregistrée comme récurrence : elle revient chaque mois dans Mon mois, où elle se modifie. Chaque échéance reste à confirmer."
                       : "L’opération alimente votre mois. Les soldes restent des observations : actualisez-les depuis Mes comptes après rapprochement."}
                   </p>
                 </>
@@ -1013,8 +1013,8 @@ export default function Editor({
           {spec.type === "recurrence" && simple && (
             <>
               {field("Libellé", "label", { required: true })}
-              {/* Revenu ou dépense : choisi à l'ajout depuis Abonnements ; fixé par le bouton
-                  de la page Factures, et pour une récurrence existante. */}
+              {/* Revenu ou dépense : choisi à l'ajout d'une récurrence sans `simple` ; fixé par
+                  les boutons « Ajouter une facture / un revenu » et pour une récurrence existante. */}
               {!existingRecurrence && !spec.simple ? (
                 field("Type", "kind", {
                   value: recurrenceKind,

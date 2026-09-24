@@ -23,7 +23,7 @@ Faire progresser **Finance** depuis l’état réel du dépôt `Mendestrading21/
 | Notion, import, rapprochement, provenance, documents | [Données](references/donnees.md)                                         |
 | Thème Midnight Glass, direction visuelle, responsive | [Design](references/design.md)                                           |
 | Refonte compacte V2, tri, sélecteur de mois et lots  | [Amélioration V2](references/amelioration-v2.md)                         |
-| Page Abonnements et états mensuels                   | [Abonnements](references/abonnements.md)                                 |
+| Mon mois : factures, abonnements et états mensuels   | [Abonnements](references/abonnements.md)                                 |
 | Cartes, icônes, établissements et logo               | [Identité et interface](references/identite-ui.md)                       |
 | Coffre, accès, sauvegarde, secrets, publication      | [Sécurité](references/securite.md)                                       |
 | Tests, captures, revue, GitHub et reprise autonome   | [Livraison](references/livraison.md)                                     |
@@ -33,7 +33,7 @@ Faire progresser **Finance** depuis l’état réel du dépôt `Mendestrading21/
 
 Quand la demande concerne l’amélioration générale actuelle, lire `docs/AUDIT_UI_V2.md` et `docs/PLAN_AMELIORATION_V2.md`. Les résultats attendus sont :
 
-- sept pages reliées, avec une vraie page **Abonnements** ;
+- six pages reliées ; **Mon mois** réunit revenus, factures (abonnements compris), dépenses du mois et mises de côté, sans page Factures ni Abonnements séparée ;
 - sélection du mois par noms français `Janvier` à `Décembre`, avec année séparée et mois courant évident ;
 - comptes, abonnements et répartitions présentés en listes compactes, classées par valeur comparable décroissante ;
 - cartes moins hautes, avec une icône sémantique, une hiérarchie courte et des détails à la demande ;
@@ -54,7 +54,7 @@ Les missions sont dans `.claude/agents/finance-*.md`. Le coordinateur délègue 
 | Notion                     | Correspondance sourcée et ambiguïtés              | Calculs + sécurité               |
 | Calculs                    | Fonctions exactes et cas chiffrés                 | Patrimoine + vérification        |
 | Patrimoine                 | Comptes, actifs et absence de double compte       | Calculs                          |
-| Abonnements                | Modèle, occurrences, statuts et page dédiée       | Calculs + données + vérification |
+| Abonnements                | Occurrences, statuts, affichage dans Mon mois     | Calculs + données + vérification |
 | Identité visuelle          | Logo, icônes, établissements et densité           | Designer + sécurité              |
 | Designer                   | Parcours, composants, responsive et accessibilité | Frontend + vérification          |
 | Frontend                   | Pages, formulaires et interactions                | Designer + vérification          |

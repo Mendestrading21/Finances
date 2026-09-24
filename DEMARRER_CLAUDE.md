@@ -15,7 +15,7 @@ récent que les SHA documentés.
 Mon objectif est de garder l’application noire, sobre, simple et rapide,
 tout en la rendant plus aboutie : cartes moins hautes, listes plus claires,
 icônes homogènes, identité d’établissement discrète, tri financier du plus
-gros au plus petit, sélecteur Janvier–Décembre, page Abonnements et statuts
+gros au plus petit, sélecteur Janvier–Décembre, Mon mois qui réunit factures, abonnements et revenus avec leurs statuts
 mensuels Payé/Reçu/Pas encore payé ou reçu. Le logo Finance doit aussi être
 amélioré et rester original.
 
@@ -31,7 +31,7 @@ Traite les lots dans l’ordre des dépendances :
 2. classe les récurrences sans transformer toutes les charges en abonnements ;
 3. fais évoluer le modèle des occurrences et migre les coffres/exports anciens sans perte ;
 4. remplace le contrôle technique YYYY-MM par des mois français et une année, puis ajoute les actions Marquer payé/Marquer reçu et leur correction ;
-5. ajoute la page Abonnements sur ce modèle partagé ;
+5. suis factures, abonnements et revenus dans Mon mois, sur ce modèle partagé ;
 6. centralise le tri multidevise et sépare les valeurs impossibles à comparer ;
 7. transforme comptes et abonnements en listes compactes ;
 8. applique une seule famille d’icônes et un registre local d’établissements ;

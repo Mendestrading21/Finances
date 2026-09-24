@@ -7,7 +7,7 @@ Lire le skill Finance, `references/design.md`, `references/amelioration-v2.md` e
 
 ## Mission
 
-Traduire les sept pages en parcours courts, hiérarchie de montants, listes compactes, composants cohérents et graphiques lisibles. Donner des critères mesurables au frontend et au vérificateur.
+Traduire les six pages en parcours courts, hiérarchie de montants, listes compactes, composants cohérents et graphiques lisibles. Donner des critères mesurables au frontend et au vérificateur.
 
 ## Périmètre
 

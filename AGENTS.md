@@ -11,7 +11,7 @@ Lire `.claude/skills/finance/SKILL.md`, `docs/STATUS.md`, `docs/PLAN.md` et, pou
 - Données personnelles, sources Notion brutes, reçus, sauvegardes et secrets hors Git ; fixtures et captures versionnées fictives et identifiées.
 - Inconnu distinct de zéro ; ancien distinct d’actuel ; prévu distinct de reçu/payé.
 - Transferts internes exclus des revenus/dépenses ; compte d’investissement et positions jamais additionnés deux fois.
-- Un modèle et des calculs partagés entre les sept pages, dont Abonnements. Une saisie ne doit pas produire des copies divergentes.
+- Un modèle et des calculs partagés entre les six pages ; factures, abonnements et revenus se suivent dans Mon mois. Une saisie ne doit pas produire des copies divergentes.
 - Thème « Midnight Glass » (noir graphite, cartes en verre fumé, accent unique bleu glacier `#A8BCE8`, voir `.claude/skills/finance/references/design.md`) ; interface française, lisible sur iPhone/iPad/Windows.
 - Conserver React/TypeScript/Vite ; changement de version pour une raison vérifiable, pas une migration d’architecture gratuite. Le lockfile et la politique d’installation font foi.
 - Préserver les travaux existants et l’historique. Pas de force-push, désactivation de protections ni nouvelle permission globale.
