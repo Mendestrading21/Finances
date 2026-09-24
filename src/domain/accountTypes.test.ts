@@ -81,6 +81,24 @@ describe("types de compte", () => {
     expect(validateData(d)).toEqual(d);
   });
 
+  it("regroupe un type écrit avec une autre casse, d'autres espaces ou des accents décomposés", () => {
+    const groups = wealthByType(
+      data([
+        account("a", 100000, { group: "Léna" }),
+        account("b", 50000, { group: "léna" }),
+        account("c", 20000, { group: " LÉNA  " }),
+        account("d", 10000, { group: "Le\u0301na" }),
+        account("e", 5000, { group: "Mia" }),
+      ]),
+      "CHF",
+      "2026-09-24",
+    );
+    expect(groups.map((g) => [g.label, g.totalMinor, g.accountIds])).toEqual([
+      ["Léna", 180000, ["a", "b", "c", "d"]],
+      ["Mia", 5000, ["e"]],
+    ]);
+  });
+
   it("valide le type : texte court, facultatif", () => {
     const withType = data([account("a", 100, { group: "Léna" })]);
     expect(validateData(withType)).toEqual(withType);

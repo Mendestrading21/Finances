@@ -40,7 +40,9 @@ const BY_KIND: Record<Account["kind"], string> = {
   debt: "Dette",
 };
 
-const normalized = (label: string) => label.trim().toLocaleLowerCase("fr");
+// Casse, accents composés ou non et espaces ignorés : « Léna », « léna » et « LÉNA » sont un type.
+const normalized = (label: string) =>
+  label.normalize("NFC").trim().replace(/\s+/g, " ").toLocaleLowerCase("fr");
 
 /** The preset named `label` (case and spaces ignored), if any. */
 export function accountTypePreset(label: string): AccountTypePreset | undefined {
@@ -72,7 +74,8 @@ export type WealthGroup = {
 };
 
 /** Patrimoine par type de compte, with the same per-account values as `wealthSummary` (so the
- * groups add up to its total), largest first; a debt counts negatively. */
+ * groups add up to its total), largest first; a debt counts negatively. Types differing only by
+ * case or spacing are one group, named as first written. */
 export function wealthByType(
   data: FinanceData,
   currency: string,
@@ -81,15 +84,16 @@ export function wealthByType(
   const groups = new Map<string, WealthGroup>();
   for (const account of data.accounts) {
     const label = accountTypeOf(account);
+    const key = normalized(label);
     const group =
-      groups.get(label) ??
+      groups.get(key) ??
       ({ label, totalMinor: null, count: 0, excluded: 0, accountIds: [] } as WealthGroup);
     const { valueMinor } = accountValue(account, data.positions, currency, data.fxRates, at);
     group.count++;
     group.accountIds.push(account.id);
     if (valueMinor === null) group.excluded++;
     else group.totalMinor = (group.totalMinor ?? 0) + valueMinor;
-    groups.set(label, group);
+    groups.set(key, group);
   }
   return [...groups.values()].sort(
     (a, b) =>

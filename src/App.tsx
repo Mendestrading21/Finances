@@ -1300,6 +1300,11 @@ export default function App() {
   const wealth = wealthSummary(data, currency),
     // Patrimoine par type de compte (Compte courant, 3e pilier, Léna…), mêmes valeurs que le total.
     wealthTypes = wealthByType(data, currency),
+    // Parts des types : sur les actifs positifs, comme la répartition (une dette n'en fausse pas la somme).
+    wealthAssetsMinor = wealthTypes.reduce(
+      (sum, g) => sum + Math.max(0, g.totalMinor ?? 0),
+      0,
+    ),
     accountRanking = rankAccounts(data, currency),
     // Largest to smallest comparable value first (docs/AUDIT_UI_V2.md), then accounts
     // without a common rate/date — never given a guessed position among the ranked ones.
@@ -2718,13 +2723,13 @@ export default function App() {
                     <span className="row-title">{g.label}</span>
                     <span className="row-detail">
                       {g.count} compte{g.count > 1 ? "s" : ""}
-                      {g.excluded > 0 && `${SEP}${g.excluded} sans solde daté`}
+                      {g.excluded > 0 &&
+                        `${SEP}${g.excluded} non compté${g.excluded > 1 ? "s" : ""} (solde ou taux manquant)`}
                       {!hidden &&
                         g.totalMinor !== null &&
                         g.totalMinor > 0 &&
-                        wealth.totalMinor !== null &&
-                        wealth.totalMinor > 0 &&
-                        `${SEP}${Math.round((g.totalMinor / wealth.totalMinor) * 100)} %`}
+                        wealthAssetsMinor > 0 &&
+                        `${SEP}${Math.round((g.totalMinor / wealthAssetsMinor) * 100)} %`}
                     </span>
                   </div>
                   <span className="row-value">{display(g.totalMinor)}</span>
@@ -3048,7 +3053,7 @@ export default function App() {
                       </h2>
                       <div className="account-grid">
                         {sortedAccounts
-                          .filter((a) => accountTypeOf(a) === g.label)
+                          .filter((a) => g.accountIds.includes(a.id))
                           .map((a) => accountCard(a, false))}
                       </div>
                     </section>

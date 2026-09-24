@@ -748,9 +748,15 @@ Demande de l'utilisateur, capture de sa table Notion à l'appui : voir sur chaqu
 - Icônes ajoutées : parapluie (prévoyance), mallette (business), carte (dette), cœur (types libres).
 - La démonstration fictive montre cinq types, dont « 3e pilier » et un compte « Enfant ».
 
+Relecture indépendante (`finance-verification`) : les calculs sont justes dans tous les cas essayés (devises avec et sans taux, soldes non datés, dette, positions, natures mélangées dans un type), les anciens fichiers restent valides et `group` survit à l'import, au coffre et à la synchronisation. Quatre défauts réels, corrigés :
+1. **Bloquant :** un type libre nommé comme un type prédéfini d'une autre nature (« trading » en épargne) se rouvrait sur le type prédéfini, et un simple ré-enregistrement changeait la nature du compte. L'éditeur ne propose désormais un type prédéfini que si sa nature est celle du compte ; sinon il garde « Autre » et la nature choisie.
+2. « Léna » et « léna » faisaient deux groupes : casse, espaces et accents décomposés sont ignorés, le groupe garde le premier libellé écrit.
+3. Avec une dette, les parts de l'Accueil étaient calculées sur le patrimoine net (une somme à 247 %) : elles le sont sur les actifs positifs, comme la répartition.
+4. « sans solde daté » s'affichait pour un compte daté sans taux de change : « non compté (solde ou taux manquant) ».
+
 Preuves :
-- `typecheck`, `test` (**257/257**, dont 3 nouveaux tests `accountTypes` : jeu de 10 comptes façon Notion, conversion USD, somme des types égale au total), `build`.
-- Les **22** scénarios `test:e2e` rejoués individuellement. Le nouveau « account types… » crée deux comptes 3e pilier, un compte « Léna » en type libre et un compte courant, puis vérifie l'ordre et les totaux des groupes sur Mes comptes, les parts sur l'Accueil et le type relu à la réouverture.
+- `typecheck`, `test` (**258/258**, dont 4 tests `accountTypes` : jeu de 10 comptes façon Notion, conversion USD, somme des types égale au total, types en casse mélangée), `build`.
+- Les **22** scénarios `test:e2e` rejoués individuellement. Le scénario « account types… » crée deux comptes 3e pilier, « Léna » et « léna », un compte courant, une dette et un « trading » en épargne. Il vérifie l'ordre et les totaux des groupes, la part de 53 % (13 605 / 25 755, pas / 24 755), et que le compte « trading » reste en épargne après deux ré-enregistrements ; sans le correctif 1, il échoue (« Trading » au lieu de « Autre »).
 - Captures `02` à `04` régénérées (carte « Patrimoine par type », anneau à cinq types) et revues ; aucun débordement horizontal à 1 280 ni à 390 px.
 
 ## État réel

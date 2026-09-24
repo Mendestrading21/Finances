@@ -139,7 +139,9 @@ export default function Editor({
   const [accountType, setAccountType] = useState(() => {
     if (!existingAccount) return ACCOUNT_TYPES[0].label;
     const label = accountTypeOf(existingAccount);
-    return accountTypePreset(label) ? label : CUSTOM_TYPE;
+    // Un type prédéfini seulement s'il a la nature du compte : sinon un simple ré-enregistrement
+    // changerait la nature (et les calculs) sans que rien ne le montre.
+    return accountTypePreset(label)?.kind === existingAccount.kind ? label : CUSTOM_TYPE;
   });
   const [customKind, setCustomKind] = useState<Account["kind"]>(
     existingAccount?.kind ?? "savings",
@@ -621,7 +623,9 @@ export default function Editor({
                   {field("Nom du type", "customType", {
                     required: true,
                     defaultValue:
-                      existingAccount && !accountTypePreset(accountTypeOf(existingAccount))
+                      existingAccount &&
+                      accountTypePreset(accountTypeOf(existingAccount))?.kind !==
+                        existingAccount.kind
                         ? accountTypeOf(existingAccount)
                         : "",
                   })}
