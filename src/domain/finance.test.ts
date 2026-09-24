@@ -17,11 +17,13 @@ import {
   rankByValue,
   recurrenceAmountAt,
   recurringFlowSummary,
+  simpleRepeatOf,
   today,
   transactionsForMonth,
   wealthSummary,
   withOccurrenceAmount,
   withRecurrenceAmount,
+  withSimpleSchedule,
 } from "./finance";
 import { mergeImport, validateData } from "./validation";
 import {
@@ -2053,5 +2055,105 @@ describe("retour au montant habituel malgré la trace de modification manuelle",
   it("réenregistrer le même montant ne change rien", () => {
     const d = withOccurrenceAmount(billData(), "internet", "2026-09-05", 8500);
     expect(withOccurrenceAmount(d, "internet", "2026-09-05", 8500)).toBe(d);
+  });
+});
+
+describe("factures et revenus sans date : tous les mois ou un seul mois", () => {
+  const { amountMinor: _a, day: _d, intervalMonths: _i, startDate: _s, ...base } =
+    recurrence({ id: "tax", label: "Impôts" });
+  const due = (r: Recurrence, month: string) =>
+    occurrenceCohort(data({ recurrences: [r] }), month).map((i) => [
+      i.occurrenceDate,
+      i.dueAmountMinor,
+    ]);
+
+  it("une nouvelle facture « tous les mois » compte dès le mois affiché, sans date à saisir", () => {
+    const r = withSimpleSchedule(base, undefined, "monthly", "2026-10", 50000);
+    expect(r).toMatchObject({ day: 1, intervalMonths: 1, startDate: "2026-10-01", endDate: null });
+    expect(simpleRepeatOf(r)).toBe("monthly");
+    expect(due(r, "2026-09")).toEqual([]);
+    expect(due(r, "2026-10")).toEqual([["2026-10-01", 50000]]);
+    expect(due(r, "2027-03")).toEqual([["2027-03-01", 50000]]);
+    expect(validateData(data({ accounts: [account()], recurrences: [r] }))).toBeTruthy();
+    // Ancien formulaire : début « aujourd'hui » après le jour choisi = rien ce mois-ci.
+    expect(due(recurrence({ day: 1, startDate: "2026-09-24" }), "2026-09")).toEqual([]);
+  });
+
+  it("une facture « seulement ce mois » n'existe que ce mois-là", () => {
+    const r = withSimpleSchedule(base, undefined, "single", "2026-02", 12000);
+    expect(r).toMatchObject({ startDate: "2026-02-01", endDate: "2026-02-28" });
+    expect(simpleRepeatOf(r)).toBe("single");
+    expect(due(r, "2026-01")).toEqual([]);
+    expect(due(r, "2026-02")).toEqual([["2026-02-01", 12000]]);
+    expect(due(r, "2026-03")).toEqual([]);
+    expect(validateData(data({ accounts: [account()], recurrences: [r] }))).toBeTruthy();
+  });
+
+  it("un seul mois devenu « tous les mois » garde son mois et son jour, et continue ensuite", () => {
+    const single = withSimpleSchedule(base, undefined, "single", "2026-09", 30000);
+    const r = withSimpleSchedule(base, single, "monthly", "2026-10", 30000);
+    expect(r).toMatchObject({ startDate: "2026-09-01", endDate: null, intervalMonths: 1 });
+    expect(due(r, "2026-09")).toEqual([["2026-09-01", 30000]]);
+    expect(due(r, "2026-10")).toEqual([["2026-10-01", 30000]]);
+  });
+
+  it("une facture mensuelle devenue « seulement ce mois » garde son jour et un seul montant", () => {
+    const monthly = withRecurrenceAmount(recurrence(), 210000, "2026-05-01");
+    const paid = transaction({
+      id: "rent-june",
+      recurrenceId: "rent",
+      occurrenceDate: "2026-06-30",
+      date: "2026-06-30",
+      amountMinor: 210000,
+    });
+    const r = withSimpleSchedule({ ...base, id: "rent" }, monthly, "single", "2026-10", 215000);
+    expect(r).toMatchObject({ day: 31, startDate: "2026-10-01", endDate: "2026-10-31" });
+    expect(r.amountHistory).toBeUndefined();
+    expect(r.amountEffectiveFrom).toBeUndefined();
+    expect(due(r, "2026-09")).toEqual([]);
+    expect(due(r, "2026-10")).toEqual([["2026-10-31", 215000]]);
+    // Le paiement déjà enregistré en juin reste valide.
+    expect(validateData(data({ accounts: [account()], recurrences: [r], transactions: [paid] }))).toBeTruthy();
+  });
+
+  it("montant changé d'un mois seul : il atteint bien son unique échéance, même passée", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-20T12:00:00"));
+    const single = withSimpleSchedule(base, undefined, "single", "2026-10", 30000);
+    const r = withSimpleSchedule(base, single, "single", "2026-10", 31000);
+    expect(due(r, "2026-10")).toEqual([["2026-10-01", 31000]]);
+  });
+
+  it("« tous les mois » inchangé ne touche ni au début ni aux montants datés", () => {
+    const monthly = withRecurrenceAmount(recurrence(), 210000, "2026-05-01");
+    const r = withSimpleSchedule(base, monthly, "monthly", "2026-10", 210000);
+    expect(r).toEqual({ ...monthly, id: "tax", label: "Impôts", endDate: null });
+  });
+
+  it("montant changé sur une facture mensuelle : dès le mois affiché, les mois d'avant gardent le leur", () => {
+    const monthly = recurrence({ day: 5, startDate: "2026-01-05", amountMinor: 8000 });
+    const r = withSimpleSchedule(base, monthly, "monthly", "2026-10", 9000);
+    expect(due(r, "2026-09")).toEqual([["2026-09-05", 8000]]);
+    expect(due(r, "2026-10")).toEqual([["2026-10-05", 9000]]);
+    expect(validateData(data({ accounts: [account()], recurrences: [r] }))).toBeTruthy();
+  });
+
+  it("un début futur avance au mois affiché, jamais un début passé ne recule", () => {
+    const later = recurrence({ day: 1, startDate: "2026-12-01", amountMinor: 5000 });
+    expect(withSimpleSchedule(base, later, "monthly", "2026-10", 5000)).toMatchObject({
+      startDate: "2026-10-01",
+    });
+    const earlier = recurrence({ day: 1, startDate: "2026-01-01", amountMinor: 5000 });
+    expect(withSimpleSchedule(base, earlier, "monthly", "2026-10", 5000)).toMatchObject({
+      startDate: "2026-01-01",
+    });
+  });
+
+  it("une cadence réglée ailleurs (tous les 3 mois) reste telle quelle avec « comme maintenant »", () => {
+    const quarterly = recurrence({ intervalMonths: 3, day: 15, startDate: "2026-01-15" });
+    expect(simpleRepeatOf(quarterly)).toBe("other");
+    expect(simpleRepeatOf(recurrence({ endDate: "2026-12-31" }))).toBe("other");
+    const r = withSimpleSchedule({ ...base, label: "Taxe" }, quarterly, "keep", "2026-10", quarterly.amountMinor);
+    expect(r).toEqual({ ...quarterly, id: "tax", label: "Taxe", endDate: null });
   });
 });

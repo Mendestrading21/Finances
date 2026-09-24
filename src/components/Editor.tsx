@@ -13,7 +13,15 @@ import {
   type Source,
   type Transaction,
 } from "../domain/types";
-import { parseMoney, today, withRecurrenceAmount } from "../domain/finance";
+import {
+  monthLabel,
+  parseMoney,
+  simpleRepeatOf,
+  today,
+  withRecurrenceAmount,
+  withSimpleSchedule,
+  type SimpleRepeat,
+} from "../domain/finance";
 import { Icon } from "./Icon";
 /** Amount-related fields for a saved recurrence: routes an existing recurrence's amount
  * through `withRecurrenceAmount` (dating any real change and archiving the superseded amount)
@@ -70,6 +78,10 @@ export type EditorSpec = {
   quick?: boolean;
   /** recurrence only: nature proposée pour une nouvelle récurrence (page Factures : "bill"). */
   recurrenceType?: Exclude<Recurrence["recurrenceType"], "income">;
+  /** recurrence only: new bill or income without any date (page Factures) — « Tous les mois »
+   * or « Seulement {mois} » instead of day, cadence, start and end. An existing bill or income
+   * always opens this way. */
+  simple?: boolean;
 };
 const titles = {
   transaction: "Une opération",
@@ -83,11 +95,14 @@ const titles = {
 export default function Editor({
   spec,
   data,
+  month = today().slice(0, 7),
   onSave,
   onClose,
 }: {
   spec: EditorSpec;
   data: FinanceData;
+  /** Month shown on screen (YYYY-MM): the month of « Seulement … » for a bill or income. */
+  month?: string;
   onSave: (data: FinanceData) => Promise<void>;
   onClose: () => void;
 }) {
@@ -121,6 +136,30 @@ export default function Editor({
   });
   const recurrenceType: Recurrence["recurrenceType"] =
     recurrenceKind === "income" ? "income" : expenseRecurrenceType;
+  // Factures et revenus : pas de date à saisir, « Tous les mois » ou un seul mois.
+  const existingRecurrence =
+    spec.type === "recurrence"
+      ? data.recurrences.find((r) => r.id === spec.id)
+      : undefined;
+  const simple =
+    spec.type === "recurrence" &&
+    (existingRecurrence
+      ? existingRecurrence.recurrenceType === "bill" ||
+        existingRecurrence.recurrenceType === "income"
+      : !!spec.simple);
+  const currentRepeat = existingRecurrence
+    ? simpleRepeatOf(existingRecurrence)
+    : "monthly";
+  // Un seul mois qui n'est pas celui affiché, ou une cadence réglée ailleurs : gardée par défaut.
+  const keepOffered =
+    !!existingRecurrence &&
+    (currentRepeat === "other" ||
+      (currentRepeat === "single" &&
+        existingRecurrence.startDate.slice(0, 7) !== month));
+  const [repeatChoice, setRepeatChoice] = useState<SimpleRepeat | "keep">(
+    keepOffered ? "keep" : currentRepeat === "single" ? "single" : "monthly",
+  );
+  const monthName = monthLabel(month);
   const item =
     spec.type === "transaction"
       ? // spec.transaction must win: it carries the caller's explicit intent (e.g.
@@ -441,7 +480,29 @@ export default function Editor({
           ? updated.positions.map((v) => (v.id === id ? p : v))
           : [...updated.positions, p];
       }
-      if (spec.type === "recurrence") {
+      if (spec.type === "recurrence" && simple) {
+        const existing = data.recurrences.find((r) => r.id === id);
+        const r = withSimpleSchedule(
+          {
+            id,
+            label: get("label"),
+            kind: get("kind") as "income" | "expense",
+            recurrenceType: get("recurrenceType") as Recurrence["recurrenceType"],
+            currency: get("currency"),
+            accountId: nullable(f.get("accountId")),
+            category: get("category"),
+            active: get("active") === "true",
+            source,
+          },
+          existing,
+          repeatChoice,
+          month,
+          num("amountMinor"),
+        );
+        updated.recurrences = existing
+          ? updated.recurrences.map((v) => (v.id === id ? r : v))
+          : [...updated.recurrences, r];
+      } else if (spec.type === "recurrence") {
         const existing = data.recurrences.find((r) => r.id === id);
         const amounts = recurrenceAmountFields(existing, num("amountMinor"));
         const r: Recurrence = {
@@ -493,9 +554,12 @@ export default function Editor({
         <div>
           <p className="eyebrow">FINANCE · SAISIE RAPIDE</p>
           <h2 id="editor-title">
-            {spec.type === "recurrence" && !spec.id && recurrenceKind === "income"
+            {spec.type === "recurrence" &&
+            (simple || !spec.id) &&
+            recurrenceKind === "income"
               ? "Un revenu"
-              : spec.type === "recurrence" && !spec.id && spec.recurrenceType === "bill"
+              : spec.type === "recurrence" &&
+                  (simple || (!spec.id && spec.recurrenceType === "bill"))
                 ? "Une facture"
                 : titles[spec.type]}
           </h2>
@@ -809,7 +873,86 @@ export default function Editor({
               </p>
             </>
           )}
-          {spec.type === "recurrence" && (
+          {spec.type === "recurrence" && simple && (
+            <>
+              {field("Libellé", "label", { required: true })}
+              <input type="hidden" name="kind" value={recurrenceKind} />
+              <input type="hidden" name="recurrenceType" value={recurrenceType} />
+              <input
+                type="hidden"
+                name="category"
+                value={val(
+                  "category",
+                  recurrenceKind === "income" ? "Revenus" : "Factures",
+                )}
+              />
+              {field("Montant", "amountMinor", {
+                defaultValue: amount("amountMinor"),
+                required: true,
+              })}
+              {currency()}
+              {accounts("Compte", "accountId", false, true)}
+              <div className="field field-full">
+                <span id="simple-repeat-label">Répétition</span>
+                <div
+                  className="tab-bar"
+                  role="group"
+                  aria-labelledby="simple-repeat-label"
+                >
+                  {(
+                    [
+                      ...(keepOffered ? [["keep", "Comme maintenant"]] : []),
+                      ["monthly", "Tous les mois"],
+                      ["single", `Seulement ${monthName}`],
+                    ] as [SimpleRepeat | "keep", string][]
+                  ).map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      className={`tab-button${repeatChoice === value ? " active" : ""}`}
+                      aria-pressed={repeatChoice === value}
+                      onClick={() => setRepeatChoice(value)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {existingRecurrence ? (
+                field("Récurrence", "active", {
+                  defaultValue: val("active", "true"),
+                  children: (
+                    <>
+                      <option value="true">Active</option>
+                      <option value="false">Arrêtée</option>
+                    </>
+                  ),
+                })
+              ) : (
+                <input type="hidden" name="active" value="true" />
+              )}
+              <p className="footer-note field-full">
+                {repeatChoice === "single"
+                  ? `Seulement en ${monthName} : les autres mois ne l’ont pas.${
+                      existingRecurrence && currentRepeat !== "single"
+                        ? " Les paiements déjà enregistrés restent."
+                        : ""
+                    }`
+                  : repeatChoice === "monthly"
+                    ? existingRecurrence
+                      ? `Revient chaque mois. Un nouveau montant s’applique dès ${monthName}.`
+                      : `Revient chaque mois dès ${monthName}, sans date à choisir. ${
+                          recurrenceKind === "income"
+                            ? "Marquez-le reçu quand c’est fait."
+                            : "Marquez-la payée quand c’est fait."
+                        }`
+                    : "Garde son rythme actuel. Un nouveau montant s’applique dès " +
+                      monthName +
+                      "."}
+              </p>
+            </>
+          )}
+          {spec.type === "recurrence" && !simple && (
             <>
               {field("Libellé", "label", { required: true })}
               {field("Type", "kind", {

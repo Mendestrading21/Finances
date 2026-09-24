@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { Recurrence } from "../domain/types";
-import { dateLabel, monthLabel, money, parseMoney } from "../domain/finance";
+import { monthLabel, money, parseMoney } from "../domain/finance";
 import { Icon } from "./Icon";
 
 export type OccurrenceScope = "month" | "following";
@@ -90,12 +90,19 @@ export default function OccurrenceDialog({
       </div>
       <form onSubmit={submit}>
         <div className="form-grid">
-          <p className="meta field-full">
-            Échéance du {dateLabel(occurrenceDate)}
-            {settled ? (income ? " · déjà reçue" : " · déjà payée") : ""}
-            {amountMinor !== usualAmountMinor &&
-              ` · montant habituel ${money(usualAmountMinor, recurrence.currency)}`}
-          </p>
+          {/* Pas de date : le mois est dans l'en-tête, seuls l'état et le montant habituel comptent. */}
+          {(settled || amountMinor !== usualAmountMinor) && (
+            <p className="meta field-full">
+              {[
+                settled ? (income ? "Déjà reçu" : "Déjà payé") : null,
+                amountMinor !== usualAmountMinor
+                  ? `${settled ? "montant" : "Montant"} habituel ${money(usualAmountMinor, recurrence.currency)}`
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            </p>
+          )}
           <label className="field field-full">
             <span>Montant ({currency})</span>
             <input
@@ -149,7 +156,7 @@ export default function OccurrenceDialog({
             className="text-button field-full"
             onClick={onEditAll}
           >
-            Modifier le nom, le jour, le compte ou l’arrêter
+            Modifier le nom, le compte, la répétition ou l’arrêter
           </button>
         </div>
         {error && (

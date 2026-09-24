@@ -652,6 +652,88 @@ export function recurringFlowSummary(
  * upcoming subscriptions/charges, not the cohort of a specific already-chosen month. Scans
  * forward month by month, bounded the same way `availableSummary` bounds its own scan (1200
  * months / 100 years comfortably covers `intervalMonths`'s 1–120 range). */
+/** Répétition sans date des factures et revenus : « Tous les mois » ou un seul mois. */
+export type SimpleRepeat = "monthly" | "single";
+
+/** "monthly" (every month, no end), "single" (one month only), or "other" for a cadence set
+ * elsewhere (every 3 months, a dated end…), which the simple editor keeps unless changed. */
+export function simpleRepeatOf(
+  recurrence: Pick<Recurrence, "intervalMonths" | "startDate" | "endDate">,
+): SimpleRepeat | "other" {
+  if (recurrence.intervalMonths !== 1) return "other";
+  if (!recurrence.endDate) return "monthly";
+  return recurrence.endDate.slice(0, 7) === recurrence.startDate.slice(0, 7)
+    ? "single"
+    : "other";
+}
+
+/** First and last day of `month` (YYYY-MM). */
+export function monthBounds(month: string): { first: string; last: string } {
+  const [year, monthNumber] = monthParts(month);
+  return {
+    first: `${month}-01`,
+    last: `${month}-${String(daysInMonth(year, monthNumber)).padStart(2, "0")}`,
+  };
+}
+
+type ScheduleFields =
+  | "amountMinor"
+  | "amountEffectiveFrom"
+  | "amountHistory"
+  | "day"
+  | "intervalMonths"
+  | "startDate"
+  | "endDate";
+
+/** Schedule and amount of a bill or income entered without any date, for the month `month`
+ * shown on screen. A new one starts on the 1st of `month`: every month, or that month only.
+ * "single" makes an existing one that month only, keeping its day (so an occurrence already
+ * paid keeps its date) and one amount, the one given: no dated history, since a change dated
+ * after its only occurrence would otherwise never reach it. "monthly" keeps its day and start
+ * (moved earlier at most, never later, so no dated amount or past occurrence is lost) and
+ * removes any end; "keep" leaves a cadence set elsewhere as it is. For both, a changed amount
+ * applies from `month` on through `withRecurrenceAmount`; an unchanged one is left untouched. */
+export function withSimpleSchedule(
+  base: Omit<Recurrence, ScheduleFields>,
+  existing: Recurrence | undefined,
+  repeat: SimpleRepeat | "keep",
+  month: string,
+  amountMinor: number,
+): Recurrence {
+  if (!Number.isSafeInteger(amountMinor) || amountMinor < 0)
+    throw new Error("Montant de récurrence invalide.");
+  const { first, last } = monthBounds(month);
+  const fresh = (day: number, endDate: string | null): Recurrence => ({
+    ...base,
+    amountMinor,
+    day,
+    intervalMonths: 1,
+    startDate: first,
+    endDate,
+  });
+  if (!existing) return fresh(1, repeat === "single" ? last : null);
+  if (repeat === "single") return fresh(existing.day, last);
+  const monthly = repeat === "monthly";
+  const scheduled: Recurrence = {
+    ...base,
+    amountMinor: existing.amountMinor,
+    ...(existing.amountEffectiveFrom === undefined
+      ? {}
+      : { amountEffectiveFrom: existing.amountEffectiveFrom }),
+    ...(existing.amountHistory === undefined
+      ? {}
+      : { amountHistory: existing.amountHistory }),
+    day: existing.day,
+    intervalMonths: monthly ? 1 : existing.intervalMonths,
+    startDate:
+      monthly && first < existing.startDate ? first : existing.startDate,
+    endDate: monthly ? null : (existing.endDate ?? null),
+  };
+  return amountMinor === existing.amountMinor
+    ? scheduled
+    : withRecurrenceAmount(scheduled, amountMinor, first);
+}
+
 export function nextOccurrenceDate(
   recurrence: Recurrence,
   from = today(),

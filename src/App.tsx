@@ -36,6 +36,7 @@ import {
   wealthSummary,
   findOccurrenceTransaction,
   projectedOccurrence,
+  simpleRepeatOf,
   withOccurrenceAmount,
   withRecurrenceAmount,
 } from "./domain/finance";
@@ -1543,8 +1544,7 @@ export default function App() {
           if (db === null) return -1;
           return da.localeCompare(db);
         });
-  // Page Factures : charges fixes (nature « bill »), dans l'ordre des échéances du mois choisi,
-  // puis montant décroissant à date égale (même devise seulement : aucune conversion implicite).
+  // Page Factures : charges fixes (nature « bill ») et revenus fixes du mois choisi, sans date.
   const billsCohort = cohortSummary(data, month, currency, ["bill"]);
   const billsSettledPct =
     billsCohort.dueMinor !== null &&
@@ -1552,25 +1552,44 @@ export default function App() {
     billsCohort.dueMinor > 0
       ? Math.min(100, (billsCohort.settledMinor / billsCohort.dueMinor) * 100)
       : null;
-  // Échéances du mois d'abord, par date ; à date égale, par devise puis montant décroissant
+  // Sans date à l'écran : ce qui reste à payer d'abord, puis par devise et montant décroissant
   // (aucune conversion implicite, ordre total et stable), puis par libellé.
-  const byDueDate = (a: Recurrence, b: Recurrence) => {
-    const ia = subsCohortByRecurrence.get(a.id),
-      ib = subsCohortByRecurrence.get(b.id);
-    if (!ia || !ib) return ia ? -1 : ib ? 1 : a.label.localeCompare(b.label);
+  const byAmount = (a: Recurrence, b: Recurrence) => {
+    const ia = subsCohortByRecurrence.get(a.id)!,
+      ib = subsCohortByRecurrence.get(b.id)!;
     return (
-      ia.occurrenceDate.localeCompare(ib.occurrenceDate) ||
+      Number(ia.settled) - Number(ib.settled) ||
       ia.currency.localeCompare(ib.currency) ||
       ib.dueAmountMinor - ia.dueAmountMinor ||
       a.label.localeCompare(b.label)
     );
   };
-  const billsActive = data.recurrences
-    .filter((r) => r.active && r.recurrenceType === "bill")
-    .sort(byDueDate);
-  const billsInactive = data.recurrences
-    .filter((r) => !r.active && r.recurrenceType === "bill")
-    .sort((a, b) => a.label.localeCompare(b.label));
+  // Une facture ou un revenu sans échéance ce mois-ci (un seul autre mois, début plus tard,
+  // tous les 3 mois…) n'est pas affiché comme dû : il est rangé à part, replié. Ce qui s'est
+  // terminé avant ce mois-ci n'y figure plus (visible dans son propre mois).
+  const monthStart = `${month}-01`;
+  const splitByMonth = (type: "bill" | "income") => {
+    const active = data.recurrences.filter(
+      (r) => r.active && r.recurrenceType === type,
+    );
+    return {
+      due: active.filter((r) => subsCohortByRecurrence.has(r.id)).sort(byAmount),
+      elsewhere: active
+        .filter(
+          (r) =>
+            !subsCohortByRecurrence.has(r.id) &&
+            !(r.endDate && r.endDate < monthStart),
+        )
+        .sort((a, b) => a.label.localeCompare(b.label)),
+      stopped: data.recurrences
+        .filter((r) => !r.active && r.recurrenceType === type)
+        .sort((a, b) => a.label.localeCompare(b.label)),
+    };
+  };
+  const bills = splitByMonth("bill");
+  const billsActive = bills.due,
+    billsElsewhere = bills.elsewhere,
+    billsInactive = bills.stopped;
   // Revenus fixes sur la même page : attendu, reçu et reste à recevoir du mois choisi.
   const incomeCohort = cohortSummary(data, month, currency, ["income"]);
   const incomeReceivedPct =
@@ -1579,12 +1598,26 @@ export default function App() {
     incomeCohort.dueMinor > 0
       ? Math.min(100, (incomeCohort.settledMinor / incomeCohort.dueMinor) * 100)
       : null;
-  const incomeActive = data.recurrences
-    .filter((r) => r.active && r.recurrenceType === "income")
-    .sort(byDueDate);
-  const incomeInactive = data.recurrences
-    .filter((r) => !r.active && r.recurrenceType === "income")
-    .sort((a, b) => a.label.localeCompare(b.label));
+  const incomes = splitByMonth("income");
+  const incomeActive = incomes.due,
+    incomeElsewhere = incomes.elsewhere,
+    incomeInactive = incomes.stopped;
+  // Rythme d'une facture ou d'un revenu, sans date : « Tous les mois », « Seulement … ».
+  const scheduleLabel = (r: Recurrence) => {
+    const start = r.startDate.slice(0, 7);
+    const repeat = simpleRepeatOf(r);
+    if (repeat === "single")
+      return start === month ? "Seulement ce mois" : `Seulement ${monthLabel(start)}`;
+    const every =
+      r.intervalMonths === 1
+        ? "Tous les mois"
+        : r.intervalMonths === 12
+          ? "Tous les ans"
+          : `Tous les ${r.intervalMonths} mois`;
+    if (start > month) return `${every} dès ${monthLabel(start)}`;
+    if (r.endDate) return `${every} jusqu’en ${monthLabel(r.endDate.slice(0, 7))}`;
+    return every;
+  };
   // Prefills "Marquer payé/reçu" from a not-yet-persisted occurrence, mirroring
   // `transactionsForMonth`'s own virtual-transaction shape and id (`recurrenceId:date`) so a
   // settlement made here and one made from Mon mois never create two different transactions
@@ -1908,17 +1941,28 @@ export default function App() {
             >
               <span className="row-title">{t.label}</span>
               <span className="row-detail">
-                {t.date ? (
-                  <span className="nowrap">{t.date}</span>
-                ) : t.budgetMonth ? (
+                {/* Facture ou revenu fixe pas encore réglé : il compte pour le mois, sans date
+                    (le jour interne n'est pas une échéance). Un règlement garde sa vraie date. */}
+                {t.status !== "settled" &&
+                data?.recurrences.some(
+                  (r) =>
+                    r.id === t.recurrenceId &&
+                    (r.recurrenceType === "bill" || r.recurrenceType === "income"),
+                ) ? null : (
                   <>
-                    <span className="nowrap">{monthLabel(t.budgetMonth)}</span>
-                    {`${SEP}jour à vérifier`}
+                    {t.date ? (
+                      <span className="nowrap">{t.date}</span>
+                    ) : t.budgetMonth ? (
+                      <>
+                        <span className="nowrap">{monthLabel(t.budgetMonth)}</span>
+                        {`${SEP}jour à vérifier`}
+                      </>
+                    ) : (
+                      "Date à vérifier"
+                    )}
+                    {SEP}
                   </>
-                ) : (
-                  "Date à vérifier"
                 )}
-                {SEP}
                 {accountName(t.accountId)}
                 {SEP}
                 <span
@@ -2094,16 +2138,17 @@ export default function App() {
             ) : (
               <>
                 <span className="nowrap">
-                  {bills && cohortItem
-                    ? `le ${Number(cohortItem.occurrenceDate.slice(8))}`
-                    : monthLabel(month)}
+                  {bills ? scheduleLabel(r) : monthLabel(month)}
                 </span>
-                {SEP}
+                {/* Factures : pas d'échéance ce mois-ci = rangée à part, sans statut ni montant. */}
+                {!(bills && !cohortItem) && SEP}
                 <span
                   className={`nowrap ${!cohortItem ? "" : cohortItem.settled ? recurrenceTone(r) : "status-pending"}`}
                 >
                   {!cohortItem
-                    ? "Aucune échéance"
+                    ? bills
+                      ? ""
+                      : "Aucune échéance"
                     : cohortItem.settled
                       ? r.kind === "income"
                         ? "Reçu"
@@ -2132,7 +2177,7 @@ export default function App() {
                 {r.kind === "income" ? "+" : ""}
                 {display(amountMinor, amountCurrency)}
               </>
-            ) : (
+            ) : bills ? null : (
               <span className="row-detail">Aucune échéance</span>
             )}
           </div>
@@ -2322,7 +2367,7 @@ export default function App() {
             onClick={() =>
               edit(
                 page === "bills"
-                  ? { type: "recurrence", recurrenceType: "bill" }
+                  ? { type: "recurrence", recurrenceType: "bill", simple: true }
                   : {
                 type:
                   page === "accounts"
@@ -3051,7 +3096,9 @@ export default function App() {
               action={
                 <button
                   className="card-action"
-                  onClick={() => edit({ type: "recurrence", recurrenceType: "bill" })}
+                  onClick={() =>
+                    edit({ type: "recurrence", recurrenceType: "bill", simple: true })
+                  }
                 >
                   Ajouter une facture
                 </button>
@@ -3065,6 +3112,12 @@ export default function App() {
                 </p>
               )}
             </Card>
+            {billsElsewhere.length > 0 && (
+              <details className="account-history">
+                <summary>Factures d’autres mois ({billsElsewhere.length})</summary>
+                {billsElsewhere.map((r) => subscriptionRow(r, "bills"))}
+              </details>
+            )}
             {billsInactive.length > 0 && (
               <details className="account-history">
                 <summary>Factures arrêtées ({billsInactive.length})</summary>
@@ -3077,7 +3130,9 @@ export default function App() {
               action={
                 <button
                   className="card-action"
-                  onClick={() => edit({ type: "recurrence", kind: "income" })}
+                  onClick={() =>
+                    edit({ type: "recurrence", kind: "income", simple: true })
+                  }
                 >
                   Ajouter un revenu
                 </button>
@@ -3091,6 +3146,12 @@ export default function App() {
                 </p>
               )}
             </Card>
+            {incomeElsewhere.length > 0 && (
+              <details className="account-history">
+                <summary>Revenus d’autres mois ({incomeElsewhere.length})</summary>
+                {incomeElsewhere.map((r) => subscriptionRow(r, "bills"))}
+              </details>
+            )}
             {incomeInactive.length > 0 && (
               <details className="account-history">
                 <summary>Revenus arrêtés ({incomeInactive.length})</summary>
@@ -3098,9 +3159,9 @@ export default function App() {
               </details>
             )}
             <p className="footer-note">
-              Factures et revenus reviennent tout seuls à chaque échéance. Le
-              crayon change le montant de {monthLabel(month)} seulement, ou de ce
-              mois et des suivants.
+              Factures et revenus reviennent tout seuls chaque mois, ou
+              seulement le mois choisi. Le crayon change le montant de{" "}
+              {monthLabel(month)} seulement, ou de ce mois et des suivants.
             </p>
           </>
         )}
@@ -3709,6 +3770,7 @@ export default function App() {
           key={`${editor.type}-${editor.id || "new"}`}
           spec={editor}
           data={data}
+          month={month}
           onSave={(next) => {
             // Un tirage pendant l'édition : les champs du formulaire datent d'avant, ne pas les réécrire.
             if (pullCount.current !== editorPulls.current)
