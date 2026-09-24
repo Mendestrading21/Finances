@@ -754,6 +754,10 @@ img.brand-mark {
 .hero-card > .meta {
   margin-bottom: 0;
 }
+.hero-card > .hero-action {
+  align-self: flex-start;
+  margin-top: 10px;
+}
 .hero-card > .wealth-chart,
 .hero-card > .chart-empty {
   flex-grow: 1;
@@ -1796,6 +1800,44 @@ details[open] > summary::after {
   .dialog[open]::backdrop {
     opacity: 0;
   }
+}
+/* Accueil, « Ajouter » : quatre choix, un toucher chacun. */
+.add-chooser {
+  width: min(440px, calc(100% - 32px));
+}
+.add-choices {
+  display: grid;
+  gap: 8px;
+}
+.add-choice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 60px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--glass-row);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--ease);
+}
+@media (hover: hover) and (pointer: fine) {
+  .add-choice:hover {
+    border-color: var(--accent);
+  }
+}
+.add-choice-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.add-choice-text small {
+  color: var(--muted);
+  font-size: 13px;
 }
 .dialog-header {
   display: flex;
