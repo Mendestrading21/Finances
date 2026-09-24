@@ -1436,6 +1436,9 @@ test("PWA update: locking the vault applies a waiting update", async ({ page }) 
       .getByLabel("Confirmer la phrase secrète")
       .fill("Exemple-test-Finance-pwa-lock-2026");
     await page.getByRole("button", { name: "Créer mon coffre" }).click();
+    await expect(
+      page.getByRole("button", { name: "Verrouiller l’espace" }),
+    ).toBeVisible({ timeout: 15000 });
     await page.waitForFunction(
       () => navigator.serviceWorker.controller !== null,
       null,
@@ -1471,6 +1474,65 @@ test("PWA update: locking the vault applies a waiting update", async ({ page }) 
       marker,
       { timeout: 15000 },
     );
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await rm(siteDir, { recursive: true, force: true });
+  }
+});
+
+// Once something was typed on the lock screen (even if the fields were cleared since, as an
+// unlock does while it derives its key), a new deploy waits for "Recharger" instead of reloading.
+test("PWA update: after typing on the lock screen, a new deploy waits for Recharger", async ({
+  page,
+}) => {
+  const siteDir = join(
+    await mkdtemp(join(tmpdir(), "finance-pwa-typed-test-")),
+    "site",
+  );
+  await cp("dist", siteDir, { recursive: true });
+  const { server, port } = await serveStaticDir(siteDir);
+
+  try {
+    const indexPath = join(siteDir, "index.html");
+    const swPath = join(siteDir, "sw.js");
+    const originalIndex = await readFile(indexPath, "utf8");
+    const originalSw = await readFile(swPath, "utf8");
+
+    await page.goto(`http://127.0.0.1:${port}/`);
+    await page.waitForFunction(
+      () => navigator.serviceWorker.controller !== null,
+      null,
+      { timeout: 15000 },
+    );
+    const passphrase = page.getByLabel("Phrase secrète", { exact: true });
+    await passphrase.fill("Exemple-test-Finance-pwa-typed-2026");
+    await passphrase.fill("");
+
+    const marker = `test-marker-typed-${Date.now()}`;
+    await writeFile(
+      indexPath,
+      originalIndex.replace(
+        "<title>",
+        `<meta name="test-marker" content="${marker}" /><title>`,
+      ),
+    );
+    await writeFile(
+      swPath,
+      originalSw.replace(/finance-shell-[a-z0-9]+/, `finance-shell-${marker}`),
+    );
+    await page.evaluate(async () => {
+      const registration = await navigator.serviceWorker.getRegistration();
+      await registration?.update();
+    });
+
+    await expect(
+      page.getByRole("button", { name: "Recharger", exact: true }),
+    ).toBeVisible({ timeout: 15000 });
+    expect(
+      await page.evaluate(() =>
+        document.querySelector('meta[name="test-marker"]'),
+      ),
+    ).toBeNull();
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
     await rm(siteDir, { recursive: true, force: true });

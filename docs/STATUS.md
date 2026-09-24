@@ -559,8 +559,9 @@ L'utilisateur ne voyait toujours pas les couleurs sur son iPhone alors que tout 
 1. l'avis est un bandeau fixe en haut de l'écran, visible quel que soit le défilement (coffre ouvert comme verrouillé) ;
 2. verrouiller le coffre applique la mise à jour en attente (plus rien n'est en mémoire) ;
 3. le pied de page affiche la version (`Version <commit> du <date de build>`) pour vérifier sur l'appareil quelle version tourne.
+4. défaut trouvé par la CI sur ce lot et corrigé : une mise à jour arrivant pendant l'ouverture du coffre (clé en cours de dérivation, champs déjà vidés) rechargeait la page et annulait l'ouverture. Dès qu'une saisie ou un envoi a eu lieu sur l'écran d'accès, l'app affiche désormais le bandeau au lieu de recharger.
 
-Preuves : `typecheck`, `test` (**142/142**), `build`, les **12** scénarios `test:e2e` rejoués individuellement. Le test « PWA update: a new deploy offers… » vérifie désormais, fenêtre de téléphone défilée, que « Recharger » est dans l'écran (échoue sans le bandeau fixe, vérifié) ; le nouveau test « PWA update: locking the vault applies a waiting update » échoue sans l'application au verrouillage (vérifié).
+Preuves : `typecheck`, `test` (**142/142**), `build`, les **13** scénarios `test:e2e` rejoués individuellement ; le test « PWA update: after typing on the lock screen… » échoue avec l'ancienne logique (vérifié). Le test « PWA update: a new deploy offers… » vérifie désormais, fenêtre de téléphone défilée, que « Recharger » est dans l'écran (échoue sans le bandeau fixe, vérifié) ; le nouveau test « PWA update: locking the vault applies a waiting update » échoue sans l'application au verrouillage (vérifié).
 
 ## État réel
 

@@ -541,13 +541,26 @@ export default function App() {
       window.location.reload();
     vaultOpen.current = data !== null;
   }, [data, updateReady]);
+  // Anything typed or submitted on the lock screen (an unlock may still be deriving its key,
+  // with the fields already cleared) must not be thrown away by a silent reload.
+  const lockScreenUsed = useRef(false);
+  useEffect(() => {
+    if (data) return;
+    lockScreenUsed.current = false;
+    const used = () => {
+      lockScreenUsed.current = true;
+    };
+    document.addEventListener("input", used, true);
+    document.addEventListener("submit", used, true);
+    return () => {
+      document.removeEventListener("input", used, true);
+      document.removeEventListener("submit", used, true);
+    };
+  }, [data]);
   useEffect(() => {
     const onUpdateReady = () => {
-      // Locked with nothing typed: a reload loses nothing, so apply the new version at once.
-      const typing = [...document.querySelectorAll("input")].some(
-        (input) => input.type !== "file" && input.value !== "",
-      );
-      if (!vaultOpen.current && !typing) window.location.reload();
+      // Locked and untouched: a reload loses nothing, so apply the new version at once.
+      if (!vaultOpen.current && !lockScreenUsed.current) window.location.reload();
       else setUpdateReady(true);
     };
     window.addEventListener(UPDATE_READY_EVENT, onUpdateReady);
