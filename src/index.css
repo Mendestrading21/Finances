@@ -509,10 +509,35 @@ img.brand-mark {
     color: var(--accent-strong);
   }
 }
-/* Payer / Reçu gardent le bouton sombre par défaut : le libellé porte le sens, la coche guide en bleu. */
-.button.pay svg,
-.button.receive svg {
+/* Payer / Reçu / Régler : voile léger de la couleur de la nature, jamais d'aplat vif. */
+.button.pay {
+  border-color: rgba(232, 163, 174, 0.35);
+  background: rgba(232, 163, 174, 0.1);
+  color: var(--negative);
+}
+.button.receive {
+  border-color: rgba(143, 209, 181, 0.35);
+  background: rgba(143, 209, 181, 0.1);
+  color: var(--positive);
+}
+.button.transfer {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
   color: var(--accent);
+}
+@media (hover: hover) and (pointer: fine) {
+  .button.pay:hover {
+    background: rgba(232, 163, 174, 0.16);
+    color: var(--negative);
+  }
+  .button.receive:hover {
+    background: rgba(143, 209, 181, 0.16);
+    color: var(--positive);
+  }
+  .button.transfer:hover {
+    background: rgba(168, 188, 232, 0.16);
+    color: var(--accent);
+  }
 }
 .button.small {
   min-height: 32px;
@@ -1461,7 +1486,7 @@ details[open] > summary::after {
   }
 }
 /* Pas de vert ni de rouge : une entrée (« + » et flèche) prend l'accent, une dépense reste en texte ; --negative reste aux erreurs et retards. */
-/* Entrées en vert, sorties en rouge, adoucis ; le signe, la flèche et le libellé portent aussi le sens. */
+/* Entrées en vert, sorties en rouge, virements et épargne en bleu glacier ; le signe, la flèche et le libellé portent aussi le sens. */
 .positive,
 .row-icon.positive {
   color: var(--positive);
@@ -1469,6 +1494,14 @@ details[open] > summary::after {
 .negative,
 .row-icon.negative {
   color: var(--negative);
+}
+.transfer,
+.row-icon.transfer {
+  color: var(--accent);
+}
+/* Encore à payer, à recevoir ou à régler. */
+.status-pending {
+  color: var(--warning);
 }
 .warning {
   color: var(--warning);

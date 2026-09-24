@@ -544,6 +544,12 @@ Fusionné dans `main` (commit `d36580d`, PR #45). CI et déploiement Pages véri
 
 Demande de l'utilisateur, captures iPhone à l'appui, sur « Midnight Glass » en service : distinguer d'un coup d'œil ce qui entre (vert) de ce qui sort (rouge). Nouveau jeton `--positive` `#8FD1B5` à côté de `--negative` `#E8A3AE`, tous deux adoucis pour rester dans le thème (jamais d'aplat ni de halo). Appliqués aux montants des lignes (Mon mois, Accueil, Abonnements), à leurs flèches, aux indicateurs d'entrées/sorties (« Votre mois », les quatre indicateurs de Mon mois, « Aperçu du mois », « Payé/Reçu ce mois ») et aux barres Entrées/Dépenses ; virements, épargne et totaux mixtes restent neutres. `design.md` consigne ce choix. Contrastes calculés par formule : vert ≥ 6,73:1 et rouge ≥ 5,79:1 au pire (ligne survolée pendant le flash de règlement), 6,43:1 et 7,29:1 à l'impression.
 
+Fusionné dans `main` (commit `20c2f30`, PR #46). CI et déploiement Pages vérifiés verts.
+
+## Boutons, statuts, virements et épargne colorés (développé et testé le 24 septembre 2026)
+
+Suite demandée par l'utilisateur (choix explicite parmi les pistes proposées) : boutons « Reçu » teinté vert, « Payer » teinté rouge, « Régler » (virements, épargne récurrente) teinté bleu glacier — voile léger et contour fin, jamais d'aplat vif ; statuts des lignes colorés (« Reçu » vert, « Payé » rouge, « Réglé » bleu, et ce qui reste à faire — « Pas encore payé/reçu », « Prévu », « À vérifier » — en ambre doux `--warning`) ; virements et épargne en bleu glacier (montants, flèches, tuile « Épargne (mensuel) », récurrences d'épargne). `design.md` consigne la règle. Contrastes par formule : pire cas 4,86:1 (texte du bouton « Payer » survolé), ambre 6,58:1 et bleu 6,21:1 pendant le flash de règlement.
+
 ## État réel
 
 | Élément                           | État                                                                                                                                                                   | Résultat et limite                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
